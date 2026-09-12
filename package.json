@@ -1,0 +1,11 @@
+{
+  "name": "medmanager-workspace",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "npm --prefix AdminMed run dev",
+    "dev:admin": "npm --prefix AdminMed run dev",
+    "build:admin": "npm --prefix AdminMed run build",
+    "install:admin": "npm --prefix AdminMed install"
+  }
+}
