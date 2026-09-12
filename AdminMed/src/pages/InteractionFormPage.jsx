@@ -92,15 +92,6 @@ export default function InteractionFormPage() {
 
   return (
     <div>
-      {/* Breadcrumb */}
-      <div className="breadcrumb">
-        <span>Admin</span>
-        <span>&gt;</span>
-        <span>ปฏิสัมพันธ์ยา-อาหาร</span>
-        <span>&gt;</span>
-        <span>{isEditing ? 'แก้ไขข้อมูล' : 'เพิ่มข้อมูลใหม่'}</span>
-      </div>
-
       {/* Header */}
       <div className="page-header">
         <h1 className="page-title">เพิ่ม / แก้ไข ปฏิสัมพันธ์ยา-อาหาร</h1>
@@ -126,13 +117,13 @@ export default function InteractionFormPage() {
       </div>
 
       {errorMsg && (
-        <div style={{ padding: '12px 16px', backgroundColor: '#fef2f2', color: '#b91c1c', borderRadius: '8px', marginBottom: '20px', fontSize: '13px' }}>
+        <div style={{ padding: '12px 16px', backgroundColor: 'var(--color-danger-50)', color: 'var(--color-danger-700)', border: '1px solid var(--color-danger-100)', borderRadius: 'var(--radius-sm)', marginBottom: '20px', fontSize: '13.5px' }}>
           {errorMsg}
         </div>
       )}
 
       {successMsg && (
-        <div style={{ padding: '12px 16px', backgroundColor: '#f0fdf4', color: '#166534', borderRadius: '8px', marginBottom: '20px', fontSize: '13px' }}>
+        <div style={{ padding: '12px 16px', backgroundColor: 'var(--color-success-50)', color: 'var(--color-success-700)', border: '1px solid var(--color-success-100)', borderRadius: 'var(--radius-sm)', marginBottom: '20px', fontSize: '13.5px' }}>
           {successMsg}
         </div>
       )}

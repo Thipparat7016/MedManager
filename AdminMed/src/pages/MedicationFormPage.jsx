@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
-import { Check, Plus, Image as ImageIcon, Upload } from 'lucide-react'
+import { Check, Plus, Image as ImageIcon } from 'lucide-react'
 import { dataService } from '../services/dataService'
 
 export default function MedicationFormPage() {
@@ -94,15 +94,6 @@ export default function MedicationFormPage() {
 
   return (
     <div>
-      {/* Breadcrumb */}
-      <div className="breadcrumb">
-        <span>Admin</span>
-        <span>&gt;</span>
-        <Link to="/medications">ข้อมูลยาพื้นฐาน</Link>
-        <span>&gt;</span>
-        <span>{isEditing ? 'แก้ไขข้อมูลยา' : 'เพิ่มข้อมูลใหม่'}</span>
-      </div>
-
       {/* Header */}
       <div className="page-header">
         <h1 className="page-title">เพิ่ม / แก้ไขข้อมูลยา</h1>
@@ -128,7 +119,7 @@ export default function MedicationFormPage() {
       </div>
 
       {errorMsg && (
-        <div style={{ padding: '12px 16px', backgroundColor: '#fef2f2', color: '#b91c1c', borderRadius: '8px', marginBottom: '20px', fontSize: '13px' }}>
+        <div style={{ padding: '12px 16px', backgroundColor: 'var(--color-danger-50)', color: 'var(--color-danger-700)', border: '1px solid var(--color-danger-100)', borderRadius: 'var(--radius-sm)', marginBottom: '20px', fontSize: '13.5px' }}>
           {errorMsg}
         </div>
       )}
@@ -297,7 +288,7 @@ export default function MedicationFormPage() {
 
             <input 
               type="file" 
-              ref={fileInputRef}
+              ref={fileInputRef} 
               onChange={handleImageChange}
               accept="image/*"
               style={{ display: 'none' }}
@@ -311,10 +302,10 @@ export default function MedicationFormPage() {
                 <img src={imagePreview} alt="Medication preview" />
               ) : (
                 <>
-                  <div style={{ width: '40px', height: '30px', border: '1.5px dashed #cbd5e1', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <ImageIcon size={18} color="#94a3b8" />
+                  <div style={{ width: '42px', height: '32px', border: '1.5px dashed var(--color-primary-300)', borderRadius: 'var(--radius-xs)', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--color-primary-50)' }}>
+                    <ImageIcon size={18} color="var(--color-primary-500)" />
                   </div>
-                  <span style={{ color: '#94a3b8', fontSize: '12px' }}>อัปโหลดรูปภาพยา</span>
+                  <span style={{ color: 'var(--color-neutral-400)', fontSize: '12.5px' }}>อัปโหลดรูปภาพยา</span>
                 </>
               )}
             </div>

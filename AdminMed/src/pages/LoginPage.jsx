@@ -50,7 +50,7 @@ export default function LoginPage() {
         <p className="login-subtitle">ระบบจัดการยาสำหรับผู้ดูแลระบบ</p>
 
         {errorMsg && (
-          <div style={{ padding: '10px 12px', backgroundColor: '#fef2f2', color: '#b91c1c', borderRadius: '8px', marginBottom: '16px', fontSize: '12.5px' }}>
+          <div style={{ padding: '12px 14px', backgroundColor: 'var(--color-danger-50)', color: 'var(--color-danger-700)', border: '1px solid var(--color-danger-100)', borderRadius: 'var(--radius-sm)', marginBottom: '16px', fontSize: '13px' }}>
             {errorMsg}
           </div>
         )}
@@ -58,7 +58,7 @@ export default function LoginPage() {
         {/* Login Form */}
         <form onSubmit={handleLogin}>
           <div className="form-group" style={{ marginBottom: '14px' }}>
-            <label className="form-label" style={{ fontSize: '12px', color: '#475569' }}>อีเมล</label>
+            <label className="form-label">อีเมล</label>
             <input 
               type="email" 
               className="form-input" 
@@ -70,7 +70,7 @@ export default function LoginPage() {
           </div>
 
           <div className="form-group" style={{ marginBottom: '6px' }}>
-            <label className="form-label" style={{ fontSize: '12px', color: '#475569' }}>รหัสผ่าน</label>
+            <label className="form-label">รหัสผ่าน</label>
             <div style={{ position: 'relative' }}>
               <input 
                 type={showPassword ? 'text' : 'password'} 
@@ -91,7 +91,7 @@ export default function LoginPage() {
                   background: 'none',
                   border: 'none',
                   cursor: 'pointer',
-                  color: '#94a3b8',
+                  color: 'var(--color-neutral-400)',
                   padding: 0,
                   display: 'flex'
                 }}
@@ -105,7 +105,7 @@ export default function LoginPage() {
             type="submit" 
             className="btn btn-primary"
             disabled={loading}
-            style={{ width: '100%', padding: '12px', fontSize: '14px', borderRadius: '10px', marginTop: '20px' }}
+            style={{ width: '100%', marginTop: '20px' }}
           >
             {loading ? 'กำลังเข้าสู่ระบบ...' : 'เข้าสู่ระบบ'}
           </button>

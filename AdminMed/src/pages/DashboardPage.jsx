@@ -55,13 +55,6 @@ export default function DashboardPage() {
 
   return (
     <div>
-      {/* Breadcrumb */}
-      <div className="breadcrumb">
-        <span>Admin</span>
-        <span>&gt;</span>
-        <span>แดชบอร์ด</span>
-      </div>
-
       {/* Header */}
       <div className="page-header">
         <h1 className="page-title">Dashboard</h1>
@@ -128,7 +121,7 @@ export default function DashboardPage() {
         
         {/* Left: Charts Container */}
         <div className="card" style={{ padding: '24px 28px' }}>
-          <div style={{ fontSize: '13px', fontWeight: 600, color: '#1e293b', marginBottom: '20px' }}>
+          <div style={{ fontSize: '14.5px', fontWeight: 600, color: 'var(--color-neutral-800)', marginBottom: '20px' }}>
             การเติบโตของผู้ใช้ (7 เดือนล่าสุด)
           </div>
 
@@ -137,12 +130,12 @@ export default function DashboardPage() {
             <svg viewBox="0 0 700 200" style={{ width: '100%', height: '100%', overflow: 'visible' }}>
               <defs>
                 <linearGradient id="lineGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-                  <stop offset="0%" stopColor="#1e293b" stopOpacity="0.25" />
-                  <stop offset="100%" stopColor="#1e293b" stopOpacity="0.0" />
+                  <stop offset="0%" stopColor="#0284C7" stopOpacity="0.3" />
+                  <stop offset="100%" stopColor="#0284C7" stopOpacity="0.0" />
                 </linearGradient>
               </defs>
 
-              <line x1="50" y1="160" x2="600" y2="160" stroke="#e2e8f0" strokeWidth="1" />
+              <line x1="50" y1="160" x2="600" y2="160" stroke="var(--color-neutral-100)" strokeWidth="1" />
 
               {/* Area fill */}
               <polygon
@@ -153,7 +146,7 @@ export default function DashboardPage() {
               {/* Smooth Path */}
               <polyline
                 fill="none"
-                stroke="#0f172a"
+                stroke="var(--color-primary-500)"
                 strokeWidth="2.5"
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -170,7 +163,7 @@ export default function DashboardPage() {
                 { x: 500, y: 160 },
                 { x: 600, y: 160 }
               ].map((pt, i) => (
-                <circle key={i} cx={pt.x} cy={pt.y} r="4" fill="#0f172a" stroke="#ffffff" strokeWidth="2" />
+                <circle key={i} cx={pt.x} cy={pt.y} r="4" fill="var(--color-primary-500)" stroke="#ffffff" strokeWidth="2" />
               ))}
 
               {/* X Axis Labels */}
@@ -180,8 +173,8 @@ export default function DashboardPage() {
                   x={50 + i * 91.6} 
                   y="185" 
                   textAnchor="middle" 
-                  fill="#94a3b8" 
-                  fontSize="11" 
+                  fill="var(--color-neutral-400)" 
+                  fontSize="12" 
                   fontFamily="inherit"
                 >
                   {d.month}
@@ -191,8 +184,8 @@ export default function DashboardPage() {
           </div>
 
           {/* Adherence Rate Mini Bar Chart */}
-          <div style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px solid #f1f5f9' }}>
-            <div style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '12px' }}>
+          <div style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px solid var(--color-neutral-100)' }}>
+            <div style={{ fontSize: '12px', color: 'var(--color-neutral-500)', marginBottom: '12px' }}>
               Adherence Rate รายวัน (14 วันล่าสุด)
             </div>
             <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', height: '60px', gap: '6px' }}>
@@ -202,12 +195,12 @@ export default function DashboardPage() {
                     style={{
                       width: '100%',
                       height: `${Math.max(bar.height, 4)}%`,
-                      backgroundColor: bar.active ? '#0f172a' : '#e2e8f0',
+                      backgroundColor: bar.active ? 'var(--color-primary-500)' : 'var(--color-neutral-100)',
                       borderRadius: '4px 4px 0 0',
                       transition: 'height 0.3s ease'
                     }}
                   />
-                  <span style={{ fontSize: '9.5px', color: '#94a3b8' }}>{bar.label}</span>
+                  <span style={{ fontSize: '10.5px', color: 'var(--color-neutral-500)' }}>{bar.label}</span>
                 </div>
               ))}
             </div>
@@ -224,7 +217,7 @@ export default function DashboardPage() {
                 cx="80"
                 cy="80"
                 fill="transparent"
-                stroke="#e2e8f0"
+                stroke="var(--color-neutral-100)"
                 strokeWidth="24"
               />
               {stats?.drugTypeDistribution?.tablet > 0 && (
@@ -233,7 +226,7 @@ export default function DashboardPage() {
                   cx="80"
                   cy="80"
                   fill="transparent"
-                  stroke="#0f172a"
+                  stroke="var(--color-primary-500)"
                   strokeWidth="24"
                   strokeDasharray={`${(stats.drugTypeDistribution.tablet / 100) * 352} 352`}
                   strokeDashoffset="0"
@@ -243,29 +236,29 @@ export default function DashboardPage() {
             </svg>
 
             <div style={{ position: 'absolute', textAlign: 'center' }}>
-              <span style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a' }}>
+              <span style={{ fontSize: '20px', fontWeight: 700, color: 'var(--color-neutral-900)' }}>
                 {stats?.medicationsCount || '0'}
               </span>
-              <div style={{ fontSize: '11px', color: '#94a3b8' }}>รายการยา</div>
+              <div style={{ fontSize: '11.5px', color: 'var(--color-neutral-400)' }}>รายการยา</div>
             </div>
           </div>
 
-          <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '14px' }}>
-            <div style={{ fontSize: '12px', fontWeight: 600, color: '#1e293b', marginBottom: '8px' }}>
+          <div style={{ borderTop: '1px solid var(--color-neutral-100)', paddingTop: '14px' }}>
+            <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-neutral-800)', marginBottom: '8px' }}>
               สัดส่วนประเภทยา
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '12px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', color: '#475569' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '12.5px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--color-neutral-600)' }}>
                 <span>เม็ด (Tablet)</span>
-                <span style={{ fontWeight: 600, color: '#0f172a' }}>{stats?.drugTypeDistribution?.tablet || 0}%</span>
+                <span style={{ fontWeight: 600, color: 'var(--color-primary-700)' }}>{stats?.drugTypeDistribution?.tablet || 0}%</span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', color: '#475569' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--color-neutral-600)' }}>
                 <span>แคปซูล (Capsule)</span>
-                <span style={{ fontWeight: 600, color: '#0f172a' }}>{stats?.drugTypeDistribution?.capsule || 0}%</span>
+                <span style={{ fontWeight: 600, color: 'var(--color-primary-700)' }}>{stats?.drugTypeDistribution?.capsule || 0}%</span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', color: '#475569' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--color-neutral-600)' }}>
                 <span>อื่นๆ (Liquid)</span>
-                <span style={{ fontWeight: 600, color: '#0f172a' }}>{stats?.drugTypeDistribution?.liquid || 0}%</span>
+                <span style={{ fontWeight: 600, color: 'var(--color-primary-700)' }}>{stats?.drugTypeDistribution?.liquid || 0}%</span>
               </div>
             </div>
           </div>
@@ -291,29 +284,31 @@ export default function DashboardPage() {
             <tbody>
               {activities.length === 0 ? (
                 <tr>
-                  <td colSpan="4" style={{ textAlign: 'center', padding: '28px', color: '#94a3b8' }}>
+                  <td colSpan="4" style={{ textAlign: 'center', padding: '28px', color: 'var(--color-neutral-400)' }}>
                     ยังไม่มีบันทึกกิจกรรมในระบบ
                   </td>
                 </tr>
               ) : (
                 activities.map((act) => (
                   <tr key={act.id}>
-                    <td style={{ color: '#64748b', fontSize: '12.5px' }}>{act.time}</td>
-                    <td style={{ fontWeight: 500 }}>{act.user_name}</td>
+                    <td style={{ color: 'var(--color-neutral-500)', fontSize: '13px' }}>{act.time}</td>
+                    <td style={{ fontWeight: 600, color: 'var(--color-neutral-800)' }}>{act.user_name}</td>
                     <td>
                       <span 
                         style={{
                           fontSize: '12px',
-                          padding: '3px 8px',
-                          borderRadius: '4px',
-                          backgroundColor: act.activity === 'ยืนยันกินยา' ? '#f0fdf4' : act.activity === 'ข้ามยา' ? '#fef2f2' : '#f8fafc',
-                          color: act.activity === 'ยืนยันกินยา' ? '#166534' : act.activity === 'ข้ามยา' ? '#991b1b' : '#334155'
+                          fontWeight: 500,
+                          padding: '3px 10px',
+                          borderRadius: 'var(--radius-pill)',
+                          backgroundColor: act.activity === 'ยืนยันกินยา' ? 'var(--color-success-50)' : act.activity === 'ข้ามยา' ? 'var(--color-danger-50)' : 'var(--color-primary-50)',
+                          color: act.activity === 'ยืนยันกินยา' ? 'var(--color-success-700)' : act.activity === 'ข้ามยา' ? 'var(--color-danger-700)' : 'var(--color-primary-700)',
+                          border: act.activity === 'ยืนยันกินยา' ? '1px solid var(--color-success-100)' : act.activity === 'ข้ามยา' ? '1px solid var(--color-danger-100)' : '1px solid var(--color-primary-200)'
                         }}
                       >
                         {act.activity}
                       </span>
                     </td>
-                    <td style={{ color: '#475569' }}>{act.details}</td>
+                    <td style={{ color: 'var(--color-neutral-600)' }}>{act.details}</td>
                   </tr>
                 ))
               )}
@@ -325,24 +320,24 @@ export default function DashboardPage() {
         <div className="card" style={{ padding: '24px' }}>
           <div className="card-title">ยาที่ใช้มากที่สุด</div>
           {stats?.topMedications?.length === 0 ? (
-            <div style={{ padding: '28px 0', textAlign: 'center', color: '#94a3b8', fontSize: '13px' }}>
+            <div style={{ padding: '28px 0', textAlign: 'center', color: 'var(--color-neutral-400)', fontSize: '13px' }}>
               ยังไม่มีข้อมูลยาในระบบ
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '12px' }}>
               {stats?.topMedications?.map((item, idx) => (
                 <div key={idx}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '6px' }}>
-                    <span style={{ fontWeight: 500, color: '#1e293b' }}>{item.name}</span>
-                    <span style={{ color: '#64748b', fontSize: '12px' }}>{item.count}</span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13.5px', marginBottom: '6px' }}>
+                    <span style={{ fontWeight: 600, color: 'var(--color-neutral-800)' }}>{item.name}</span>
+                    <span style={{ color: 'var(--color-neutral-500)', fontSize: '12px' }}>{item.count}</span>
                   </div>
-                  <div style={{ width: '100%', height: '8px', backgroundColor: '#f1f5f9', borderRadius: '4px', overflow: 'hidden' }}>
+                  <div style={{ width: '100%', height: '8px', backgroundColor: 'var(--color-neutral-100)', borderRadius: 'var(--radius-pill)', overflow: 'hidden' }}>
                     <div 
                       style={{
                         height: '100%',
                         width: `${(item.count / item.max) * 100}%`,
-                        backgroundColor: '#0f172a',
-                        borderRadius: '4px'
+                        background: 'linear-gradient(135deg, var(--color-primary-400) 0%, var(--color-primary-500) 100%)',
+                        borderRadius: 'var(--radius-pill)'
                       }}
                     />
                   </div>
