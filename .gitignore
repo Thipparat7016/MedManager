@@ -155,3 +155,22 @@ web-build/
 # Build outputs
 dist/
 build/
+
+# Dependencies
+**/node_modules/
+node_modules/
+
+# Build outputs
+**/dist/
+dist/
+**/build/
+build/
+
+# Environment variables
+**/.env
+.env
+.env*.local
+
+# Expo
+**/.expo/
+.expo/
