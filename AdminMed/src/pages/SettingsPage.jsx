@@ -32,10 +32,11 @@ export default function SettingsPage() {
   useEffect(() => {
     if (adminProfile) {
       setFormData({
-        first_name: adminProfile.first_name || 'สมชาย',
-        last_name: adminProfile.last_name || 'ใจดี',
+        id: adminProfile.id,
+        first_name: adminProfile.first_name || 'Admin',
+        last_name: adminProfile.last_name || 'medicine',
         email: adminProfile.email || 'admin@gmail.com',
-        phone: adminProfile.phone || '081-234-5678',
+        phone: adminProfile.phone || '095-326-5723',
         role: adminProfile.role || 'Admin',
         avatar_url: adminProfile.avatar_url || ''
       })
@@ -89,8 +90,13 @@ export default function SettingsPage() {
   const handleSave = async (e) => {
     if (e) e.preventDefault()
     setSaving(true)
-    await dataService.updateAdminProfile(formData)
-    if (reloadProfile) await reloadProfile()
+    const updated = await dataService.updateAdminProfile(formData)
+    if (reloadProfile) {
+      await reloadProfile()
+    }
+    if (updated?.avatar_url) {
+      setFormData(prev => ({ ...prev, avatar_url: updated.avatar_url }))
+    }
     setSaving(false)
     setSaveSuccess(true)
     setTimeout(() => setSaveSuccess(false), 2500)
@@ -98,13 +104,6 @@ export default function SettingsPage() {
 
   return (
     <div>
-      {/* Breadcrumb */}
-      <div className="breadcrumb">
-        <span>Admin</span>
-        <span>&gt;</span>
-        <span>ตั้งค่าระบบ</span>
-      </div>
-
       {/* Header */}
       <div className="page-header" style={{ marginBottom: '16px' }}>
         <h1 className="page-title">ตั้งค่าระบบและจัดการผู้ใช้งาน</h1>
@@ -149,26 +148,30 @@ export default function SettingsPage() {
             {/* Circular Avatar */}
             <div style={{ position: 'relative', marginBottom: '20px' }}>
               <div 
+                onClick={() => fileInputRef.current?.click()}
                 style={{
                   width: '130px',
                   height: '130px',
-                  borderRadius: '50%',
-                  backgroundColor: '#e2e8f0',
+                  borderRadius: 'var(--radius-circle)',
+                  backgroundColor: '#DFF2FF',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  overflow: 'hidden'
+                  overflow: 'hidden',
+                  border: '3px solid #B9E2FE',
+                  cursor: 'pointer'
                 }}
+                title="คลิกเพื่ออัปโหลดรูปภาพ"
               >
                 {formData.avatar_url ? (
                   <img src={formData.avatar_url} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 ) : (
                   <div 
                     style={{
-                      width: '50px',
-                      height: '50px',
-                      borderRadius: '50%',
-                      border: '2px solid #94a3b8',
+                      width: '54px',
+                      height: '54px',
+                      borderRadius: 'var(--radius-circle)',
+                      border: '2.5px solid var(--color-primary-400)',
                       backgroundColor: 'transparent'
                     }} 
                   />
@@ -183,36 +186,38 @@ export default function SettingsPage() {
                   position: 'absolute',
                   bottom: '4px',
                   right: '4px',
-                  width: '34px',
-                  height: '34px',
-                  borderRadius: '50%',
-                  backgroundColor: '#0f172a',
-                  color: '#ffffff',
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: 'var(--radius-circle)',
+                  backgroundColor: '#DFF2FF',
+                  color: '#0284C7',
                   border: '2px solid #ffffff',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  cursor: 'pointer'
+                  cursor: 'pointer',
+                  boxShadow: 'var(--shadow-sm)'
                 }}
                 title="เปลี่ยนรูปโปรไฟล์"
               >
-                <Camera size={14} />
+                <Camera size={16} />
               </button>
             </div>
 
             {/* Admin Name & Badge */}
-            <div style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a', marginBottom: '8px' }}>
+            <div style={{ fontSize: '19px', fontWeight: 700, color: 'var(--color-neutral-900)', marginBottom: '8px' }}>
               {formData.first_name} {formData.last_name}
             </div>
 
             <div 
               style={{
-                fontSize: '12px',
-                padding: '4px 14px',
-                borderRadius: '20px',
-                backgroundColor: '#f1f5f9',
-                color: '#64748b',
-                fontWeight: 500
+                fontSize: '12.5px',
+                padding: '4px 16px',
+                borderRadius: 'var(--radius-pill)',
+                backgroundColor: '#DFF2FF',
+                color: '#0284C7',
+                border: '1px solid #B9E2FE',
+                fontWeight: 600
               }}
             >
               {formData.role}
@@ -224,7 +229,7 @@ export default function SettingsPage() {
             <div className="card-title">ข้อมูลส่วนตัว</div>
 
             {saveSuccess && (
-              <div style={{ padding: '10px 14px', backgroundColor: '#f0fdf4', color: '#166534', borderRadius: '8px', marginBottom: '16px', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <div style={{ padding: '12px 16px', backgroundColor: 'var(--color-success-50)', color: 'var(--color-success-700)', border: '1px solid var(--color-success-100)', borderRadius: 'var(--radius-sm)', marginBottom: '16px', fontSize: '13.5px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <Check size={16} /> บันทึกข้อมูลส่วนตัวสำเร็จแล้ว
               </div>
             )}
@@ -327,21 +332,6 @@ export default function SettingsPage() {
       ) : (
         /* Tab 2: Users Tab matching Image 1 */
         <div>
-          {/* 2 Stat Cards Row */}
-          <div className="stat-cards-grid-2">
-            <div className="stat-card">
-              <div className="stat-value">{appUsers.length}</div>
-              <div className="stat-label">ผู้ใช้แอปทั้งหมด</div>
-              <div className="stat-sub">ใช้งานอยู่ {appUsers.length} / ระงับ 0</div>
-            </div>
-
-            <div className="stat-card">
-              <div className="stat-value">0</div>
-              <div className="stat-label">รอยืนยันอีเมล</div>
-              <div className="stat-sub">ไม่มีรายการค้าง</div>
-            </div>
-          </div>
-
           {/* Table Card */}
           <div className="card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
@@ -352,7 +342,7 @@ export default function SettingsPage() {
                   style={{
                     background: 'none',
                     border: 'none',
-                    color: '#ef4444',
+                    color: 'var(--color-danger-500)',
                     fontSize: '13px',
                     fontWeight: 600,
                     cursor: 'pointer',
@@ -376,7 +366,7 @@ export default function SettingsPage() {
                     onChange={(e) => setUserSearch(e.target.value)}
                     style={{ paddingLeft: '34px' }}
                   />
-                  <Search size={16} style={{ position: 'absolute', left: '10px', top: '12px', color: '#94a3b8' }} />
+                  <Search size={16} style={{ position: 'absolute', left: '10px', top: '12px', color: 'var(--color-neutral-400)' }} />
                 </div>
                 <button type="submit" className="btn btn-primary" style={{ padding: '0 24px' }}>
                   ค้นหา
@@ -398,16 +388,16 @@ export default function SettingsPage() {
                 <tbody>
                   {appUsers.length === 0 ? (
                     <tr>
-                      <td colSpan="4" style={{ textAlign: 'center', padding: '32px', color: '#94a3b8' }}>
+                      <td colSpan="4" style={{ textAlign: 'center', padding: '32px', color: 'var(--color-neutral-400)' }}>
                         ไม่พบข้อมูลผู้ใช้ในระบบ
                       </td>
                     </tr>
                   ) : (
                     appUsers.map((u) => (
                       <tr key={u.id}>
-                        <td style={{ color: '#64748b' }}>{u.code || '001'}</td>
-                        <td style={{ fontWeight: 500 }}>{u.name}</td>
-                        <td style={{ color: '#64748b' }}>{u.email}</td>
+                        <td style={{ color: 'var(--color-neutral-500)' }}>{u.code || '001'}</td>
+                        <td style={{ fontWeight: 600, color: 'var(--color-neutral-800)' }}>{u.name}</td>
+                        <td style={{ color: 'var(--color-neutral-600)' }}>{u.email}</td>
                         <td style={{ textAlign: 'right' }}>
                           <button 
                             className="btn btn-danger-outline" 
@@ -442,7 +432,7 @@ export default function SettingsPage() {
                 <button className={`page-btn ${userPage === 3 ? 'active' : ''}`} onClick={() => setUserPage(3)}>
                   3
                 </button>
-                <span style={{ padding: '0 4px', color: '#94a3b8' }}>...</span>
+                <span style={{ padding: '0 4px', color: 'var(--color-neutral-400)' }}>...</span>
                 <button className="page-btn" onClick={() => setUserPage(p => p + 1)}>
                   &gt;
                 </button>

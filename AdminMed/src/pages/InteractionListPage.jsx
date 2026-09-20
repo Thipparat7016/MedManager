@@ -118,13 +118,6 @@ export default function InteractionListPage() {
 
   return (
     <div>
-      {/* Breadcrumb */}
-      <div className="breadcrumb">
-        <span>Admin</span>
-        <span>&gt;</span>
-        <span>ปฏิสัมพันธ์ยา-อาหาร</span>
-      </div>
-
       {/* Header */}
       <div className="page-header">
         <h1 className="page-title">ปฏิสัมพันธ์ยา-อาหาร</h1>
@@ -303,42 +296,42 @@ export default function InteractionListPage() {
                         onChange={() => toggleSelectOne(item.id)}
                       />
                     </td>
-                    <td style={{ color: '#64748b', textAlign: 'center' }}>{item.code || '001'}</td>
-                    <td style={{ fontWeight: 500 }}>
+                    <td style={{ color: 'var(--color-neutral-500)', textAlign: 'center' }}>{item.code || '001'}</td>
+                    <td style={{ fontWeight: 600, color: 'var(--color-neutral-800)' }}>
                       {item.medication_name}
                     </td>
-                    <td>{item.food_name}</td>
-                    <td style={{ whiteSpace: 'nowrap' }}>{item.interaction_type}</td>
+                    <td style={{ color: 'var(--color-neutral-700)' }}>{item.food_name}</td>
+                    <td style={{ whiteSpace: 'nowrap', color: 'var(--color-neutral-600)' }}>{item.interaction_type}</td>
                     <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
                       <span className={`badge-severity ${item.severity === 'สูง' ? 'high' : item.severity === 'ต่ำ' ? 'low' : 'medium'}`}>
                         {item.severity}
                       </span>
                     </td>
-                    <td style={{ color: '#475569', fontSize: '13px', whiteSpace: 'nowrap' }}>
+                    <td style={{ color: 'var(--color-neutral-600)', fontSize: '13px', whiteSpace: 'nowrap' }}>
                       {item.hours_note || `${item.hours_before || 2} ชม. ก่อน-${item.hours_after || 2} ชม. หลัง`}
                     </td>
-                    <td style={{ color: '#64748b', fontSize: '12.5px' }}>
+                    <td style={{ color: 'var(--color-neutral-500)', fontSize: '12.5px' }}>
                       {item.source_name || 'FDA 2024'}
                     </td>
                     <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                       <div style={{ display: 'inline-flex', gap: '6px' }}>
                         <button 
                           className="btn btn-secondary" 
-                          style={{ padding: '4px 10px', fontSize: '12px', height: '30px' }}
+                          style={{ padding: '4px 10px', fontSize: '12.5px', minHeight: '32px', height: '32px' }}
                           onClick={() => navigate(`/interactions/edit/${item.id}`)}
                         >
                           แก้ไข
                         </button>
                         <button 
                           className="btn btn-secondary" 
-                          style={{ padding: '4px 10px', fontSize: '12px', height: '30px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                          style={{ padding: '4px 10px', fontSize: '12.5px', minHeight: '32px', height: '32px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                           onClick={() => setViewItem(item)}
                         >
                           <Eye size={13} /> ดู
                         </button>
                         <button 
                           className="btn btn-danger-outline" 
-                          style={{ padding: '4px 10px', fontSize: '12px', height: '30px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                          style={{ padding: '4px 10px', fontSize: '12.5px', minHeight: '32px', height: '32px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                           onClick={() => handleDeleteOne(item.id, item.medication_name)}
                         >
                           <X size={13} /> ลบ
@@ -388,7 +381,7 @@ export default function InteractionListPage() {
               </button>
             )}
             {totalPages > 3 && (
-              <span style={{ padding: '0 4px', color: '#94a3b8' }}>...</span>
+              <span style={{ padding: '0 4px', color: 'var(--color-neutral-400)' }}>...</span>
             )}
             <button 
               className="page-btn" 
@@ -409,30 +402,30 @@ export default function InteractionListPage() {
               <div className="modal-title">รายละเอียดปฏิสัมพันธ์: {viewItem.medication_name}</div>
               <button 
                 onClick={() => setViewItem(null)}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-neutral-400)' }}
               >
                 <X size={20} />
               </button>
             </div>
             
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', fontSize: '13.5px', marginTop: '14px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', fontSize: '14px', marginTop: '14px' }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div><strong>อาหาร/กลุ่มอาหาร:</strong> {viewItem.food_name}</div>
                 <div><strong>ประเภท:</strong> {viewItem.interaction_type}</div>
-                <div><strong>ความรุนแรง:</strong> {viewItem.severity}</div>
+                <div><strong>ความรุนแรง:</strong> <span className={`badge-severity ${viewItem.severity === 'สูง' ? 'high' : viewItem.severity === 'ต่ำ' ? 'low' : 'medium'}`} style={{ marginLeft: '4px' }}>{viewItem.severity}</span></div>
                 <div><strong>ช่วงเวลางด:</strong> {viewItem.hours_note || `${viewItem.hours_before} ชม. ก่อน - ${viewItem.hours_after} ชม. หลัง`}</div>
               </div>
-              <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '10px' }}>
-                <div style={{ fontWeight: 600, color: '#1e293b', marginBottom: '4px' }}>รายละเอียดผลกระทบ:</div>
-                <div style={{ color: '#475569', fontSize: '13px', lineHeight: 1.6 }}>{viewItem.impact_details || '-'}</div>
+              <div style={{ borderTop: '1px solid var(--color-neutral-100)', paddingTop: '10px' }}>
+                <div style={{ fontWeight: 600, color: 'var(--color-neutral-800)', marginBottom: '4px' }}>รายละเอียดผลกระทบ:</div>
+                <div style={{ color: 'var(--color-neutral-600)', fontSize: '13.5px', lineHeight: 1.6 }}>{viewItem.impact_details || '-'}</div>
               </div>
-              <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '10px' }}>
-                <div style={{ fontWeight: 600, color: '#1e293b', marginBottom: '4px' }}>แหล่งอ้างอิง:</div>
-                <div style={{ color: '#475569', fontSize: '13px' }}>
+              <div style={{ borderTop: '1px solid var(--color-neutral-100)', paddingTop: '10px' }}>
+                <div style={{ fontWeight: 600, color: 'var(--color-neutral-800)', marginBottom: '4px' }}>แหล่งอ้างอิง:</div>
+                <div style={{ color: 'var(--color-neutral-600)', fontSize: '13.5px' }}>
                   {viewItem.source_name} ({viewItem.source_type}) - {viewItem.publish_year}
                   {viewItem.url_doi && (
                     <div style={{ marginTop: '4px' }}>
-                      <a href={viewItem.url_doi} target="_blank" rel="noreferrer" style={{ color: '#2563eb' }}>
+                      <a href={viewItem.url_doi} target="_blank" rel="noreferrer" style={{ color: 'var(--color-primary-600)' }}>
                         {viewItem.url_doi}
                       </a>
                     </div>

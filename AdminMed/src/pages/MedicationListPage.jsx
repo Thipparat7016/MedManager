@@ -95,13 +95,6 @@ export default function MedicationListPage() {
 
   return (
     <div>
-      {/* Breadcrumb */}
-      <div className="breadcrumb">
-        <span>Admin</span>
-        <span>&gt;</span>
-        <span>ข้อมูลยาพื้นฐาน</span>
-      </div>
-
       {/* Header */}
       <div className="page-header">
         <h1 className="page-title">ข้อมูลยาพื้นฐาน</h1>
@@ -231,24 +224,14 @@ export default function MedicationListPage() {
                         onChange={() => toggleSelectOne(item.id)}
                       />
                     </td>
-                    <td style={{ color: '#64748b', textAlign: 'center' }}>{item.code || '001'}</td>
-                    <td style={{ fontWeight: 500 }}>
+                    <td style={{ color: 'var(--color-neutral-500)', textAlign: 'center' }}>{item.code || '001'}</td>
+                    <td style={{ fontWeight: 600, color: 'var(--color-neutral-800)' }}>
                       {item.name_th} {item.name_en ? `/ ${item.name_en}` : ''}
                     </td>
                     <td>{item.type}</td>
                     <td>{item.dosage} {item.unit}</td>
                     <td>
-                      <span 
-                        style={{
-                          fontSize: '12px',
-                          padding: '3px 10px',
-                          borderRadius: '4px',
-                          backgroundColor: item.category === 'ยา' ? '#f1f5f9' : '#fef9c3',
-                          color: item.category === 'ยา' ? '#334155' : '#854d0e',
-                          fontWeight: 500,
-                          display: 'inline-block'
-                        }}
-                      >
+                      <span className={item.category === 'ยา' ? 'pill-chip-purple' : 'pill-chip-amber'}>
                         {item.category}
                       </span>
                     </td>
@@ -256,21 +239,21 @@ export default function MedicationListPage() {
                       <div style={{ display: 'inline-flex', gap: '6px' }}>
                         <button 
                           className="btn btn-secondary" 
-                          style={{ padding: '4px 10px', fontSize: '12px', height: '30px' }}
+                          style={{ padding: '4px 10px', fontSize: '12.5px', minHeight: '32px', height: '32px' }}
                           onClick={() => navigate(`/medications/edit/${item.id}`)}
                         >
                           แก้ไข
                         </button>
                         <button 
                           className="btn btn-secondary" 
-                          style={{ padding: '4px 10px', fontSize: '12px', height: '30px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                          style={{ padding: '4px 10px', fontSize: '12.5px', minHeight: '32px', height: '32px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                           onClick={() => setViewMed(item)}
                         >
                           <Eye size={13} /> ดู
                         </button>
                         <button 
                           className="btn btn-danger-outline" 
-                          style={{ padding: '4px 10px', fontSize: '12px', height: '30px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                          style={{ padding: '4px 10px', fontSize: '12.5px', minHeight: '32px', height: '32px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                           onClick={() => handleDeleteOne(item.id, item.name_th)}
                         >
                           <X size={13} /> ลบ
@@ -320,7 +303,7 @@ export default function MedicationListPage() {
               </button>
             )}
             {totalPages > 3 && (
-              <span style={{ padding: '0 4px', color: '#94a3b8' }}>...</span>
+              <span style={{ padding: '0 4px', color: 'var(--color-neutral-400)' }}>...</span>
             )}
             <button 
               className="page-btn" 
@@ -341,30 +324,30 @@ export default function MedicationListPage() {
               <div className="modal-title">รายละเอียดข้อมูลยา: {viewMed.name_th} ({viewMed.name_en})</div>
               <button 
                 onClick={() => setViewMed(null)}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-neutral-400)' }}
               >
                 <X size={20} />
               </button>
             </div>
             
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', fontSize: '13.5px', marginTop: '14px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', fontSize: '14px', marginTop: '14px' }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div><strong>รหัสยา:</strong> {viewMed.code}</div>
                 <div><strong>หมวดหมู่:</strong> {viewMed.category}</div>
                 <div><strong>ประเภทยา:</strong> {viewMed.type}</div>
                 <div><strong>ขนาดยา:</strong> {viewMed.dosage} {viewMed.unit}</div>
               </div>
-              <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '10px' }}>
-                <div style={{ fontWeight: 600, color: '#1e293b', marginBottom: '4px' }}>ข้อบ่งใช้ (Indications):</div>
-                <div style={{ color: '#475569', fontSize: '13px' }}>{viewMed.indications || '-'}</div>
+              <div style={{ borderTop: '1px solid var(--color-neutral-100)', paddingTop: '10px' }}>
+                <div style={{ fontWeight: 600, color: 'var(--color-neutral-800)', marginBottom: '4px' }}>ข้อบ่งใช้ (Indications):</div>
+                <div style={{ color: 'var(--color-neutral-600)', fontSize: '13.5px' }}>{viewMed.indications || '-'}</div>
               </div>
-              <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '10px' }}>
-                <div style={{ fontWeight: 600, color: '#1e293b', marginBottom: '4px' }}>วิธีรับประทาน / คำแนะนำ (Instructions):</div>
-                <div style={{ color: '#475569', fontSize: '13px' }}>{viewMed.instructions || '-'}</div>
+              <div style={{ borderTop: '1px solid var(--color-neutral-100)', paddingTop: '10px' }}>
+                <div style={{ fontWeight: 600, color: 'var(--color-neutral-800)', marginBottom: '4px' }}>วิธีรับประทาน / คำแนะนำ (Instructions):</div>
+                <div style={{ color: 'var(--color-neutral-600)', fontSize: '13.5px' }}>{viewMed.instructions || '-'}</div>
               </div>
-              <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '10px' }}>
-                <div style={{ fontWeight: 600, color: '#1e293b', marginBottom: '4px' }}>ข้อควรระวังและผลข้างเคียง (Precautions):</div>
-                <div style={{ color: '#475569', fontSize: '13px' }}>{viewMed.precautions || '-'}</div>
+              <div style={{ borderTop: '1px solid var(--color-neutral-100)', paddingTop: '10px' }}>
+                <div style={{ fontWeight: 600, color: 'var(--color-neutral-800)', marginBottom: '4px' }}>ข้อควรระวังและผลข้างเคียง (Precautions):</div>
+                <div style={{ color: 'var(--color-neutral-600)', fontSize: '13.5px' }}>{viewMed.precautions || '-'}</div>
               </div>
             </div>
 

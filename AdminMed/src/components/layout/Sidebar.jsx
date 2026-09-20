@@ -22,7 +22,6 @@ export default function Sidebar({ adminProfile }) {
       {/* Brand Header */}
       <div className="sidebar-header">
         <h1 className="sidebar-brand-title">MedManager</h1>
-        <div className="sidebar-brand-sub">ADMIN PANEL</div>
       </div>
 
       {/* Main Navigation */}
@@ -64,12 +63,20 @@ export default function Sidebar({ adminProfile }) {
       <div className="sidebar-footer">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
           <NavLink to="/settings" className="sidebar-user" style={{ flex: 1, textDecoration: 'none', minWidth: 0, marginRight: '8px' }}>
-            <div className="user-avatar-badge">
-              {adminProfile?.first_name?.[0] || 'A'}
+            <div className="user-avatar-badge" style={{ overflow: 'hidden', padding: 0 }}>
+              {adminProfile?.avatar_url ? (
+                <img 
+                  src={adminProfile.avatar_url} 
+                  alt="Admin Avatar" 
+                  style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'var(--radius-circle)' }} 
+                />
+              ) : (
+                adminProfile?.first_name?.[0] || 'A'
+              )}
             </div>
             <div className="user-info" style={{ overflow: 'hidden' }}>
               <div className="user-name" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {adminProfile ? `${adminProfile.first_name} ${adminProfile.last_name}`.trim() || 'Admin' : 'Admin'}
+                {adminProfile ? `${adminProfile.first_name || ''} ${adminProfile.last_name || ''}`.trim() || 'Admin' : 'Admin'}
               </div>
               <div className="user-role">{adminProfile?.role || 'Admin'}</div>
             </div>
@@ -81,27 +88,27 @@ export default function Sidebar({ adminProfile }) {
             style={{
               background: 'transparent',
               border: 'none',
-              color: '#94a3b8',
+              color: 'var(--color-neutral-400)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              width: '32px',
-              height: '32px',
-              borderRadius: '6px',
+              width: '34px',
+              height: '34px',
+              borderRadius: 'var(--radius-sm)',
               cursor: 'pointer',
               transition: 'all 0.15s ease',
               flexShrink: 0
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.color = '#ef4444'
-              e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.12)'
+              e.currentTarget.style.color = 'var(--color-danger-500)'
+              e.currentTarget.style.backgroundColor = 'var(--color-danger-100)'
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.color = '#94a3b8'
+              e.currentTarget.style.color = 'var(--color-neutral-400)'
               e.currentTarget.style.backgroundColor = 'transparent'
             }}
           >
-            <LogOut size={16} />
+            <LogOut size={17} />
           </button>
         </div>
       </div>
