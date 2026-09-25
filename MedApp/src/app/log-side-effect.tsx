@@ -16,17 +16,24 @@ import { useApp } from '@/context/AppContext';
 
 export default function LogSideEffectScreen() {
   const router = useRouter();
-  const { sideEffects, addSideEffect } = useApp();
+  const { sideEffects, addSideEffect, medications } = useApp();
 
-  const [date, setDate] = useState('12/07/2569');
-  const [time, setTime] = useState('14:00 น.');
-  const [selectedDrug, setSelectedDrug] = useState('แอสไพริน');
-  const [selectedSymptoms, setSelectedSymptoms] = useState<string[]>(['คลื่นไส้', 'ปวดท้อง']);
+  const now = new Date();
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  const defaultDate = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear() + 543}`;
+  const defaultTime = `${pad(now.getHours())}:${pad(now.getMinutes())} น.`;
+
+  const drugOptions = medications.map(m => m.name);
+
+  const [date, setDate] = useState(defaultDate);
+  const [time, setTime] = useState(defaultTime);
+  const [selectedDrug, setSelectedDrug] = useState(drugOptions[0] || '');
+  const [customDrug, setCustomDrug] = useState('');
+  const [selectedSymptoms, setSelectedSymptoms] = useState<string[]>([]);
   const [severity, setSeverity] = useState<'สูง' | 'กลาง' | 'ต่ำ'>('กลาง');
   const [details, setDetails] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const drugOptions = ['แอสไพริน', 'เมทฟอร์มิน', 'วิตามินซี', 'โอเมก้า-3'];
   const symptomOptions = [
     'คลื่นไส้',
     'อาเจียน',
@@ -50,9 +57,11 @@ export default function LogSideEffectScreen() {
     }
   };
 
+  const effectiveDrug = selectedDrug || customDrug.trim();
+
   const handleSubmit = async () => {
-    if (!selectedDrug || selectedSymptoms.length === 0) {
-      Alert.alert('ข้อมูลไม่ครบถ้วน', 'กรุณาเลือกยาที่เกี่ยวข้องและอาการที่พบ');
+    if (!effectiveDrug || selectedSymptoms.length === 0) {
+      Alert.alert('ข้อมูลไม่ครบถ้วน', 'กรุณาระบุยาที่เกี่ยวข้องและเลือกอาการที่พบอย่างน้อย 1 อย่าง');
       return;
     }
 
@@ -60,7 +69,7 @@ export default function LogSideEffectScreen() {
     await addSideEffect({
       date,
       time,
-      medicationName: selectedDrug,
+      medicationName: effectiveDrug,
       symptoms: selectedSymptoms,
       severity,
       details,
@@ -91,7 +100,7 @@ export default function LogSideEffectScreen() {
               style={styles.inputBox}
               value={date}
               onChangeText={setDate}
-              placeholder="12/07/2569"
+              placeholder="วว/ดด/ปปปป"
             />
           </View>
           <View style={styles.halfInput}>
@@ -107,25 +116,40 @@ export default function LogSideEffectScreen() {
 
         {/* Related Drug Selection */}
         <Text style={styles.sectionLabel}>ยาที่เกี่ยวข้อง *</Text>
-        <View style={styles.chipsWrap}>
-          {drugOptions.map(drug => {
-            const isSelected = selectedDrug === drug;
-            return (
-              <TouchableOpacity
-                key={drug}
-                style={[styles.drugChip, isSelected && styles.drugChipActive]}
-                onPress={() => setSelectedDrug(drug)}
-                activeOpacity={0.7}
-              >
-                <Text
-                  style={[styles.drugChipText, isSelected && styles.drugChipTextActive]}
+        {drugOptions.length > 0 ? (
+          <View style={styles.chipsWrap}>
+            {drugOptions.map(drug => {
+              const isSelected = selectedDrug === drug;
+              return (
+                <TouchableOpacity
+                  key={drug}
+                  style={[styles.drugChip, isSelected && styles.drugChipActive]}
+                  onPress={() => {
+                    setSelectedDrug(drug);
+                    setCustomDrug('');
+                  }}
+                  activeOpacity={0.7}
                 >
-                  {drug}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+                  <Text
+                    style={[styles.drugChipText, isSelected && styles.drugChipTextActive]}
+                  >
+                    {drug}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        ) : (
+          <View style={{ marginBottom: 18 }}>
+            <TextInput
+              style={styles.inputBox}
+              value={customDrug}
+              onChangeText={setCustomDrug}
+              placeholder="ระบุชื่อยาที่เกิดผลข้างเคียง เช่น แอสไพริน"
+              placeholderTextColor="#94A3B8"
+            />
+          </View>
+        )}
 
         {/* Symptoms Selection */}
         <Text style={styles.sectionLabel}>อาการที่พบ</Text>
@@ -231,7 +255,12 @@ export default function LogSideEffectScreen() {
 
         {/* Past History */}
         <Text style={[styles.sectionLabel, { marginTop: 24 }]}>ประวัติการบันทึก</Text>
-        {sideEffects.map(item => (
+        {sideEffects.length === 0 ? (
+          <Text style={{ fontSize: 13, color: '#94A3B8', marginTop: 4, fontStyle: 'italic' }}>
+            ยังไม่มีประวัติการบันทึกผลข้างเคียง
+          </Text>
+        ) : (
+          sideEffects.map(item => (
           <View key={item.id} style={styles.historyCard}>
             <View style={styles.historyHeader}>
               <Text style={styles.historyDrug}>
@@ -254,7 +283,7 @@ export default function LogSideEffectScreen() {
               <Text style={styles.historyDetails}>{item.details}</Text>
             ) : null}
           </View>
-        ))}
+        )))}
       </ScrollView>
     </SafeAreaView>
   );

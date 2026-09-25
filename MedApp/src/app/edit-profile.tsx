@@ -18,9 +18,9 @@ export default function EditProfileScreen() {
   const router = useRouter();
   const { user, updateProfile } = useApp();
 
-  const [name, setName] = useState(user?.name || 'สมชาย ใจดี');
-  const [email, setEmail] = useState(user?.email || 'somchai@gmail.com');
-  const [phone, setPhone] = useState(user?.phone || '081-234-5678');
+  const [name, setName] = useState(user?.name || '');
+  const [email, setEmail] = useState(user?.email || '');
+  const [phone, setPhone] = useState(user?.phone || '');
   const [isSaving, setIsSaving] = useState(false);
 
   const handleSave = async () => {
@@ -53,7 +53,7 @@ export default function EditProfileScreen() {
         <View style={styles.avatarSection}>
           <View style={styles.avatarCircle}>
             <View style={styles.avatarInner}>
-              <Ionicons name="ellipse-outline" size={28} color="#8B95F6" />
+              <Ionicons name="person" size={28} color="#8B95F6" />
             </View>
             <TouchableOpacity
               style={styles.avatarEditBadge}
@@ -72,7 +72,8 @@ export default function EditProfileScreen() {
             style={styles.input}
             value={name}
             onChangeText={setName}
-            placeholder="สมชาย ใจดี"
+            placeholder="ระบุชื่อ-นามสกุล"
+            placeholderTextColor="#94A3B8"
           />
         </View>
 
@@ -82,7 +83,8 @@ export default function EditProfileScreen() {
             style={styles.input}
             value={email}
             onChangeText={setEmail}
-            placeholder="somchai@gmail.com"
+            placeholder="example@email.com"
+            placeholderTextColor="#94A3B8"
             keyboardType="email-address"
             autoCapitalize="none"
           />
@@ -94,7 +96,8 @@ export default function EditProfileScreen() {
             style={styles.input}
             value={phone}
             onChangeText={setPhone}
-            placeholder="081-234-5678"
+            placeholder="08X-XXX-XXXX"
+            placeholderTextColor="#94A3B8"
             keyboardType="phone-pad"
           />
         </View>

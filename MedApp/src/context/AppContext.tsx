@@ -37,52 +37,6 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-const INITIAL_NOTIFICATIONS: AppNotification[] = [
-  {
-    id: 'notif-1',
-    type: 'med_reminder',
-    title: 'ถึงเวลารับประทานยา',
-    message: 'แอสไพริน 100mg — 1 เม็ด หลังอาหาร',
-    time: '14:00 น.',
-    date: 'วันนี้',
-    isActionable: true,
-    medicationName: 'แอสไพริน',
-    dosage: '100mg',
-  },
-  {
-    id: 'notif-2',
-    type: 'food_warning',
-    title: 'แจ้งเตือนล่วงหน้า: อาหาร',
-    message: 'งดส้มและน้ำส้ม 1 ชม. ก่อนรับประทานแอสไพริน',
-    time: '13:00 น.',
-    date: 'วันนี้',
-  },
-  {
-    id: 'notif-3',
-    type: 'appointment',
-    title: 'นัดหมายแพทย์พรุ่งนี้',
-    message: 'นพ. สมศักดิ์ • โรงพยาบาล A - 09:00 น.',
-    time: '13:00 น.',
-    date: 'วันนี้',
-  },
-  {
-    id: 'notif-4',
-    type: 'med_taken',
-    title: 'รับประทานยาสำเร็จ',
-    message: 'เมทฟอร์มิน 500mg - ยืนยัน 20:05 น.',
-    time: '20:05 น.',
-    date: 'เมื่อวาน',
-  },
-  {
-    id: 'notif-5',
-    type: 'low_stock',
-    title: 'ยาใกล้หมด',
-    message: 'แอสไพริน เหลือ 5 เม็ด กรุณาสั่งซื้อเพิ่ม',
-    time: '09:00 น.',
-    date: 'เมื่อวาน',
-  },
-];
-
 export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [medications, setMedications] = useState<Medication[]>([]);
@@ -90,7 +44,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [appointments, setAppointments] = useState<DoctorAppointment[]>([]);
   const [sideEffects, setSideEffects] = useState<SideEffectLog[]>([]);
   const [interactions, setInteractions] = useState<DrugFoodInteraction[]>([]);
-  const [notifications, setNotifications] = useState<AppNotification[]>(INITIAL_NOTIFICATIONS);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(true);
 
@@ -112,6 +66,67 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       setAppointments(apts);
       setSideEffects(se);
       setInteractions(inter);
+
+      // Generate dynamic notifications based on real data
+      const dynamicNotifs: AppNotification[] = [];
+      
+      // 1. Upcoming medication reminder
+      const nextPending = sched.find(s => !s.isTaken && !s.isSkipped);
+      if (nextPending) {
+        dynamicNotifs.push({
+          id: `notif-remind-${nextPending.id}`,
+          type: 'med_reminder',
+          title: 'ถึงเวลารับประทานยา',
+          message: `${nextPending.medicationName} ${nextPending.dosage}${nextPending.unit} — 1 ${nextPending.type} ${nextPending.mealTiming}`,
+          time: nextPending.time,
+          date: 'วันนี้',
+          isActionable: true,
+          medicationName: nextPending.medicationName,
+          dosage: `${nextPending.dosage}${nextPending.unit}`,
+        });
+
+        // Food warning for this upcoming med if any exists
+        const matchingInter = inter.find(
+          i => i.interactionType === 'หลีกเลี่ยง' && 
+          (i.medicationName.includes(nextPending.medicationName) || i.medicationName.includes('ทุกชนิด'))
+        );
+        if (matchingInter) {
+          dynamicNotifs.push({
+            id: `notif-food-${matchingInter.id}`,
+            type: 'food_warning',
+            title: 'แจ้งเตือนล่วงหน้า: อาหาร',
+            message: `งด ${matchingInter.foodName} สำหรับ ${nextPending.medicationName}`,
+            time: nextPending.time,
+            date: 'วันนี้',
+          });
+        }
+      }
+
+      // 2. Upcoming doctor appointments
+      apts.filter(a => a.status === 'confirmed').forEach(a => {
+        dynamicNotifs.push({
+          id: `notif-apt-${a.id}`,
+          type: 'appointment',
+          title: `นัดหมายแพทย์: ${a.date}`,
+          message: `${a.doctorName} • ${a.hospital} - ${a.time}`,
+          time: a.time,
+          date: 'เร็วๆ นี้',
+        });
+      });
+
+      // 3. Low stock warning for real medications
+      meds.filter(m => m.remaining !== undefined && m.lowStockThreshold !== undefined && m.remaining <= m.lowStockThreshold).forEach(m => {
+        dynamicNotifs.push({
+          id: `notif-stock-${m.id}`,
+          type: 'low_stock',
+          title: 'ยาใกล้หมด',
+          message: `${m.name} เหลือ ${m.remaining} เม็ด กรุณาสั่งซื้อเพิ่ม`,
+          time: '09:00 น.',
+          date: 'แจ้งเตือน',
+        });
+      });
+
+      setNotifications(dynamicNotifs);
     } catch (e) {
       console.warn('Error initializing app context data:', e);
     } finally {
@@ -125,14 +140,15 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   const login = async (email: string, pass: string) => {
     setIsAuthenticated(true);
-    if (user) {
-      setUser({ ...user, email });
-    }
+    const profile = await medService.loginUser(email);
+    setUser(profile);
+    await loadAllData();
     return true;
   };
 
   const logout = async () => {
     setIsAuthenticated(false);
+    setUser(null);
   };
 
   const refreshData = async () => {

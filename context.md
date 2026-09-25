@@ -72,6 +72,46 @@
 * `details` (TEXT)
 * `created_at` (TIMESTAMPTZ)
 
+### 6. `appointments` (นัดหมายแพทย์)
+* `id` (UUID, PK)
+* `user_id` (UUID, FK)
+* `doctor_name` (VARCHAR)
+* `department` (VARCHAR)
+* `hospital` (VARCHAR)
+* `appointment_date` (VARCHAR)
+* `appointment_time` (VARCHAR)
+* `details` (TEXT)
+* `status` (VARCHAR) — 'confirmed' / 'pending' / 'passed'
+* `created_at` (TIMESTAMPTZ)
+* `updated_at` (TIMESTAMPTZ)
+
+### 7. `side_effects` (บันทึกผลข้างเคียง)
+* `id` (UUID, PK)
+* `user_id` (UUID, FK)
+* `medication_name` (VARCHAR)
+* `symptoms` (TEXT[])
+* `severity` (VARCHAR) — 'สูง' / 'กลาง' / 'ต่ำ'
+* `log_date` (VARCHAR)
+* `log_time` (VARCHAR)
+* `details` (TEXT)
+* `created_at` (TIMESTAMPTZ)
+
+### 8. `user_schedules` (ตารางยาและประวัติการกินยา)
+* `id` (UUID, PK)
+* `user_id` (UUID, FK)
+* `medication_id` (UUID, FK)
+* `medication_name` (VARCHAR)
+* `dosage` (VARCHAR)
+* `unit` (VARCHAR)
+* `type` (VARCHAR)
+* `meal_timing` (VARCHAR)
+* `time` (VARCHAR)
+* `date` (VARCHAR)
+* `is_taken` (BOOLEAN)
+* `taken_at` (VARCHAR)
+* `is_skipped` (BOOLEAN)
+* `created_at` (TIMESTAMPTZ)
+
 ---
 
 ## ข้อมูลการเชื่อมต่อ Supabase

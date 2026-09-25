@@ -15,7 +15,7 @@ import { useApp } from '@/context/AppContext';
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const { user, updateProfile, logout, medications, appointments } = useApp();
+  const { user, updateProfile, logout, medications, appointments, todaySchedule } = useApp();
 
   const handleToggle = (key: keyof NonNullable<typeof user>) => {
     if (!user) return;
@@ -40,6 +40,10 @@ export default function ProfileScreen() {
 
   const activeMedsCount = medications.filter(m => m.status === 'active').length;
   const upcomingAptsCount = appointments.filter(a => a.status !== 'passed').length;
+  const takenCount = todaySchedule.filter(s => s.isTaken).length;
+  const totalSchedule = todaySchedule.length;
+  const onTimeRate = totalSchedule > 0 ? `${Math.round((takenCount / totalSchedule) * 100)}%` : '-';
+  const consistencyRate = totalSchedule > 0 ? `${Math.round((takenCount / totalSchedule) * 100)}%` : '-';
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -51,11 +55,11 @@ export default function ProfileScreen() {
         <View style={styles.profileHeader}>
           <View style={styles.avatarCircle}>
             <View style={styles.avatarInner}>
-              <Ionicons name="ellipse-outline" size={28} color="#8B95F6" />
+              <Ionicons name="person" size={28} color="#8B95F6" />
             </View>
           </View>
-          <Text style={styles.userName}>{user?.name || 'สมชาย ใจดี'}</Text>
-          <Text style={styles.userEmail}>{user?.email || 'somchai@email.com'}</Text>
+          <Text style={styles.userName}>{user?.name || 'ผู้ใช้งาน'}</Text>
+          <Text style={styles.userEmail}>{user?.email || '-'}</Text>
 
           <TouchableOpacity
             style={styles.editProfileBtn}
@@ -71,25 +75,25 @@ export default function ProfileScreen() {
           <Text style={styles.statsCardTitle}>สถิติการรับประทานยา</Text>
           <View style={styles.statsGrid}>
             <View style={styles.statBox}>
-              <Text style={styles.statValue}>85%</Text>
+              <Text style={styles.statValue}>{onTimeRate}</Text>
               <Text style={styles.statLabel}>ตรงเวลา</Text>
-              <Text style={styles.statSublabel}>สัปดาห์นี้</Text>
+              <Text style={styles.statSublabel}>วันนี้</Text>
             </View>
 
             <View style={styles.statBox}>
-              <Text style={styles.statValue}>92%</Text>
-              <Text style={styles.statLabel}>สม่ำเสมอ</Text>
-              <Text style={styles.statSublabel}>เดือนนี้</Text>
+              <Text style={styles.statValue}>{consistencyRate}</Text>
+              <Text style={styles.statLabel}>สำเร็จ</Text>
+              <Text style={styles.statSublabel}>วันนี้</Text>
             </View>
 
             <View style={styles.statBox}>
-              <Text style={styles.statValue}>{activeMedsCount || 4}</Text>
+              <Text style={styles.statValue}>{activeMedsCount}</Text>
               <Text style={styles.statLabel}>รายการ</Text>
               <Text style={styles.statSublabel}>ยาที่ใช้อยู่</Text>
             </View>
 
             <View style={styles.statBox}>
-              <Text style={styles.statValue}>{upcomingAptsCount || 2}</Text>
+              <Text style={styles.statValue}>{upcomingAptsCount}</Text>
               <Text style={styles.statLabel}>ที่จะมาถึง</Text>
               <Text style={styles.statSublabel}>นัดหมาย</Text>
             </View>
@@ -180,7 +184,7 @@ export default function ProfileScreen() {
         </TouchableOpacity>
 
         {/* Version Footer */}
-        <Text style={styles.footerText}>MedManager v1.0.0 • © 2569</Text>
+        <Text style={styles.footerText}>MedManager v1.0.0 • © {new Date().getFullYear() + 543}</Text>
       </ScrollView>
     </SafeAreaView>
   );

@@ -6,136 +6,21 @@ import {
   ScrollView,
   SafeAreaView,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, Feather } from '@expo/vector-icons';
 import { AppHeader } from '@/components/ui/AppHeader';
 import { PillIcon } from '@/components/ui/PillIcon';
-
-interface HistoryEntry {
-  id: string;
-  name: string;
-  dose: string;
-  mealTiming: string;
-  time: string;
-  type?: string;
-}
-
-interface DateGroup {
-  dateLabel: string;
-  items: HistoryEntry[];
-}
-
-const HISTORY_GROUPS: DateGroup[] = [
-  {
-    dateLabel: 'วันนี้, 12/7/2569',
-    items: [
-      {
-        id: 'h-1',
-        name: 'เมทฟอร์มิน',
-        dose: '500mg • 1 เม็ด',
-        mealTiming: 'หลังอาหาร',
-        time: '07:00 น.',
-        type: 'เม็ด',
-      },
-      {
-        id: 'h-2',
-        name: 'วิตามินซี',
-        dose: '100mg • 2 เม็ด',
-        mealTiming: 'พร้อมอาหาร',
-        time: '12:00 น.',
-        type: 'อาหารเสริม',
-      },
-      {
-        id: 'h-3',
-        name: 'แอสไพริน',
-        dose: '100mg • 1 เม็ด',
-        mealTiming: 'หลังอาหาร',
-        time: '14:00 น.',
-        type: 'เม็ด',
-      },
-    ],
-  },
-  {
-    dateLabel: 'เมื่อวาน, 11/7/2569',
-    items: [
-      {
-        id: 'h-4',
-        name: 'เมทฟอร์มิน',
-        dose: '500mg • 1 เม็ด',
-        mealTiming: 'หลังอาหาร',
-        time: '20:00 น.',
-        type: 'เม็ด',
-      },
-    ],
-  },
-  {
-    dateLabel: '10/7/2569',
-    items: [
-      {
-        id: 'h-5',
-        name: 'เมทฟอร์มิน',
-        dose: '500mg • 1 เม็ด',
-        mealTiming: 'หลังอาหาร',
-        time: '08:00 น.',
-        type: 'เม็ด',
-      },
-      {
-        id: 'h-6',
-        name: 'วิตามินดี',
-        dose: '100mg • 3 เม็ด',
-        mealTiming: 'ก่อนอาหาร',
-        time: '10:00 น.',
-        type: 'อาหารเสริม',
-      },
-      {
-        id: 'h-7',
-        name: 'แอสไพริน',
-        dose: '100mg • 1 เม็ด',
-        mealTiming: 'หลังอาหาร',
-        time: '20:00 น.',
-        type: 'เม็ด',
-      },
-    ],
-  },
-  {
-    dateLabel: '09/7/2569',
-    items: [
-      {
-        id: 'h-8',
-        name: 'แอสไพริน',
-        dose: '100mg • 1 เม็ด',
-        mealTiming: 'หลังอาหาร',
-        time: '08:00 น.',
-        type: 'เม็ด',
-      },
-      {
-        id: 'h-9',
-        name: 'วิตามินดี',
-        dose: '100mg • 3 เม็ด',
-        mealTiming: 'ก่อนอาหาร',
-        time: '10:00 น.',
-        type: 'อาหารเสริม',
-      },
-      {
-        id: 'h-10',
-        name: 'เมทฟอร์มิน',
-        dose: '500mg • 1 เม็ด',
-        mealTiming: 'หลังอาหาร',
-        time: '20:00 น.',
-        type: 'เม็ด',
-      },
-      {
-        id: 'h-11',
-        name: 'วิตามินซี',
-        dose: '1000mg • 1 เม็ด',
-        mealTiming: 'พร้อมอาหาร',
-        time: '13:30 น.',
-        type: 'อาหารเสริม',
-      },
-    ],
-  },
-];
+import { useApp } from '@/context/AppContext';
 
 export default function HistoryScreen() {
+  const { todaySchedule } = useApp();
+
+  // Filter schedules that have been taken
+  const takenToday = todaySchedule.filter(s => s.isTaken);
+
+  const now = new Date();
+  const THAI_MONTHS = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+  const todayLabel = `วันนี้, ${now.getDate()} ${THAI_MONTHS[now.getMonth()]} ${now.getFullYear() + 543}`;
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <AppHeader title="ประวัติการรับประทานยา" />
@@ -143,21 +28,31 @@ export default function HistoryScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {HISTORY_GROUPS.map(group => (
-          <View key={group.dateLabel} style={styles.groupContainer}>
-            <Text style={styles.dateGroupHeader}>{group.dateLabel}</Text>
-            {group.items.map(item => (
+        {takenToday.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <View style={styles.emptyIconCircle}>
+              <Feather name="clock" size={40} color="#8B95F6" />
+            </View>
+            <Text style={styles.emptyTitle}>ยังไม่มีประวัติการรับประทานยา</Text>
+            <Text style={styles.emptySubtitle}>
+              เมื่อคุณกดยืนยันการรับประทานยาในหน้าหลัก หรือหน้าแจ้งเตือน รายการยาที่ทานแล้วจะแสดงในหน้านี้
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.groupContainer}>
+            <Text style={styles.dateGroupHeader}>{todayLabel}</Text>
+            {takenToday.map(item => (
               <View key={item.id} style={styles.historyCard}>
-                <PillIcon type={item.type || item.name} />
+                <PillIcon type={item.medicationName} />
                 <View style={styles.itemInfo}>
-                  <Text style={styles.itemName}>{item.name}</Text>
+                  <Text style={styles.itemName}>{item.medicationName}</Text>
                   <Text style={styles.itemMeta}>
-                    {item.dose} • {item.mealTiming}
+                    {item.dosage} • {item.mealTiming}
                   </Text>
                 </View>
 
                 <View style={styles.timeAndStatus}>
-                  <Text style={styles.itemTime}>{item.time}</Text>
+                  <Text style={styles.itemTime}>{item.time} น.</Text>
                   <View style={styles.checkCircle}>
                     <Ionicons name="checkmark" size={14} color="#FFFFFF" />
                   </View>
@@ -165,7 +60,7 @@ export default function HistoryScreen() {
               </View>
             ))}
           </View>
-        ))}
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -180,6 +75,36 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 16,
     paddingBottom: 40,
+    flexGrow: 1,
+  },
+  emptyContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 80,
+    paddingHorizontal: 20,
+  },
+  emptyIconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#EEF0FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  emptySubtitle: {
+    fontSize: 14,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 20,
   },
   groupContainer: {
     marginBottom: 20,

@@ -20,10 +20,14 @@ export default function MedicationSettingsScreen() {
   const params = useLocalSearchParams();
   const { saveMedication } = useApp();
 
-  const drugName = (params.name as string) || 'แอสไพริน';
+  const now = new Date();
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  const defaultDate = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear() + 543}`;
+
+  const drugName = (params.name as string) || '';
   const drugType = (params.type as any) || 'เม็ด';
-  const drugDose = (params.dosage as string) || '100';
-  const drugUnit = (params.unit as string) || 'mg';
+  const drugDose = (params.dosage as string) || '1';
+  const drugUnit = (params.unit as string) || 'เม็ด';
   const drugNotes = (params.notes as string) || '';
 
   const [frequencyCount, setFrequencyCount] = useState<number>(3);
@@ -31,7 +35,7 @@ export default function MedicationSettingsScreen() {
   const [timesList, setTimesList] = useState<string[]>(['08:00', '14:00', '20:00']);
   const [mealTiming, setMealTiming] = useState<'ก่อนอาหาร' | 'หลังอาหาร' | 'ก่อนนอน'>('หลังอาหาร');
   const [duration, setDuration] = useState<'ต่อเนื่อง' | 'กำหนดวัน' | 'จำนวนวัน'>('ต่อเนื่อง');
-  const [startDate, setStartDate] = useState('12/07/2569');
+  const [startDate, setStartDate] = useState(defaultDate);
   const [endDate, setEndDate] = useState('ไม่จำกัด');
 
   // Stock tracking

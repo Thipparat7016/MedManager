@@ -9,18 +9,38 @@ import {
   Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Ionicons, MaterialCommunityIcons, FontAwesome5, Feather } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons, Feather } from '@expo/vector-icons';
 import { useApp } from '@/context/AppContext';
 import { PillIcon } from '@/components/ui/PillIcon';
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { user, todaySchedule, markTaken, notifications } = useApp();
+  const { user, todaySchedule, markTaken, notifications, interactions, medications } = useApp();
 
   const takenCount = todaySchedule.filter(s => s.isTaken).length;
-  const totalCount = todaySchedule.length || 5;
-  const progressPercent = Math.round((takenCount / totalCount) * 100);
+  const totalCount = todaySchedule.length;
+  const progressPercent = totalCount > 0 ? Math.round((takenCount / totalCount) * 100) : 0;
   const remainingCount = Math.max(0, totalCount - takenCount);
+
+  // Dynamic Thai Date
+  const getThaiDate = () => {
+    const days = ['วันอาทิตย์', 'วันจันทร์', 'วันอังคาร', 'วันพุธ', 'วันพฤหัสบดี', 'วันศุกร์', 'วันเสาร์'];
+    const months = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+    const now = new Date();
+    return `${days[now.getDay()]}ที่ ${now.getDate()} ${months[now.getMonth()]} ${now.getFullYear() + 543}`;
+  };
+
+  // Next pending medication
+  const nextPending = todaySchedule.find(s => !s.isTaken && !s.isSkipped);
+
+  // Matching food warning for next pending drug
+  const matchingWarning = nextPending
+    ? interactions.find(
+        i =>
+          i.interactionType === 'หลีกเลี่ยง' &&
+          (i.medicationName.includes(nextPending.medicationName) || i.medicationName.includes('ทุกชนิด'))
+      )
+    : null;
 
   // Group today's schedule by time
   const timeSlots = Array.from(new Set(todaySchedule.map(s => s.time)));
@@ -34,8 +54,10 @@ export default function HomeScreen() {
         {/* Top Header */}
         <View style={styles.headerRow}>
           <View>
-            <Text style={styles.greetingText}>สวัสดี, {user?.name?.split(' ')[0] || 'สมชาย'}</Text>
-            <Text style={styles.dateText}>วันจันทร์ที่ 12 กรกฎาคม 2569</Text>
+            <Text style={styles.greetingText}>
+              {user?.name ? `สวัสดี, ${user.name.split(' ')[0]}` : 'สวัสดี, ผู้ใช้งาน'}
+            </Text>
+            <Text style={styles.dateText}>{getThaiDate()}</Text>
           </View>
           <TouchableOpacity
             style={styles.bellButton}
@@ -64,39 +86,79 @@ export default function HomeScreen() {
             <View
               style={[
                 styles.progressBarFill,
-                { width: `${Math.min(100, Math.max(10, progressPercent))}%` },
+                { width: `${totalCount > 0 ? Math.min(100, Math.max(5, progressPercent)) : 0}%` },
               ]}
             />
           </View>
           <Text style={styles.progressSubtext}>
-            กิน {takenCount} ครั้ง • เหลืออีก {remainingCount} ครั้ง • {takenCount >= 3 ? 'ทำได้ดี!' : 'อย่าลืมทานยาให้ตรงเวลานะครับ'}
+            {totalCount === 0
+              ? 'ยังไม่มีตารางยาสำหรับวันนี้ เริ่มต้นเพิ่มยาใหม่ได้เลยครับ'
+              : remainingCount === 0
+              ? 'ยอดเยี่ยม! คุณรับประทานยาครบทุกมื้อแล้วสำหรับวันนี้'
+              : `กิน ${takenCount} ครั้ง • เหลืออีก ${remainingCount} ครั้ง • อย่าลืมทานยาให้ตรงเวลานะครับ`}
           </Text>
         </View>
 
-        {/* Card 2: Next Reminder */}
-        <View style={styles.nextReminderCard}>
-          <View style={styles.reminderTopRow}>
-            <View style={styles.reminderLeftCol}>
-              <Text style={styles.reminderTimeTag}>ถัดไปใน 45 นาที</Text>
-              <Text style={styles.reminderTime}>14:00 น.</Text>
-              <Text style={styles.reminderMedName}>แอสไพริน 100mg</Text>
-              <Text style={styles.reminderMedDetail}>หลังอาหาร • 1 เม็ด</Text>
+        {/* Card 2: Next Reminder (Dynamic) */}
+        {nextPending ? (
+          <View style={styles.nextReminderCard}>
+            <View style={styles.reminderTopRow}>
+              <View style={styles.reminderLeftCol}>
+                <Text style={styles.reminderTimeTag}>มื้อถัดไป</Text>
+                <Text style={styles.reminderTime}>{nextPending.time}</Text>
+                <Text style={styles.reminderMedName}>{nextPending.medicationName} {nextPending.dosage}{nextPending.unit}</Text>
+                <Text style={styles.reminderMedDetail}>{nextPending.mealTiming} • 1 {nextPending.type}</Text>
+              </View>
+              {matchingWarning && (
+                <View style={styles.reminderWarningBox}>
+                  <Text style={styles.warningTitle}>▲ หลีกเลี่ยง</Text>
+                  <Text style={styles.warningBullet} numberOfLines={2}>• {matchingWarning.foodName}</Text>
+                  {matchingWarning.hoursNote && (
+                    <Text style={styles.warningBullet}>• {matchingWarning.hoursNote}</Text>
+                  )}
+                </View>
+              )}
             </View>
-            <View style={styles.reminderWarningBox}>
-              <Text style={styles.warningTitle}>▲ หลีกเลี่ยง</Text>
-              <Text style={styles.warningBullet}>• น้ำผลไม้ส้ม</Text>
-              <Text style={styles.warningBullet}>• แอลกอฮอล์</Text>
-            </View>
-          </View>
 
-          <TouchableOpacity
-            style={styles.confirmActionButton}
-            onPress={() => router.push('/confirm-intake')}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.confirmActionText}>กดเพื่อยืนยันการรับประทาน →</Text>
-          </TouchableOpacity>
-        </View>
+            <TouchableOpacity
+              style={styles.confirmActionButton}
+              onPress={() =>
+                router.push({
+                  pathname: '/confirm-intake',
+                  params: {
+                    id: nextPending.id,
+                    name: nextPending.medicationName,
+                    dosage: nextPending.dosage,
+                    unit: nextPending.unit,
+                    mealTiming: nextPending.mealTiming,
+                    time: nextPending.time,
+                  },
+                })
+              }
+              activeOpacity={0.8}
+            >
+              <Text style={styles.confirmActionText}>กดเพื่อยืนยันการรับประทาน →</Text>
+            </TouchableOpacity>
+          </View>
+        ) : totalCount > 0 && remainingCount === 0 ? (
+          <View style={styles.emptyReminderCard}>
+            <Ionicons name="checkmark-circle" size={32} color="#10B981" style={{ marginBottom: 6 }} />
+            <Text style={styles.emptyReminderTitle}>รับประทานยาครบแล้วสำหรับวันนี้</Text>
+            <Text style={styles.emptyReminderSub}>ระบบจะเริ่มแจ้งเตือนตารางยาของวันพรุ่งนี้</Text>
+          </View>
+        ) : (
+          <View style={styles.emptyReminderCard}>
+            <MaterialCommunityIcons name="pill" size={32} color="#8B95F6" style={{ marginBottom: 6 }} />
+            <Text style={styles.emptyReminderTitle}>ยังไม่มีการแจ้งเตือนกินยาถัดไป</Text>
+            <Text style={styles.emptyReminderSub}>คุณสามารถกดเพิ่มยาใหม่เพื่อเริ่มสร้างตารางแจ้งเตือน</Text>
+            <TouchableOpacity
+              style={styles.emptyAddButton}
+              onPress={() => router.push('/add-medication')}
+            >
+              <Text style={styles.emptyAddButtonText}>+ เพิ่มยาใหม่</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Section: Quick Shortcuts */}
         <Text style={styles.sectionTitle}>ทางลัด</Text>
@@ -145,42 +207,56 @@ export default function HomeScreen() {
         {/* Section: Today's Schedule */}
         <View style={styles.scheduleHeaderRow}>
           <Text style={styles.sectionTitle}>ตารางยาวันนี้</Text>
-          <TouchableOpacity onPress={() => router.push('/schedule')}>
-            <Text style={styles.seeAllText}>ดูทั้งหมด</Text>
-          </TouchableOpacity>
+          {totalCount > 0 && (
+            <TouchableOpacity onPress={() => router.push('/schedule')}>
+              <Text style={styles.seeAllText}>ดูทั้งหมด</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
-        {timeSlots.map(time => {
-          const itemsAtTime = todaySchedule.filter(s => s.time === time);
-          return (
-            <View key={time} style={styles.timeSlotGroup}>
-              <Text style={styles.timeSlotLabel}>{time}</Text>
-              {itemsAtTime.map(item => (
-                <View key={item.id} style={styles.scheduleCard}>
-                  <PillIcon type={item.type || item.medicationName} />
-                  <View style={styles.medInfoCol}>
-                    <Text style={styles.medNameText}>{item.medicationName}</Text>
-                    <Text style={styles.medDoseText}>
-                      {item.dosage}{item.unit} • 1 {item.type} • {item.mealTiming}
-                    </Text>
+        {totalCount === 0 ? (
+          <View style={styles.emptyScheduleBox}>
+            <Text style={styles.emptyScheduleText}>ยังไม่มีรายการยาในตารางวันนี้</Text>
+            <TouchableOpacity
+              style={styles.emptyScheduleAddBtn}
+              onPress={() => router.push('/add-medication')}
+            >
+              <Text style={styles.emptyScheduleAddText}>+ เพิ่มยาและสร้างตาราง</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          timeSlots.map(time => {
+            const itemsAtTime = todaySchedule.filter(s => s.time === time);
+            return (
+              <View key={time} style={styles.timeSlotGroup}>
+                <Text style={styles.timeSlotLabel}>{time}</Text>
+                {itemsAtTime.map(item => (
+                  <View key={item.id} style={styles.scheduleCard}>
+                    <PillIcon type={item.type || item.medicationName} />
+                    <View style={styles.medInfoCol}>
+                      <Text style={styles.medNameText}>{item.medicationName}</Text>
+                      <Text style={styles.medDoseText}>
+                        {item.dosage}{item.unit} • 1 {item.type} • {item.mealTiming}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      style={[
+                        styles.checkCircle,
+                        item.isTaken && styles.checkCircleActive,
+                      ]}
+                      onPress={() => markTaken(item.id, !item.isTaken)}
+                      activeOpacity={0.7}
+                    >
+                      {item.isTaken && (
+                        <Ionicons name="checkmark" size={16} color="#FFFFFF" />
+                      )}
+                    </TouchableOpacity>
                   </View>
-                  <TouchableOpacity
-                    style={[
-                      styles.checkCircle,
-                      item.isTaken && styles.checkCircleActive,
-                    ]}
-                    onPress={() => markTaken(item.id, !item.isTaken)}
-                    activeOpacity={0.7}
-                  >
-                    {item.isTaken && (
-                      <Ionicons name="checkmark" size={16} color="#FFFFFF" />
-                    )}
-                  </TouchableOpacity>
-                </View>
-              ))}
-            </View>
-          );
-        })}
+                ))}
+              </View>
+            );
+          })
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -328,6 +404,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E2E8F0',
     minWidth: 120,
+    maxWidth: 160,
   },
   warningTitle: {
     fontSize: 12,
@@ -351,6 +428,40 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '700',
+  },
+  emptyReminderCard: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    padding: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 24,
+  },
+  emptyReminderTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1E293B',
+    marginBottom: 4,
+  },
+  emptyReminderSub: {
+    fontSize: 13,
+    color: '#64748B',
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  emptyAddButton: {
+    backgroundColor: '#EEF0FF',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 12,
+    marginTop: 4,
+  },
+  emptyAddButtonText: {
+    color: '#6366F1',
+    fontWeight: '700',
+    fontSize: 13,
   },
   sectionTitle: {
     fontSize: 17,
@@ -388,6 +499,33 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: '#94A3B8',
+  },
+  emptyScheduleBox: {
+    backgroundColor: '#FAFAFC',
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    padding: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyScheduleText: {
+    fontSize: 14,
+    color: '#64748B',
+    marginBottom: 12,
+  },
+  emptyScheduleAddBtn: {
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  emptyScheduleAddText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#16A34A',
   },
   timeSlotGroup: {
     marginBottom: 18,

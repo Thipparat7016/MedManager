@@ -14,12 +14,13 @@ export default function SavedSuccessScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
 
-  const drugName = (params.name as string) || 'แอสไพริน';
-  const drugDose = (params.dosage as string) || '100';
-  const drugUnit = (params.unit as string) || 'mg';
-  const timesStr = (params.times as string) || '08:00 • 14:00 • 20:00 น.';
-  const remainingStr = (params.remaining as string) || '30';
-  const lowStockStr = (params.lowStock as string) || '7';
+  const drugName = (params.name as string) || 'ยาใหม่';
+  const drugDose = (params.dosage as string) || '';
+  const drugUnit = (params.unit as string) || '';
+  const timesStr = (params.times as string) || 'ตามที่กำหนด';
+  const remainingStr = (params.remaining as string) || '0';
+  const lowStockStr = (params.lowStock as string) || '0';
+  const startDateStr = (params.startDate as string) || 'วันนี้';
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -42,9 +43,9 @@ export default function SavedSuccessScreen() {
         <View style={styles.summaryCard}>
           <Text style={styles.summaryTitle}>สรุปที่บันทึก</Text>
 
-          <Text style={styles.summaryMedName}>{drugName} {drugDose}{drugUnit} • เม็ด</Text>
+          <Text style={styles.summaryMedName}>{drugName} {drugDose}{drugUnit}</Text>
           <Text style={styles.summaryItem}>{timesStr}</Text>
-          <Text style={styles.summaryItem}>ทุกวัน • เริ่ม 12 ก.ค. 2569</Text>
+          <Text style={styles.summaryItem}>ทุกวัน • เริ่ม {startDateStr}</Text>
           <Text style={styles.summaryItem}>แจ้งเตือนก่อน 30 นาที</Text>
           <Text style={styles.summaryItem}>แจ้งเตือนอาหารที่ต้องหลีกเลี่ยง</Text>
           <Text style={styles.summaryItem}>

@@ -37,9 +37,9 @@ export default function RegisterScreen() {
 
     setIsLoading(true);
     await updateProfile({
-      name,
-      email,
-      phone,
+      name: name.trim(),
+      email: email.trim().toLowerCase(),
+      phone: phone.trim(),
     });
     setIsLoading(false);
     Alert.alert('สำเร็จ', 'สมัครสมาชิกเรียบร้อยแล้ว', [

@@ -18,24 +18,24 @@ import { useApp } from '@/context/AppContext';
 export default function LoginScreen() {
   const router = useRouter();
   const { login } = useApp();
-  const [email, setEmail] = useState('somchai@gmail.com');
-  const [password, setPassword] = useState('••••••••');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
   const handleLogin = async () => {
-    if (!email) {
-      Alert.alert('กรุณากรอกข้อมูล', 'กรุณากรอกอีเมล');
+    if (!email.trim() || !password.trim()) {
+      Alert.alert('กรุณากรอกข้อมูล', 'กรุณากรอกอีเมลและรหัสผ่าน');
       return;
     }
     setIsLoading(true);
-    await login(email, password);
+    await login(email.trim(), password);
     setIsLoading(false);
     router.replace('/(tabs)' as any);
   };
 
   const handleGoogleLogin = async () => {
     setIsLoading(true);
-    await login('somchai@gmail.com', 'password123');
+    await login('user@gmail.com', 'google_oauth');
     setIsLoading(false);
     router.replace('/(tabs)' as any);
   };

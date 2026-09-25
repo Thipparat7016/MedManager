@@ -23,12 +23,12 @@ export default function EditMedicationScreen() {
   const medId = params.id as string;
   const existingMed = medications.find(m => m.id === medId) || medications[0];
 
-  const [name, setName] = useState(existingMed?.name || 'แอสไพริน');
+  const [name, setName] = useState(existingMed?.name || '');
   const [type, setType] = useState(existingMed?.type || 'เม็ด');
-  const [dosage, setDosage] = useState(existingMed?.dosage || '100');
+  const [dosage, setDosage] = useState(existingMed?.dosage || '');
   const [unit, setUnit] = useState(existingMed?.unit || 'mg');
-  const [frequency, setFrequency] = useState(existingMed?.frequency?.toString() || '3');
-  const [remaining, setRemaining] = useState(existingMed?.remaining?.toString() || '5');
+  const [frequency, setFrequency] = useState(existingMed?.frequency?.toString() || '1');
+  const [remaining, setRemaining] = useState(existingMed?.remaining?.toString() || '0');
   const [showUnitPicker, setShowUnitPicker] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 

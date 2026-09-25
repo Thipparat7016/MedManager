@@ -134,78 +134,100 @@ export default function MedicationsScreen() {
 
         {/* Section: Active */}
         <Text style={styles.sectionTitle}>กำลังใช้งาน</Text>
-        {filteredActive.map(item => {
-          const isLowStock =
-            item.remaining !== undefined &&
-            item.lowStockThreshold !== undefined &&
-            item.remaining <= item.lowStockThreshold;
-
-          return (
-            <View key={item.id} style={styles.medCard}>
-              <View style={styles.medCardTop}>
-                <PillIcon type={item.type || item.name} />
-                <View style={styles.medCardDetails}>
-                  <View style={styles.nameRow}>
-                    <Text style={styles.medCardName}>{item.name}</Text>
-                    {isLowStock && <StatusBadge label="ใกล้หมด" variant="low_stock" size="sm" />}
-                  </View>
-                  <Text style={styles.medCardMeta}>
-                    {item.dosage}{item.unit} • {item.type} • {item.frequency} ครั้ง/วัน
-                  </Text>
-                  <Text style={styles.medCardStock}>คงเหลือ: {item.remaining} เม็ด</Text>
-                </View>
-              </View>
-
-              {/* Action Buttons Row */}
-              <View style={styles.cardActionsRow}>
-                <TouchableOpacity
-                  style={styles.actionBtnEdit}
-                  onPress={() =>
-                    router.push({
-                      pathname: '/edit-medication',
-                      params: { id: item.id },
-                    })
-                  }
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.actionBtnEditText}>แก้ไข</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.actionBtnSchedule}
-                  onPress={() => router.push('/schedule')}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.actionBtnScheduleText}>ตาราง</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.actionBtnDelete}
-                  onPress={() => handleDelete(item.id, item.name)}
-                  activeOpacity={0.7}
-                >
-                  <Feather name="x" size={16} color="#EF4444" />
-                </TouchableOpacity>
-              </View>
+        {/* Empty State */}
+        {medications.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <View style={styles.emptyIconCircle}>
+              <Feather name="plus-circle" size={40} color="#8B95F6" />
             </View>
-          );
-        })}
-
-        {/* Section: Inactive */}
-        {filteredInactive.length > 0 && (
+            <Text style={styles.emptyTitle}>ยังไม่มีรายการยาในระบบ</Text>
+            <Text style={styles.emptySubtitle}>
+              กดปุ่ม "+ เพิ่มยา" เพื่อบันทึกยาประจำตัวของคุณ หรือเพิ่มข้อมูลผ่านระบบหลังบ้าน AdminMed
+            </Text>
+            <TouchableOpacity
+              style={styles.emptyAddBtn}
+              onPress={() => router.push('/add-medication')}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.emptyAddBtnText}>+ เพิ่มยาตัวแรก</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
           <>
-            <Text style={[styles.sectionTitle, { marginTop: 24 }]}>หยุดใช้งาน</Text>
-            {filteredInactive.map(item => (
-              <View key={item.id} style={styles.inactiveCard}>
-                <PillIcon type={item.name} disabled />
-                <View style={styles.inactiveDetails}>
-                  <Text style={styles.inactiveName}>{item.name}</Text>
-                  <Text style={styles.inactiveMeta}>
-                    {item.dosage}{item.unit} • {item.type} • หยุด {item.endDate || '01/06/2569'}
-                  </Text>
+            {filteredActive.map(item => {
+              const isLowStock =
+                item.remaining !== undefined &&
+                item.lowStockThreshold !== undefined &&
+                item.remaining <= item.lowStockThreshold;
+
+              return (
+                <View key={item.id} style={styles.medCard}>
+                  <View style={styles.medCardTop}>
+                    <PillIcon type={item.type || item.name} />
+                    <View style={styles.medCardDetails}>
+                      <View style={styles.nameRow}>
+                        <Text style={styles.medCardName}>{item.name}</Text>
+                        {isLowStock && <StatusBadge label="ใกล้หมด" variant="low_stock" size="sm" />}
+                      </View>
+                      <Text style={styles.medCardMeta}>
+                        {item.dosage}{item.unit} • {item.type} • {item.frequency} ครั้ง/วัน
+                      </Text>
+                      <Text style={styles.medCardStock}>คงเหลือ: {item.remaining} เม็ด</Text>
+                    </View>
+                  </View>
+
+                  {/* Action Buttons Row */}
+                  <View style={styles.cardActionsRow}>
+                    <TouchableOpacity
+                      style={styles.actionBtnEdit}
+                      onPress={() =>
+                        router.push({
+                          pathname: '/edit-medication',
+                          params: { id: item.id },
+                        })
+                      }
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.actionBtnEditText}>แก้ไข</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={styles.actionBtnSchedule}
+                      onPress={() => router.push('/schedule')}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.actionBtnScheduleText}>ตาราง</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={styles.actionBtnDelete}
+                      onPress={() => handleDelete(item.id, item.name)}
+                      activeOpacity={0.7}
+                    >
+                      <Feather name="x" size={16} color="#EF4444" />
+                    </TouchableOpacity>
+                  </View>
                 </View>
-              </View>
-            ))}
+              );
+            })}
+
+            {/* Section: Inactive */}
+            {filteredInactive.length > 0 && (
+              <>
+                <Text style={[styles.sectionTitle, { marginTop: 24 }]}>หยุดใช้งาน</Text>
+                {filteredInactive.map(item => (
+                  <View key={item.id} style={styles.inactiveCard}>
+                    <PillIcon type={item.name} disabled />
+                    <View style={styles.inactiveDetails}>
+                      <Text style={styles.inactiveName}>{item.name}</Text>
+                      <Text style={styles.inactiveMeta}>
+                        {item.dosage}{item.unit} • {item.type}{item.endDate ? ` • หยุด ${item.endDate}` : ''}
+                      </Text>
+                    </View>
+                  </View>
+                ))}
+              </>
+            )}
           </>
         )}
       </ScrollView>
@@ -408,5 +430,45 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#94A3B8',
     marginTop: 2,
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+    paddingHorizontal: 20,
+  },
+  emptyIconCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: '#EEF0FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  emptyTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginBottom: 6,
+    textAlign: 'center',
+  },
+  emptySubtitle: {
+    fontSize: 13,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 20,
+  },
+  emptyAddBtn: {
+    backgroundColor: '#8B95F6',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  emptyAddBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 13,
   },
 });

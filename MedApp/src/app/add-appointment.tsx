@@ -17,11 +17,15 @@ export default function AddAppointmentScreen() {
   const router = useRouter();
   const { addAppointment } = useApp();
 
+  const now = new Date();
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  const defaultDate = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear() + 543}`;
+
   const [doctorName, setDoctorName] = useState('');
   const [department, setDepartment] = useState('');
   const [hospital, setHospital] = useState('');
-  const [date, setDate] = useState('12/07/2569');
-  const [time, setTime] = useState('14:00 น.');
+  const [date, setDate] = useState(defaultDate);
+  const [time, setTime] = useState('09:00 น.');
   const [details, setDetails] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -34,10 +38,10 @@ export default function AddAppointmentScreen() {
     setIsSubmitting(true);
     await addAppointment({
       doctorName,
-      department: department || 'อายุรกรรมทั่วไป',
-      hospital: hospital || 'โรงพยาบาล A',
-      date: date || '2026-07-13',
-      time: time || '14:00 น.',
+      department: department.trim() || 'ตรวจสุขภาพ',
+      hospital: hospital.trim() || 'โรงพยาบาล',
+      date: date.trim() || defaultDate,
+      time: time.trim() || '09:00 น.',
       details,
       status: 'confirmed',
     });
@@ -98,7 +102,7 @@ export default function AddAppointmentScreen() {
             <Text style={styles.inputLabel}>วันที่นัดหมาย</Text>
             <TextInput
               style={styles.input}
-              placeholder="12/07/2569"
+              placeholder="วว/ดด/ปปปป"
               placeholderTextColor="#94A3B8"
               value={date}
               onChangeText={setDate}
