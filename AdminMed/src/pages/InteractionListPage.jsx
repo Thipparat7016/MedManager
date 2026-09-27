@@ -32,8 +32,14 @@ export default function InteractionListPage() {
   const loadData = async () => {
     setLoading(true)
     const list = await dataService.getInteractions()
-    setInteractions(list)
-    setFilteredList(list)
+    const sortedList = [...list].sort((a, b) => {
+      const timeA = new Date(a.created_at || 0).getTime()
+      const timeB = new Date(b.created_at || 0).getTime()
+      if (timeA !== timeB) return timeA - timeB
+      return String(a.id || '').localeCompare(String(b.id || ''))
+    })
+    setInteractions(sortedList)
+    setFilteredList(sortedList)
     setLoading(false)
   }
 
@@ -287,7 +293,7 @@ export default function InteractionListPage() {
                   </td>
                 </tr>
               ) : (
-                paginatedData.map((item) => (
+                paginatedData.map((item, index) => (
                   <tr key={item.id}>
                     <td style={{ textAlign: 'center' }}>
                       <input 
@@ -296,7 +302,9 @@ export default function InteractionListPage() {
                         onChange={() => toggleSelectOne(item.id)}
                       />
                     </td>
-                    <td style={{ color: 'var(--color-neutral-500)', textAlign: 'center' }}>{item.code || '001'}</td>
+                    <td style={{ color: 'var(--color-neutral-500)', textAlign: 'center' }}>
+                      {String((currentPage - 1) * pageSize + index + 1).padStart(3, '0')}
+                    </td>
                     <td style={{ fontWeight: 600, color: 'var(--color-neutral-800)' }}>
                       {item.medication_name}
                     </td>

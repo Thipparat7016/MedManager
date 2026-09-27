@@ -31,8 +31,17 @@ export default function MedicationListPage() {
   const loadMedications = async () => {
     setLoading(true)
     const list = await dataService.getMedications()
-    setMedications(list)
-    setFilteredMedications(list)
+
+    // เรียงตามเวลาที่สร้าง จากเก่าไปใหม่ (ข้อมูลที่เพิ่มทีหลังจะไปต่อท้ายเสมอ ไม่มาแทรกตรงกลาง)
+    const sortedList = [...list].sort((a, b) => {
+      const timeA = new Date(a.created_at || 0).getTime()
+      const timeB = new Date(b.created_at || 0).getTime()
+      if (timeA !== timeB) return timeA - timeB
+      return String(a.id || '').localeCompare(String(b.id || ''))
+    })
+
+    setMedications(sortedList)
+    setFilteredMedications(sortedList)
     setLoading(false)
   }
 
@@ -41,14 +50,14 @@ export default function MedicationListPage() {
     let res = [...medications]
     if (search.trim()) {
       const q = search.toLowerCase()
-      res = res.filter(m => 
+      res = res.filter(m =>
         (m.name_th && m.name_th.toLowerCase().includes(q)) ||
         (m.name_en && m.name_en.toLowerCase().includes(q)) ||
         (m.code && m.code.toLowerCase().includes(q))
       )
     }
     if (typeFilter !== 'ทั้งหมด') {
-      res = res.filter(m => m.type === typeFilter)
+      res = res.filter(m => m.type === typeFilter || (typeFilter === 'เม็ด' && m.type === 'ยาเม็ด') || (typeFilter === 'ยาเม็ด' && m.type === 'เม็ด'))
     }
     if (categoryFilter !== 'ทั้งหมด') {
       res = res.filter(m => m.category === categoryFilter)
@@ -66,7 +75,7 @@ export default function MedicationListPage() {
   }
 
   const toggleSelectOne = (id) => {
-    setSelectedIds(prev => 
+    setSelectedIds(prev =>
       prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
     )
   }
@@ -108,15 +117,14 @@ export default function MedicationListPage() {
 
       {/* Filter Card */}
       <div className="card">
-        <div className="card-title" style={{ fontSize: '14.5px', marginBottom: '14px' }}>ค้นหาและกรองข้อมูล</div>
         <form onSubmit={handleSearch}>
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1.2fr 1.2fr auto', gap: '14px', alignItems: 'flex-end' }}>
             <div>
               <label className="form-label">ค้นหา</label>
               <div style={{ position: 'relative' }}>
-                <input 
-                  type="text" 
-                  className="form-input" 
+                <input
+                  type="text"
+                  className="form-input"
                   placeholder="ชื่อยา,อาหารเสริม"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
@@ -128,23 +136,21 @@ export default function MedicationListPage() {
 
             <div>
               <label className="form-label">ประเภทยา</label>
-              <select 
+              <select
                 className="form-select"
                 value={typeFilter}
                 onChange={(e) => setTypeFilter(e.target.value)}
               >
                 <option value="ทั้งหมด">ทั้งหมด</option>
-                <option value="เม็ด">เม็ด</option>
+                <option value="เม็ด">ยาเม็ด</option>
                 <option value="แคปซูล">แคปซูล</option>
                 <option value="ยาน้ำ">ยาน้ำ</option>
-                <option value="ผง">ผง</option>
-                <option value="ฉีด">ฉีด</option>
               </select>
             </div>
 
             <div>
               <label className="form-label">หมวดหมู่</label>
-              <select 
+              <select
                 className="form-select"
                 value={categoryFilter}
                 onChange={(e) => setCategoryFilter(e.target.value)}
@@ -171,7 +177,7 @@ export default function MedicationListPage() {
             ยาทั้งหมด ({totalItems} รายการ)
           </div>
           {selectedIds.length > 0 && (
-            <button 
+            <button
               onClick={handleDeleteSelected}
               style={{
                 background: 'none',
@@ -193,17 +199,17 @@ export default function MedicationListPage() {
             <thead>
               <tr>
                 <th style={{ width: '48px', textAlign: 'center' }}>
-                  <input 
-                    type="checkbox" 
+                  <input
+                    type="checkbox"
                     onChange={toggleSelectAll}
                     checked={paginatedData.length > 0 && paginatedData.every(m => selectedIds.includes(m.id))}
                   />
                 </th>
-                <th style={{ width: '80px', textAlign: 'center' }}>#</th>
+                <th style={{ width: '80px', textAlign: 'center' }}>ID</th>
                 <th style={{ width: '32%' }}>ชื่อยา (TH/EN)</th>
-                <th style={{ width: '15%' }}>ประเภท</th>
-                <th style={{ width: '15%' }}>ขนาด</th>
-                <th style={{ width: '15%' }}>หมวดหมู่</th>
+                <th style={{ width: '15%', textAlign: 'center' }}>ประเภท</th>
+                <th style={{ width: '15%', textAlign: 'center'   }}>ขนาด</th>
+                <th style={{ width: '15%', textAlign: 'center' }}>หมวดหมู่</th>
                 <th style={{ width: '190px', textAlign: 'center' }}>จัดการ</th>
               </tr>
             </thead>
@@ -215,44 +221,46 @@ export default function MedicationListPage() {
                   </td>
                 </tr>
               ) : (
-                paginatedData.map((item) => (
+                paginatedData.map((item, index) => (
                   <tr key={item.id}>
                     <td style={{ textAlign: 'center' }}>
-                      <input 
-                        type="checkbox" 
+                      <input
+                        type="checkbox"
                         checked={selectedIds.includes(item.id)}
                         onChange={() => toggleSelectOne(item.id)}
                       />
                     </td>
-                    <td style={{ color: 'var(--color-neutral-500)', textAlign: 'center' }}>{item.code || '001'}</td>
-                    <td style={{ fontWeight: 600, color: 'var(--color-neutral-800)' }}>
+                    <td style={{ color: 'var(--color-neutral-500)', textAlign: 'center' }}>
+                      {String((currentPage - 1) * pageSize + index + 1).padStart(3, '0')}
+                    </td>
+                    <td>
                       {item.name_th} {item.name_en ? `/ ${item.name_en}` : ''}
                     </td>
-                    <td>{item.type}</td>
-                    <td>{item.dosage} {item.unit}</td>
-                    <td>
+                    <td style={{ textAlign: 'center' }}>{item.type}</td>
+                    <td style={{ textAlign: 'center' }}>{item.dosage} {item.unit}</td>
+                    <td style={{ textAlign: 'center' }}>
                       <span className={item.category === 'ยา' ? 'pill-chip-purple' : 'pill-chip-amber'}>
                         {item.category}
                       </span>
                     </td>
                     <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                       <div style={{ display: 'inline-flex', gap: '6px' }}>
-                        <button 
-                          className="btn btn-secondary" 
+                        <button
+                          className="btn btn-secondary"
                           style={{ padding: '4px 10px', fontSize: '12.5px', minHeight: '32px', height: '32px' }}
                           onClick={() => navigate(`/medications/edit/${item.id}`)}
                         >
                           แก้ไข
                         </button>
-                        <button 
-                          className="btn btn-secondary" 
+                        <button
+                          className="btn btn-secondary"
                           style={{ padding: '4px 10px', fontSize: '12.5px', minHeight: '32px', height: '32px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                           onClick={() => setViewMed(item)}
                         >
                           <Eye size={13} /> ดู
                         </button>
-                        <button 
-                          className="btn btn-danger-outline" 
+                        <button
+                          className="btn btn-danger-outline"
                           style={{ padding: '4px 10px', fontSize: '12.5px', minHeight: '32px', height: '32px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                           onClick={() => handleDeleteOne(item.id, item.name_th)}
                         >
@@ -273,21 +281,21 @@ export default function MedicationListPage() {
             แสดง {totalItems > 0 ? (currentPage - 1) * pageSize + 1 : 0}-{Math.min(currentPage * pageSize, totalItems)} จาก {totalItems} รายการ
           </div>
           <div className="pagination">
-            <button 
-              className="page-btn" 
+            <button
+              className="page-btn"
               disabled={currentPage === 1}
               onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
             >
               &lt;
             </button>
-            <button 
+            <button
               className={`page-btn ${currentPage === 1 ? 'active' : ''}`}
               onClick={() => setCurrentPage(1)}
             >
               1
             </button>
             {totalPages >= 2 && (
-              <button 
+              <button
                 className={`page-btn ${currentPage === 2 ? 'active' : ''}`}
                 onClick={() => setCurrentPage(2)}
               >
@@ -295,7 +303,7 @@ export default function MedicationListPage() {
               </button>
             )}
             {totalPages >= 3 && (
-              <button 
+              <button
                 className={`page-btn ${currentPage === 3 ? 'active' : ''}`}
                 onClick={() => setCurrentPage(3)}
               >
@@ -305,8 +313,8 @@ export default function MedicationListPage() {
             {totalPages > 3 && (
               <span style={{ padding: '0 4px', color: 'var(--color-neutral-400)' }}>...</span>
             )}
-            <button 
-              className="page-btn" 
+            <button
+              className="page-btn"
               disabled={currentPage === totalPages}
               onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
             >
@@ -322,14 +330,14 @@ export default function MedicationListPage() {
           <div className="modal-content" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <div className="modal-title">รายละเอียดข้อมูลยา: {viewMed.name_th} ({viewMed.name_en})</div>
-              <button 
+              <button
                 onClick={() => setViewMed(null)}
                 style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-neutral-400)' }}
               >
                 <X size={20} />
               </button>
             </div>
-            
+
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', fontSize: '14px', marginTop: '14px' }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div><strong>รหัสยา:</strong> {viewMed.code}</div>
@@ -352,13 +360,13 @@ export default function MedicationListPage() {
             </div>
 
             <div style={{ marginTop: '24px', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-              <button 
+              <button
                 className="btn btn-secondary"
                 onClick={() => setViewMed(null)}
               >
                 ปิด
               </button>
-              <button 
+              <button
                 className="btn btn-primary"
                 onClick={() => {
                   const id = viewMed.id

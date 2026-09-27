@@ -23,21 +23,7 @@ export default function Topbar({ adminProfile }) {
       <div className="topbar-welcome">
         {getThaiDate()}
       </div>
-
-      <div className="topbar-actions">
-        <button className="topbar-avatar-btn" title="โปรไฟล์" style={{ overflow: 'hidden', padding: 0 }}>
-          {adminProfile?.avatar_url ? (
-            <img 
-              src={adminProfile.avatar_url} 
-              alt="Admin Avatar" 
-              style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'var(--radius-circle)' }} 
-            />
-          ) : (
-            adminProfile?.first_name?.[0] || 'A'
-          )}
-        </button>
-      </div>
-
+      
     </header>
   )
 }

@@ -91,7 +91,7 @@ export default function InteractionFormPage() {
   }
 
   return (
-    <div>
+    <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
       {/* Header */}
       <div className="page-header">
         <h1 className="page-title">เพิ่ม / แก้ไข ปฏิสัมพันธ์ยา-อาหาร</h1>

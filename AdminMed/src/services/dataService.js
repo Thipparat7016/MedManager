@@ -105,7 +105,7 @@ export const dataService = {
   async getMedications(filters = {}) {
     if (!supabase) return []
     try {
-      let query = supabase.from('medications').select('*').order('created_at', { ascending: false })
+      let query = supabase.from('medications').select('*').order('created_at', { ascending: true })
       if (filters.search) {
         query = query.or(`name_th.ilike.%${filters.search}%,name_en.ilike.%${filters.search}%,code.ilike.%${filters.search}%`)
       }
@@ -169,7 +169,7 @@ export const dataService = {
       return res?.[0]
     }
 
-    // Insert new medication: calculate next code
+    // Insert new medication: calculate next code (increments forward so new items append to the end)
     const { data: existing } = await supabase.from('medications').select('code').order('code', { ascending: false }).limit(1)
     let nextCode = '001'
     if (existing && existing.length > 0 && existing[0].code) {
@@ -227,7 +227,7 @@ export const dataService = {
   async getInteractions(filters = {}) {
     if (!supabase) return []
     try {
-      let query = supabase.from('drug_food_interactions').select('*').order('created_at', { ascending: false })
+      let query = supabase.from('drug_food_interactions').select('*').order('created_at', { ascending: true })
       if (filters.search) {
         query = query.or(`medication_name.ilike.%${filters.search}%,food_name.ilike.%${filters.search}%`)
       }
@@ -294,7 +294,7 @@ export const dataService = {
       return res?.[0]
     }
 
-    // Insert new interaction: calculate next code
+    // Insert new interaction: calculate next code (increments forward so new items append to the end)
     const { data: existing } = await supabase.from('drug_food_interactions').select('code').order('code', { ascending: false }).limit(1)
     let nextCode = '001'
     if (existing && existing.length > 0 && existing[0].code) {
