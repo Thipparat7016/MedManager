@@ -243,28 +243,70 @@ export default function MedicationListPage() {
                         {item.category}
                       </span>
                     </td>
-                    <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                      <div style={{ display: 'inline-flex', gap: '6px' }}>
+                    <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
+                      <div style={{ display: 'inline-flex', gap: '8px', alignItems: 'center', justifyContent: 'center' }}>
                         <button
-                          className="btn btn-secondary"
-                          style={{ padding: '4px 10px', fontSize: '12.5px', minHeight: '32px', height: '32px' }}
+                          type="button"
+                          title="แก้ไข"
                           onClick={() => navigate(`/medications/edit/${item.id}`)}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            cursor: 'pointer',
+                            padding: '6px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: '#B87108',
+                            borderRadius: '6px',
+                            transition: 'opacity 0.15s, background-color 0.15s'
+                          }}
+                          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(184, 113, 8, 0.1)'}
+                          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                         >
-                          แก้ไข
+                          <Edit size={18} />
                         </button>
                         <button
-                          className="btn btn-secondary"
-                          style={{ padding: '4px 10px', fontSize: '12.5px', minHeight: '32px', height: '32px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                          type="button"
+                          title="ดูรายละเอียด"
                           onClick={() => setViewMed(item)}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            cursor: 'pointer',
+                            padding: '6px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: '#4DB06F',
+                            borderRadius: '6px',
+                            transition: 'opacity 0.15s, background-color 0.15s'
+                          }}
+                          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(77, 176, 111, 0.1)'}
+                          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                         >
-                          <Eye size={13} /> ดู
+                          <Eye size={18} />
                         </button>
                         <button
-                          className="btn btn-danger-outline"
-                          style={{ padding: '4px 10px', fontSize: '12.5px', minHeight: '32px', height: '32px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                          type="button"
+                          title="ลบ"
                           onClick={() => handleDeleteOne(item.id, item.name_th)}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            cursor: 'pointer',
+                            padding: '6px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: '#ef4444',
+                            borderRadius: '6px',
+                            transition: 'opacity 0.15s, background-color 0.15s'
+                          }}
+                          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'}
+                          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                         >
-                          <X size={13} /> ลบ
+                          <Trash2 size={18} />
                         </button>
                       </div>
                     </td>

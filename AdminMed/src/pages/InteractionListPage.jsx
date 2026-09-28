@@ -67,8 +67,6 @@ export default function InteractionListPage() {
       res = res.filter(i => i.severity === 'สูง')
     } else if (pill === 'medium') {
       res = res.filter(i => i.severity === 'กลาง')
-    } else if (pill === 'caution') {
-      res = res.filter(i => i.interaction_type === 'ข้อควรระวัง')
     } else if (pill === 'recommend') {
       res = res.filter(i => i.interaction_type === 'แนะนำ' || i.interaction_type === 'แนะนำให้รับประทานร่วม')
     }
@@ -137,7 +135,6 @@ export default function InteractionListPage() {
 
       {/* Filter Card */}
       <div className="card">
-        <div className="card-title" style={{ fontSize: '14.5px', marginBottom: '14px' }}>ค้นหาและกรอง</div>
         <form onSubmit={handleSearchSubmit}>
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1.2fr 1.2fr auto', gap: '14px', alignItems: 'flex-end' }}>
             <div>
@@ -179,7 +176,6 @@ export default function InteractionListPage() {
                 <option value="ทั้งหมด">ทั้งหมด</option>
                 <option value="หลีกเลี่ยง">หลีกเลี่ยง</option>
                 <option value="แนะนำ">แนะนำ</option>
-                <option value="ข้อควรระวัง">ข้อควรระวัง</option>
               </select>
             </div>
 
@@ -190,54 +186,6 @@ export default function InteractionListPage() {
             </div>
           </div>
         </form>
-      </div>
-
-      {/* Quick Filter Stat Pills (Row of 5 cards) */}
-      <div className="quick-filter-row">
-        <button 
-          type="button" 
-          className={`filter-pill-card ${activePill === 'all' ? 'active' : ''}`}
-          onClick={() => handlePillClick('all')}
-        >
-          <span className="filter-pill-count">{interactions.length}</span>
-          <span className="filter-pill-label">ทั้งหมด</span>
-        </button>
-
-        <button 
-          type="button" 
-          className={`filter-pill-card ${activePill === 'high' ? 'active' : ''}`}
-          onClick={() => handlePillClick('high')}
-        >
-          <span className="filter-pill-count">{interactions.filter(i => i.severity === 'สูง').length}</span>
-          <span className="filter-pill-label">หลีกเลี่ยง (สูง)</span>
-        </button>
-
-        <button 
-          type="button" 
-          className={`filter-pill-card ${activePill === 'medium' ? 'active' : ''}`}
-          onClick={() => handlePillClick('medium')}
-        >
-          <span className="filter-pill-count">{interactions.filter(i => i.severity === 'กลาง').length}</span>
-          <span className="filter-pill-label">หลีกเลี่ยง (กลาง)</span>
-        </button>
-
-        <button 
-          type="button" 
-          className={`filter-pill-card ${activePill === 'caution' ? 'active' : ''}`}
-          onClick={() => handlePillClick('caution')}
-        >
-          <span className="filter-pill-count">{interactions.filter(i => i.interaction_type === 'ข้อควรระวัง').length}</span>
-          <span className="filter-pill-label">ข้อควรระวัง</span>
-        </button>
-
-        <button 
-          type="button" 
-          className={`filter-pill-card ${activePill === 'recommend' ? 'active' : ''}`}
-          onClick={() => handlePillClick('recommend')}
-        >
-          <span className="filter-pill-count">{interactions.filter(i => i.interaction_type === 'แนะนำ' || i.interaction_type === 'แนะนำให้รับประทานร่วม').length}</span>
-          <span className="filter-pill-label">แนะนำ</span>
-        </button>
       </div>
 
       {/* Table Card */}
@@ -275,12 +223,12 @@ export default function InteractionListPage() {
                     checked={paginatedData.length > 0 && paginatedData.every(i => selectedIds.includes(i.id))}
                   />
                 </th>
-                <th style={{ width: '70px', textAlign: 'center' }}>#</th>
-                <th style={{ width: '20%' }}>ชื่อยา (TH/EN)</th>
-                <th style={{ width: '18%' }}>อาหาร/กลุ่มอาหาร</th>
-                <th style={{ width: '16%' }}>ประเภท</th>
+                <th style={{ width: '70px', textAlign: 'center' }}>ID</th>
+                <th style={{ width: '20%' }}>ชื่อยา / อาหารเสริม (TH/EN)</th>
+                <th style={{ width: '18%' }}>อาหาร / กลุ่มอาหาร</th>
+                <th style={{ width: '16%', textAlign: 'center' }}>ประเภท</th>
                 <th style={{ width: '10%', textAlign: 'center' }}>ความรุนแรง</th>
-                <th style={{ width: '14%' }}>ช่วงเวลางด</th>
+                <th style={{ width: '14%', textAlign: 'center' }}>ช่วงเวลางด</th>
                 <th style={{ width: '12%' }}>แหล่งอ้างอิง</th>
                 <th style={{ width: '190px', textAlign: 'center' }}>จัดการ</th>
               </tr>
@@ -302,47 +250,93 @@ export default function InteractionListPage() {
                         onChange={() => toggleSelectOne(item.id)}
                       />
                     </td>
-                    <td style={{ color: 'var(--color-neutral-500)', textAlign: 'center' }}>
+                    <td style={{textAlign: 'center' }}>
                       {String((currentPage - 1) * pageSize + index + 1).padStart(3, '0')}
                     </td>
-                    <td style={{ fontWeight: 600, color: 'var(--color-neutral-800)' }}>
+                    <td>
                       {item.medication_name}
                     </td>
-                    <td style={{ color: 'var(--color-neutral-700)' }}>{item.food_name}</td>
-                    <td style={{ whiteSpace: 'nowrap', color: 'var(--color-neutral-600)' }}>{item.interaction_type}</td>
+                    <td>{item.food_name}</td>
+                    <td style={{ whiteSpace: 'nowrap' , textAlign: 'center'}}>{item.interaction_type}</td>
                     <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
-                      <span className={`badge-severity ${item.severity === 'สูง' ? 'high' : item.severity === 'ต่ำ' ? 'low' : 'medium'}`}>
-                        {item.severity}
-                      </span>
+                      {item.severity ? (
+                        <span className={`badge-severity ${item.severity === 'สูง' ? 'high' : item.severity === 'ต่ำ' ? 'low' : 'medium'}`}>
+                          {item.severity}
+                        </span>
+                      ) : (
+                        <span style={{ color: 'var(--color-neutral-400)' }}>-</span>
+                      )}
                     </td>
-                    <td style={{ color: 'var(--color-neutral-600)', fontSize: '13px', whiteSpace: 'nowrap' }}>
-                      {item.hours_note || `${item.hours_before || 2} ชม. ก่อน-${item.hours_after || 2} ชม. หลัง`}
+                    <td style={{ color: 'var(--color-neutral-600)', fontSize: '13px', whiteSpace: 'nowrap', textAlign: 'center'}}>
+                      {item.hours_note || (item.hours_before || item.hours_after ? `${item.hours_before || 0} ชม. ก่อน-${item.hours_after || 0} ชม. หลัง` : '-')}
                     </td>
                     <td style={{ color: 'var(--color-neutral-500)', fontSize: '12.5px' }}>
                       {item.source_name || 'FDA 2024'}
                     </td>
-                    <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                      <div style={{ display: 'inline-flex', gap: '6px' }}>
+                    <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
+                      <div style={{ display: 'inline-flex', gap: '8px', alignItems: 'center', justifyContent: 'center' }}>
                         <button 
-                          className="btn btn-secondary" 
-                          style={{ padding: '4px 10px', fontSize: '12.5px', minHeight: '32px', height: '32px' }}
+                          type="button" 
+                          title="แก้ไข"
                           onClick={() => navigate(`/interactions/edit/${item.id}`)}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            cursor: 'pointer',
+                            padding: '6px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: '#B87108',
+                            borderRadius: '6px',
+                            transition: 'opacity 0.15s, background-color 0.15s'
+                          }}
+                          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(184, 113, 8, 0.1)'}
+                          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                         >
-                          แก้ไข
+                          <Edit size={18} />
                         </button>
                         <button 
-                          className="btn btn-secondary" 
-                          style={{ padding: '4px 10px', fontSize: '12.5px', minHeight: '32px', height: '32px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                          type="button" 
+                          title="ดูรายละเอียด"
                           onClick={() => setViewItem(item)}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            cursor: 'pointer',
+                            padding: '6px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: '#4DB06F',
+                            borderRadius: '6px',
+                            transition: 'opacity 0.15s, background-color 0.15s'
+                          }}
+                          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(77, 176, 111, 0.1)'}
+                          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                         >
-                          <Eye size={13} /> ดู
+                          <Eye size={18} />
                         </button>
                         <button 
-                          className="btn btn-danger-outline" 
-                          style={{ padding: '4px 10px', fontSize: '12.5px', minHeight: '32px', height: '32px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                          type="button" 
+                          title="ลบ"
                           onClick={() => handleDeleteOne(item.id, item.medication_name)}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            cursor: 'pointer',
+                            padding: '6px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: '#ef4444',
+                            borderRadius: '6px',
+                            transition: 'opacity 0.15s, background-color 0.15s'
+                          }}
+                          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'}
+                          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                         >
-                          <X size={13} /> ลบ
+                          <Trash2 size={18} />
                         </button>
                       </div>
                     </td>
