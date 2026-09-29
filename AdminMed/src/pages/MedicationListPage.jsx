@@ -403,7 +403,7 @@ export default function MedicationListPage() {
 
             <div style={{ marginTop: '24px', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
               <button
-                className="btn btn-secondary"
+                className="btn btn-ghost"
                 onClick={() => setViewMed(null)}
               >
                 ปิด

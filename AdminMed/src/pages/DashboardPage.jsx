@@ -60,7 +60,7 @@ export default function DashboardPage() {
         <h1 className="page-title">Dashboard</h1>
         <div className="page-actions">
           <button 
-            className="btn btn-secondary" 
+            className="btn btn-primary" 
             onClick={loadData}
             style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px' }}
           >

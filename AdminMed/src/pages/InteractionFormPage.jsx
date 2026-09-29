@@ -3,7 +3,6 @@ import { useNavigate, useParams, Link } from 'react-router-dom'
 import { Check, AlertCircle, CheckCircle2, ChevronDown } from 'lucide-react'
 import { dataService } from '../services/dataService'
 import { getInteractionsForMedication } from '../services/foodInteractionService'
-import { getDrugSuggestions } from '../services/openFdaService'
 
 export default function InteractionFormPage() {
   const { id } = useParams()
@@ -14,15 +13,15 @@ export default function InteractionFormPage() {
   const [formData, setFormData] = useState({
     medication_name: '',
     food_name: '',
-    interaction_type: 'หลีกเลี่ยง',
-    severity: 'สูง',
-    hours_before: '2',
-    hours_after: '2',
+    interaction_type: '',
+    severity: '',
+    hours_before: '',
+    hours_after: '',
     impact_details: '',
-    source_type: 'FDA / WHO / PubMed / Thai FDA',
+    source_type: '',
     source_name: '',
     url_doi: '',
-    publish_year: '2024'
+    publish_year: ''
   })
 
   const [saving, setSaving] = useState(false)
@@ -67,45 +66,26 @@ export default function InteractionFormPage() {
 
   const getAvailableMedicationSuggestions = (query = '') => {
     const q = query.trim().toLowerCase()
-    const presets = getDrugSuggestions(q)
 
-    const dbItems = medications.map(m => ({
-      key: m.id || m.name_en || m.name_th,
-      th: m.name_th,
-      en: m.name_en || '',
-      category: m.category || 'ยา',
-      dosage: m.dosage,
-      unit: m.unit,
-      type: m.type
-    }))
+    const dbItems = medications
+      .filter(m => m.name_th || m.th)
+      .map(m => ({
+        key: m.id || m.name_en || m.name_th,
+        th: m.name_th || m.th,
+        en: m.name_en || m.en || '',
+        category: m.category || 'ยา',
+        dosage: m.dosage,
+        unit: m.unit,
+        type: m.type
+      }))
 
-    const seen = new Set()
-    const combined = []
+    if (!q) return dbItems
 
-    // Put database items first if they match
-    for (const item of dbItems) {
-      if (!item.th) continue
-      const match = !q || 
-        item.th.toLowerCase().includes(q) || 
-        item.en.toLowerCase().includes(q) || 
-        (item.category && item.category.toLowerCase().includes(q))
-
-      if (match) {
-        seen.add(item.th.toLowerCase().trim())
-        combined.push(item)
-      }
-    }
-
-    // Add presets from openFda that haven't been seen
-    for (const item of presets) {
-      const norm = item.th.toLowerCase().trim()
-      if (!seen.has(norm)) {
-        seen.add(norm)
-        combined.push(item)
-      }
-    }
-
-    return combined
+    return dbItems.filter(item => 
+      (item.th && item.th.toLowerCase().includes(q)) || 
+      (item.en && item.en.toLowerCase().includes(q)) || 
+      (item.category && item.category.toLowerCase().includes(q))
+    )
   }
 
   const updateFoodSuggestions = (medName, filterText = '', medList = medications) => {
@@ -318,7 +298,7 @@ export default function InteractionFormPage() {
 
   const handleSubmit = async (e) => {
     if (e) e.preventDefault()
-    if (!formData.medication_name.trim() || !formData.food_name.trim() || !formData.impact_details.trim() || !formData.source_name.trim()) {
+    if (!formData.medication_name.trim() || !formData.food_name.trim() || !formData.interaction_type || !formData.impact_details.trim() || !formData.source_name.trim()) {
       setErrorMsg('กรุณากรอกข้อมูลที่จำเป็น (*) ให้ครบถ้วน')
       return
     }
@@ -565,7 +545,7 @@ export default function InteractionFormPage() {
                 type="text" 
                 name="food_name"
                 className="form-input" 
-                placeholder="คลิกเพื่อเลือกอาหารที่เกี่ยวข้อง หรือพิมพ์ค้นหา..."
+                placeholder="่เช่น เครื่องดื่มที่มีคาเฟอีน, นม"
                 value={formData.food_name}
                 onChange={handleFoodNameChange}
                 onFocus={handleFoodInputFocus}
@@ -701,10 +681,7 @@ export default function InteractionFormPage() {
                 onClick={() => {
                   setFormData(prev => ({
                     ...prev,
-                    interaction_type: 'หลีกเลี่ยง',
-                    severity: prev.severity || 'สูง',
-                    hours_before: prev.hours_before || '2',
-                    hours_after: prev.hours_after || '2'
+                    interaction_type: 'หลีกเลี่ยง'
                   }))
                 }}
                 style={{
@@ -849,7 +826,7 @@ export default function InteractionFormPage() {
 
       {/* Card 2: แหล่งอ้างอิง */}
       <div className="card">
-        <div className="card-title">แหล่งอ้างอิง (บังคับ 1 แหล่งขึ้นไป)</div>
+        <div className="card-title">แหล่งอ้างอิง</div>
 
         <div className="form-row" style={{ marginBottom: '16px' }}>
           <div className="form-group" style={{ marginBottom: 0 }}>

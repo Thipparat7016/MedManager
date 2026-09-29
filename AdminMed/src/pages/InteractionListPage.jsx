@@ -48,7 +48,7 @@ export default function InteractionListPage() {
 
     if (s.trim()) {
       const q = s.toLowerCase()
-      res = res.filter(i => 
+      res = res.filter(i =>
         (i.medication_name && i.medication_name.toLowerCase().includes(q)) ||
         (i.food_name && i.food_name.toLowerCase().includes(q)) ||
         (i.code && i.code.toLowerCase().includes(q))
@@ -94,7 +94,7 @@ export default function InteractionListPage() {
   }
 
   const toggleSelectOne = (id) => {
-    setSelectedIds(prev => 
+    setSelectedIds(prev =>
       prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
     )
   }
@@ -140,9 +140,9 @@ export default function InteractionListPage() {
             <div>
               <label className="form-label">ค้นหา</label>
               <div style={{ position: 'relative' }}>
-                <input 
-                  type="text" 
-                  className="form-input" 
+                <input
+                  type="text"
+                  className="form-input"
                   placeholder="ชื่อยา, ชื่ออาหาร..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
@@ -154,7 +154,7 @@ export default function InteractionListPage() {
 
             <div>
               <label className="form-label">ความรุนแรง</label>
-              <select 
+              <select
                 className="form-select"
                 value={severityFilter}
                 onChange={(e) => setSeverityFilter(e.target.value)}
@@ -168,7 +168,7 @@ export default function InteractionListPage() {
 
             <div>
               <label className="form-label">ประเภท</label>
-              <select 
+              <select
                 className="form-select"
                 value={typeFilter}
                 onChange={(e) => setTypeFilter(e.target.value)}
@@ -195,7 +195,7 @@ export default function InteractionListPage() {
             ปฏิสัมพันธ์ทั้งหมด ({totalItems} รายการ)
           </div>
           {selectedIds.length > 0 && (
-            <button 
+            <button
               onClick={handleDeleteSelected}
               style={{
                 background: 'none',
@@ -217,8 +217,8 @@ export default function InteractionListPage() {
             <thead>
               <tr>
                 <th style={{ width: '48px', textAlign: 'center' }}>
-                  <input 
-                    type="checkbox" 
+                  <input
+                    type="checkbox"
                     onChange={toggleSelectAll}
                     checked={paginatedData.length > 0 && paginatedData.every(i => selectedIds.includes(i.id))}
                   />
@@ -244,20 +244,20 @@ export default function InteractionListPage() {
                 paginatedData.map((item, index) => (
                   <tr key={item.id}>
                     <td style={{ textAlign: 'center' }}>
-                      <input 
-                        type="checkbox" 
+                      <input
+                        type="checkbox"
                         checked={selectedIds.includes(item.id)}
                         onChange={() => toggleSelectOne(item.id)}
                       />
                     </td>
-                    <td style={{textAlign: 'center' }}>
+                    <td style={{ textAlign: 'center' }}>
                       {String((currentPage - 1) * pageSize + index + 1).padStart(3, '0')}
                     </td>
                     <td>
                       {item.medication_name}
                     </td>
                     <td>{item.food_name}</td>
-                    <td style={{ whiteSpace: 'nowrap' , textAlign: 'center'}}>{item.interaction_type}</td>
+                    <td style={{ whiteSpace: 'nowrap', textAlign: 'center' }}>{item.interaction_type}</td>
                     <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
                       {item.severity ? (
                         <span className={`badge-severity ${item.severity === 'สูง' ? 'high' : item.severity === 'ต่ำ' ? 'low' : 'medium'}`}>
@@ -267,7 +267,7 @@ export default function InteractionListPage() {
                         <span style={{ color: 'var(--color-neutral-400)' }}>-</span>
                       )}
                     </td>
-                    <td style={{ color: 'var(--color-neutral-600)', fontSize: '13px', whiteSpace: 'nowrap', textAlign: 'center'}}>
+                    <td style={{ color: 'var(--color-neutral-600)', fontSize: '13px', whiteSpace: 'nowrap', textAlign: 'center' }}>
                       {item.hours_note || (item.hours_before || item.hours_after ? `${item.hours_before || 0} ชม. ก่อน-${item.hours_after || 0} ชม. หลัง` : '-')}
                     </td>
                     <td style={{ color: 'var(--color-neutral-500)', fontSize: '12.5px' }}>
@@ -275,8 +275,8 @@ export default function InteractionListPage() {
                     </td>
                     <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
                       <div style={{ display: 'inline-flex', gap: '8px', alignItems: 'center', justifyContent: 'center' }}>
-                        <button 
-                          type="button" 
+                        <button
+                          type="button"
                           title="แก้ไข"
                           onClick={() => navigate(`/interactions/edit/${item.id}`)}
                           style={{
@@ -296,8 +296,8 @@ export default function InteractionListPage() {
                         >
                           <Edit size={18} />
                         </button>
-                        <button 
-                          type="button" 
+                        <button
+                          type="button"
                           title="ดูรายละเอียด"
                           onClick={() => setViewItem(item)}
                           style={{
@@ -317,8 +317,8 @@ export default function InteractionListPage() {
                         >
                           <Eye size={18} />
                         </button>
-                        <button 
-                          type="button" 
+                        <button
+                          type="button"
                           title="ลบ"
                           onClick={() => handleDeleteOne(item.id, item.medication_name)}
                           style={{
@@ -353,21 +353,21 @@ export default function InteractionListPage() {
             แสดง {totalItems > 0 ? (currentPage - 1) * pageSize + 1 : 0}-{Math.min(currentPage * pageSize, totalItems)} จาก {totalItems} รายการ
           </div>
           <div className="pagination">
-            <button 
-              className="page-btn" 
+            <button
+              className="page-btn"
               disabled={currentPage === 1}
               onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
             >
               &lt;
             </button>
-            <button 
+            <button
               className={`page-btn ${currentPage === 1 ? 'active' : ''}`}
               onClick={() => setCurrentPage(1)}
             >
               1
             </button>
             {totalPages >= 2 && (
-              <button 
+              <button
                 className={`page-btn ${currentPage === 2 ? 'active' : ''}`}
                 onClick={() => setCurrentPage(2)}
               >
@@ -375,7 +375,7 @@ export default function InteractionListPage() {
               </button>
             )}
             {totalPages >= 3 && (
-              <button 
+              <button
                 className={`page-btn ${currentPage === 3 ? 'active' : ''}`}
                 onClick={() => setCurrentPage(3)}
               >
@@ -385,8 +385,8 @@ export default function InteractionListPage() {
             {totalPages > 3 && (
               <span style={{ padding: '0 4px', color: 'var(--color-neutral-400)' }}>...</span>
             )}
-            <button 
-              className="page-btn" 
+            <button
+              className="page-btn"
               disabled={currentPage === totalPages}
               onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
             >
@@ -402,14 +402,14 @@ export default function InteractionListPage() {
           <div className="modal-content" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <div className="modal-title">รายละเอียดปฏิสัมพันธ์: {viewItem.medication_name}</div>
-              <button 
+              <button
                 onClick={() => setViewItem(null)}
                 style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-neutral-400)' }}
               >
                 <X size={20} />
               </button>
             </div>
-            
+
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', fontSize: '14px', marginTop: '14px' }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div><strong>อาหาร/กลุ่มอาหาร:</strong> {viewItem.food_name}</div>
@@ -437,13 +437,13 @@ export default function InteractionListPage() {
             </div>
 
             <div style={{ marginTop: '24px', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-              <button 
-                className="btn btn-secondary"
+              <button
+                className="btn btn-ghost"
                 onClick={() => setViewItem(null)}
               >
                 ปิด
               </button>
-              <button 
+              <button
                 className="btn btn-primary"
                 onClick={() => {
                   const id = viewItem.id
@@ -451,7 +451,7 @@ export default function InteractionListPage() {
                   navigate(`/interactions/edit/${id}`)
                 }}
               >
-                แก้ไขข้อมูลนี้
+                แก้ไข
               </button>
             </div>
           </div>

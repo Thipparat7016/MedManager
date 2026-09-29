@@ -91,22 +91,22 @@ color-info-700:     "#1D4ED8"   # Info text label
 ```yaml
 # แสดงในหน้า "ข้อมูลยาและอาหารที่ควรหลีกเลี่ยง"
 severity-high:
-  bg:     "#FDEAEA"   # pill background
-  text:   "#B52020"   # pill label
-  border: "#E84646"
-  icon:   "#E84646"   # ⚠ warning icon
+  bg:     "#FFCBCE"   # pill background
+  text:   "#BA1A1A"   # pill label
+  border: "#FFCBCE"
+  icon:   "#BA1A1A"   # ⚠ warning icon
 
 severity-medium:
-  bg:     "#FEF3DC"
-  text:   "#B87108"
-  border: "#F5A623"
-  icon:   "#F5A623"
+  bg:     "#FFDECC"
+  text:   "#CC662F"
+  border: "#FFDECC"
+  icon:   "#CC662F"
 
 severity-low:
-  bg:     "#DBEAFE"
-  text:   "#1D4ED8"
-  border: "#3B82F6"
-  icon:   "#3B82F6"
+  bg:     "#FFEFAE"
+  text:   "#D4BC07"
+  border: "#FFEFAE"
+  icon:   "#D4BC07"
 ```
 
 ### 1.5 Gradient Tokens

@@ -482,8 +482,6 @@ body {
   border-color: #F5A623;
 }
 
-
-
 .btn-ghost {
   background: transparent;
   color: #0284C7;
@@ -861,21 +859,21 @@ body {
 }
 
 .badge-severity.high {
-  background-color: var(--color-danger-50);
-  color: var(--color-danger-700);
-  border: 1px solid var(--color-danger-100);
+  background-color: #FFCBCE;
+  color: #BA1A1A;
+  border: 1px solid #FFCBCE;
 }
 
 .badge-severity.medium {
-  background-color: var(--color-warning-50);
-  color: var(--color-warning-700);
-  border: 1px solid var(--color-warning-100);
+  background-color: #FFDECC;
+  color: #CC662F;
+  border: 1px solid #FFDECC;
 }
 
 .badge-severity.low {
-  background-color: #DFF2FF;
-  color: #0284C7;
-  border: 1px solid #B9E2FE;
+  background-color: #FFEFAE;
+  color: #D4BC07;
+  border: 1px solid #FFEFAE;
 }
 
 /* Category & Status Pills using #DFF2FF */

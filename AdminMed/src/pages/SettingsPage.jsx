@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useOutletContext, useSearchParams } from 'react-router-dom'
-import { Camera, Check, Search, X } from 'lucide-react'
+import { Camera, Check, Search, Trash2 } from 'lucide-react'
 import { dataService } from '../services/dataService'
 
 export default function SettingsPage() {
@@ -28,6 +28,7 @@ export default function SettingsPage() {
   const [selectedUserIds, setSelectedUserIds] = useState([])
   const [userPage, setUserPage] = useState(1)
   const pageSize = 5
+ const totalPages = Math.ceil(appUsers.length / pageSize) || 1
 
   useEffect(() => {
     if (adminProfile) {
@@ -335,7 +336,7 @@ export default function SettingsPage() {
           {/* Table Card */}
           <div className="card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
-              <div className="card-title" style={{ margin: 0 }}>รายชื่อบัญชีผู้ใช้งาน (Users)</div>
+              <div className="card-title" style={{ margin: 0 }}>รายชื่อบัญชีผู้ใช้งาน</div>
               {selectedUserIds.length > 0 && (
                 <button 
                   onClick={handleDeleteSelectedUsers}
@@ -379,32 +380,48 @@ export default function SettingsPage() {
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th style={{ width: '80px' }}>#</th>
-                    <th>ชื่อ-นามสกุล</th>
-                    <th>อีเมล</th>
-                    <th style={{ width: '120px', textAlign: 'right' }}>จัดการ</th>
+                    <th style={{ width: '10%', textAlign: 'center' }}>ID</th>
+                    <th style={{ width: '28%', textAlign: 'left' }}>ชื่อ-นามสกุล</th>
+                    <th style={{ width: '32%', textAlign: 'left' }}>อีเมล</th>
+                    <th style={{ width: '16%', textAlign: 'left' }}>เบอร์โทรศัพท์</th>
+                    <th style={{ width: '12%', textAlign: 'center' }}>จัดการ</th>
                   </tr>
                 </thead>
                 <tbody>
                   {appUsers.length === 0 ? (
                     <tr>
-                      <td colSpan="4" style={{ textAlign: 'center', padding: '32px', color: 'var(--color-neutral-400)' }}>
+                      <td colSpan="5" style={{ textAlign: 'center', padding: '32px', color: 'var(--color-neutral-400)' }}>
                         ไม่พบข้อมูลผู้ใช้ในระบบ
                       </td>
                     </tr>
                   ) : (
                     appUsers.map((u) => (
                       <tr key={u.id}>
-                        <td style={{ color: 'var(--color-neutral-500)' }}>{u.code || '001'}</td>
-                        <td style={{ fontWeight: 600, color: 'var(--color-neutral-800)' }}>{u.name}</td>
-                        <td style={{ color: 'var(--color-neutral-600)' }}>{u.email}</td>
-                        <td style={{ textAlign: 'right' }}>
-                          <button 
-                            className="btn btn-danger-outline" 
-                            style={{ padding: '4px 10px', fontSize: '12px', height: '28px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                        <td style={{ color: 'var(--color-neutral-500)', textAlign: 'center' }}>{u.code || '001'}</td>
+                        <td style={{ color: 'var(--color-neutral-800)', textAlign: 'left' }}>{u.name}</td>
+                        <td style={{ color: 'var(--color-neutral-600)', textAlign: 'left' }}>{u.email}</td>
+                        <td style={{ color: 'var(--color-neutral-600)', textAlign: 'left' }}>{u.phone}</td>
+                        <td style={{ textAlign: 'center' }}>
+                          <button
+                            type="button"
+                            title="ลบ"
                             onClick={() => handleDeleteUser(u.id, u.name)}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              cursor: 'pointer',
+                              padding: '6px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              color: '#ef4444',
+                              borderRadius: '6px',
+                              transition: 'opacity 0.15s, background-color 0.15s'
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'}
+                            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                           >
-                            <X size={12} /> ลบ
+                            <Trash2 size={18} />
                           </button>
                         </td>
                       </tr>
@@ -420,20 +437,51 @@ export default function SettingsPage() {
                 แสดง {appUsers.length > 0 ? 1 : 0}-{appUsers.length} จาก {appUsers.length} รายการ
               </div>
               <div className="pagination">
-                <button className="page-btn" disabled={userPage === 1} onClick={() => setUserPage(p => Math.max(1, p - 1))}>
+                <button 
+                  className="page-btn" 
+                  disabled={userPage === 1} 
+                  onClick={() => setUserPage(p => Math.max(1, p - 1))}
+                >
                   &lt;
                 </button>
-                <button className={`page-btn ${userPage === 1 ? 'active' : ''}`} onClick={() => setUserPage(1)}>
+
+                {/* หน้า 1 แสดงเสมอ */}
+                <button 
+                  className={`page-btn ${userPage === 1 ? 'active' : ''}`} 
+                  onClick={() => setUserPage(1)}
+                >
                   1
                 </button>
-                <button className={`page-btn ${userPage === 2 ? 'active' : ''}`} onClick={() => setUserPage(2)}>
-                  2
-                </button>
-                <button className={`page-btn ${userPage === 3 ? 'active' : ''}`} onClick={() => setUserPage(3)}>
-                  3
-                </button>
-                <span style={{ padding: '0 4px', color: 'var(--color-neutral-400)' }}>...</span>
-                <button className="page-btn" onClick={() => setUserPage(p => p + 1)}>
+
+                {/* แสดงหน้า 2 เฉพาะเมื่อมีข้อมูลเกิน 1 หน้า (เกิน 5 คน) */}
+                {totalPages >= 2 && (
+                  <button 
+                    className={`page-btn ${userPage === 2 ? 'active' : ''}`} 
+                    onClick={() => setUserPage(2)}
+                  >
+                    2
+                  </button>
+                )}
+
+                {/* แสดงหน้า 3 เฉพาะเมื่อมีข้อมูลเกิน 2 หน้า (เกิน 10 คน) */}
+                {totalPages >= 3 && (
+                  <button 
+                    className={`page-btn ${userPage === 3 ? 'active' : ''}`} 
+                    onClick={() => setUserPage(3)}
+                  >
+                    3
+                  </button>
+                )}
+
+                {totalPages > 3 && (
+                  <span style={{ padding: '0 4px', color: 'var(--color-neutral-400)' }}>...</span>
+                )}
+
+                <button 
+                  className="page-btn" 
+                  disabled={userPage === totalPages} 
+                  onClick={() => setUserPage(p => Math.min(totalPages, p + 1))}
+                >
                   &gt;
                 </button>
               </div>
