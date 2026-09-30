@@ -50,9 +50,11 @@ CREATE TABLE IF NOT EXISTS app_users (
   name VARCHAR(255) NOT NULL,
   email VARCHAR(255) NOT NULL,
   phone VARCHAR(50),
+  password VARCHAR(255),
   status VARCHAR(50) DEFAULT 'Active',
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+ALTER TABLE app_users ADD COLUMN IF NOT EXISTS password VARCHAR(255);
 
 -- 4. Table: admin_profiles (ข้อมูลโปรไฟล์แอดมิน)
 CREATE TABLE IF NOT EXISTS admin_profiles (

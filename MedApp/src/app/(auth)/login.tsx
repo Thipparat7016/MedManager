@@ -5,22 +5,27 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  SafeAreaView,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
   Alert,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter, Redirect } from 'expo-router';
 import { MaterialCommunityIcons, AntDesign } from '@expo/vector-icons';
 import { useApp } from '@/context/AppContext';
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { login } = useApp();
+  const { login, isAuthenticated, isLoading: isAppLoading } = useApp();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+
+  // If already logged in, redirect directly to tabs
+  if (!isAppLoading && isAuthenticated) {
+    return <Redirect href={'/(tabs)' as any} />;
+  }
 
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
@@ -28,16 +33,18 @@ export default function LoginScreen() {
       return;
     }
     setIsLoading(true);
-    await login(email.trim(), password);
+    const result = await login(email.trim(), password.trim());
     setIsLoading(false);
-    router.replace('/(tabs)' as any);
+
+    if (result.success) {
+      router.replace('/(tabs)' as any);
+    } else {
+      Alert.alert('เข้าสู่ระบบไม่สำเร็จ', result.error || 'อีเมลหรือรหัสผ่านไม่ถูกต้อง');
+    }
   };
 
   const handleGoogleLogin = async () => {
-    setIsLoading(true);
-    await login('user@gmail.com', 'google_oauth');
-    setIsLoading(false);
-    router.replace('/(tabs)' as any);
+    Alert.alert('Google Login', 'ฟังก์ชันการเข้าสู่ระบบด้วย Google อยู่ระหว่างการพัฒนา กรุณาเข้าสู่ระบบด้วยอีเมลและรหัสผ่าน');
   };
 
   return (

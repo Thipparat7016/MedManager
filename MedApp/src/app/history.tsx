@@ -4,8 +4,8 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import { AppHeader } from '@/components/ui/AppHeader';
 import { PillIcon } from '@/components/ui/PillIcon';

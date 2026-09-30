@@ -5,19 +5,19 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  SafeAreaView,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
   Alert,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter, Redirect } from 'expo-router';
 import { AppHeader } from '@/components/ui/AppHeader';
 import { useApp } from '@/context/AppContext';
 
 export default function RegisterScreen() {
   const router = useRouter();
-  const { updateProfile } = useApp();
+  const { register, isAuthenticated, isLoading: isAppLoading } = useApp();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -25,26 +25,41 @@ export default function RegisterScreen() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
+  // If already logged in, redirect directly to tabs
+  if (!isAppLoading && isAuthenticated) {
+    return <Redirect href={'/(tabs)' as any} />;
+  }
+
   const handleRegister = async () => {
-    if (!name || !email) {
+    if (!name.trim() || !email.trim()) {
       Alert.alert('กรุณากรอกข้อมูล', 'กรุณากรอกชื่อและอีเมล');
       return;
     }
-    if (password && confirmPassword && password !== confirmPassword) {
+    if (!password.trim()) {
+      Alert.alert('กรุณากรอกข้อมูล', 'กรุณากำหนดรหัสผ่าน');
+      return;
+    }
+    if (password !== confirmPassword) {
       Alert.alert('ข้อผิดพลาด', 'รหัสผ่านทั้งสองช่องไม่ตรงกัน');
       return;
     }
 
     setIsLoading(true);
-    await updateProfile({
+    const result = await register({
       name: name.trim(),
       email: email.trim().toLowerCase(),
       phone: phone.trim(),
+      password: password.trim(),
     });
     setIsLoading(false);
-    Alert.alert('สำเร็จ', 'สมัครสมาชิกเรียบร้อยแล้ว', [
-      { text: 'ตกลง', onPress: () => router.replace('/(tabs)' as any) },
-    ]);
+
+    if (result.success) {
+      Alert.alert('สำเร็จ', 'สมัครสมาชิกเรียบร้อยแล้ว', [
+        { text: 'ตกลง', onPress: () => router.replace('/(tabs)' as any) },
+      ]);
+    } else {
+      Alert.alert('สมัครสมาชิกไม่สำเร็จ', result.error || 'เกิดข้อผิดพลาดในการสมัครสมาชิก');
+    }
   };
 
   return (

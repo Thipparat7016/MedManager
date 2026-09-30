@@ -5,16 +5,18 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  SafeAreaView,
   Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons, Feather } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '@/context/AppContext';
 import { PillIcon } from '@/components/ui/PillIcon';
+import { isMedicationMatch } from '@/services/interactionMatcher';
 
 export default function HomeScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { user, todaySchedule, markTaken, notifications, interactions, medications } = useApp();
 
   const takenCount = todaySchedule.filter(s => s.isTaken).length;
@@ -33,22 +35,31 @@ export default function HomeScreen() {
   // Next pending medication
   const nextPending = todaySchedule.find(s => !s.isTaken && !s.isSkipped);
 
-  // Matching food warning for next pending drug
+  // Matching food warning for next pending drug using smart matcher
   const matchingWarning = nextPending
     ? interactions.find(
         i =>
           i.interactionType === 'หลีกเลี่ยง' &&
-          (i.medicationName.includes(nextPending.medicationName) || i.medicationName.includes('ทุกชนิด'))
+          isMedicationMatch(nextPending.medicationName, i.medicationName)
       )
     : null;
+
+  // Active user medications and count of matched food warnings
+  const activeUserMeds = medications.filter(m => m.status === 'active');
+  const userFoodWarningsCount = interactions.filter(i =>
+    i.interactionType === 'หลีกเลี่ยง' &&
+    activeUserMeds.some(m => isMedicationMatch(m.name, i.medicationName))
+  ).length;
 
   // Group today's schedule by time
   const timeSlots = Array.from(new Set(todaySchedule.map(s => s.time)));
 
+  const topInsetPadding = Math.max(insets.top, 24) + 14;
+
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <View style={styles.safeArea}>
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingTop: topInsetPadding }]}
         showsVerticalScrollIndicator={false}
       >
         {/* Top Header */}
@@ -195,10 +206,15 @@ export default function HomeScreen() {
 
           {/* Shortcut 4 */}
           <TouchableOpacity
-            style={[styles.shortcutCard, { backgroundColor: '#EBF4FE' }]}
+            style={[styles.shortcutCard, { backgroundColor: '#EBF4FE', position: 'relative' }]}
             onPress={() => router.push('/food-interactions')}
             activeOpacity={0.7}
           >
+            {userFoodWarningsCount > 0 && (
+              <View style={styles.shortcutBadge}>
+                <Text style={styles.shortcutBadgeText}>{userFoodWarningsCount}</Text>
+              </View>
+            )}
             <Feather name="x" size={24} color="#3B82F6" />
             <Text style={[styles.shortcutText, { color: '#1D4ED8' }]}>อาหารที่ควรเลี่ยง</Text>
           </TouchableOpacity>
@@ -258,7 +274,7 @@ export default function HomeScreen() {
           })
         )}
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -269,8 +285,24 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'ios' ? 10 : 20,
     paddingBottom: 40,
+  },
+  shortcutBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: '#EF4444',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 5,
+  },
+  shortcutBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
   },
   headerRow: {
     flexDirection: 'row',

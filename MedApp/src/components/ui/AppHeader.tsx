@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface AppHeaderProps {
   title: string;
@@ -23,6 +24,8 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   rightActionColor,
 }) => {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const topInsetPadding = Math.max(insets.top, 24) + 10;
 
   const handleBack = () => {
     if (onBack) {
@@ -35,7 +38,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: topInsetPadding }]}>
       <View style={styles.leftRow}>
         {showBack && (
           <TouchableOpacity

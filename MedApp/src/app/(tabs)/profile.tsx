@@ -5,16 +5,17 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   Switch,
   Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons, Feather } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '@/context/AppContext';
 
 export default function ProfileScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { user, updateProfile, logout, medications, appointments, todaySchedule } = useApp();
 
   const handleToggle = (key: keyof NonNullable<typeof user>) => {
@@ -45,10 +46,12 @@ export default function ProfileScreen() {
   const onTimeRate = totalSchedule > 0 ? `${Math.round((takenCount / totalSchedule) * 100)}%` : '-';
   const consistencyRate = totalSchedule > 0 ? `${Math.round((takenCount / totalSchedule) * 100)}%` : '-';
 
+  const topInsetPadding = Math.max(insets.top, 24) + 14;
+
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <View style={styles.safeArea}>
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingTop: topInsetPadding }]}
         showsVerticalScrollIndicator={false}
       >
         {/* User Info Header */}
@@ -186,7 +189,7 @@ export default function ProfileScreen() {
         {/* Version Footer */}
         <Text style={styles.footerText}>MedManager v1.0.0 • © {new Date().getFullYear() + 543}</Text>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -197,7 +200,6 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 20,
-    paddingTop: 24,
     paddingBottom: 40,
   },
   profileHeader: {

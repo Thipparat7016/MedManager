@@ -6,15 +6,17 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Ionicons, Feather } from '@expo/vector-icons';
+import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { AppHeader } from '@/components/ui/AppHeader';
+import { useApp } from '@/context/AppContext';
+import { Medication } from '@/services/medService';
 
 export default function AddMedicationScreen() {
   const router = useRouter();
+  const { masterMedications } = useApp();
 
   const [name, setName] = useState('');
   const [type, setType] = useState<'เม็ด' | 'อาหารเสริม' | 'แคปซูล' | 'ยาน้ำ'>('เม็ด');
@@ -22,6 +24,8 @@ export default function AddMedicationScreen() {
   const [unit, setUnit] = useState('mg');
   const [notes, setNotes] = useState('');
   const [showUnitPicker, setShowUnitPicker] = useState(false);
+  const [showMasterCatalog, setShowMasterCatalog] = useState(false);
+  const [selectedFromMaster, setSelectedFromMaster] = useState<string | null>(null);
 
   const typeOptions: Array<'เม็ด' | 'อาหารเสริม' | 'แคปซูล' | 'ยาน้ำ'> = [
     'เม็ด',
@@ -54,8 +58,28 @@ export default function AddMedicationScreen() {
     });
   };
 
+  const handleSelectMasterMed = (item: Medication) => {
+    setName(item.name);
+    if (item.type === 'เม็ด' || item.type === 'อาหารเสริม' || item.type === 'แคปซูล' || item.type === 'ยาน้ำ') {
+      setType(item.type);
+    }
+    setDosage(item.dosage || '100');
+    setUnit(item.unit || 'mg');
+    if (item.instructions || item.precautions) {
+      setNotes([item.instructions, item.precautions].filter(Boolean).join('\n'));
+    }
+    setSelectedFromMaster(item.name);
+    setShowMasterCatalog(false);
+  };
+
+  // Filter master catalog by search query
+  const filteredMasterList = masterMedications.filter(m =>
+    m.name.toLowerCase().includes(name.toLowerCase()) ||
+    (m.code && m.code.toLowerCase().includes(name.toLowerCase()))
+  );
+
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <View style={styles.safeArea}>
       <AppHeader title="เพิ่มยาใหม่" />
       <ScrollView
         contentContainerStyle={styles.scrollContent}
@@ -91,15 +115,94 @@ export default function AddMedicationScreen() {
           </TouchableOpacity>
         </View>
 
+        {/* Master Catalog Selector Button */}
+        <TouchableOpacity
+          style={styles.masterCatalogBtn}
+          onPress={() => setShowMasterCatalog(!showMasterCatalog)}
+          activeOpacity={0.8}
+        >
+          <View style={styles.masterCatalogLeft}>
+            <MaterialCommunityIcons name="database-search" size={22} color="#4F46E5" />
+            <View style={{ marginLeft: 10 }}>
+              <Text style={styles.masterCatalogTitle}>เลือกจากคลังยาของระบบ (แอดมิน)</Text>
+              <Text style={styles.masterCatalogSub}>
+                มีข้อมูลยาพื้นฐาน {masterMedications.length} รายการในฐานข้อมูล
+              </Text>
+            </View>
+          </View>
+          <Ionicons
+            name={showMasterCatalog ? 'chevron-up' : 'chevron-down'}
+            size={20}
+            color="#4F46E5"
+          />
+        </TouchableOpacity>
+
+        {/* Master Catalog Dropdown List */}
+        {showMasterCatalog && (
+          <View style={styles.masterCatalogList}>
+            <Text style={styles.masterCatalogHeader}>
+              แตะยาที่ต้องการเพื่อดึงข้อมูลจากคลังแอดมินอัตโนมัติ:
+            </Text>
+            <ScrollView
+              style={{ maxHeight: 220 }}
+              nestedScrollEnabled={true}
+              showsVerticalScrollIndicator={true}
+            >
+              {filteredMasterList.length === 0 ? (
+                <Text style={styles.emptyMasterText}>
+                  ไม่พบยาที่ค้นหาในคลัง คุณสามารถพิมพ์ชื่อยาเองด้านล่างได้ครับ
+                </Text>
+              ) : (
+                filteredMasterList.map(item => (
+                  <TouchableOpacity
+                    key={item.id}
+                    style={styles.masterItemCard}
+                    onPress={() => handleSelectMasterMed(item)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.masterItemName}>{item.name}</Text>
+                      <Text style={styles.masterItemMeta}>
+                        {item.dosage} {item.unit} • {item.type}
+                      </Text>
+                    </View>
+                    <View style={styles.masterItemCategoryBadge}>
+                      <Text style={styles.masterItemCategoryText}>{item.category}</Text>
+                    </View>
+                  </TouchableOpacity>
+                ))
+              )}
+            </ScrollView>
+          </View>
+        )}
+
+        {/* Success indicator if chosen from master catalog */}
+        {selectedFromMaster && (
+          <View style={styles.selectedMasterIndicator}>
+            <Ionicons name="checkmark-circle" size={16} color="#16A34A" />
+            <Text style={styles.selectedMasterText} numberOfLines={1}>
+              เลือกจากคลัง: {selectedFromMaster} (แก้ไขข้อมูลด้านล่างได้)
+            </Text>
+            <TouchableOpacity onPress={() => setSelectedFromMaster(null)}>
+              <Ionicons name="close-circle" size={16} color="#94A3B8" />
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* Drug Name Input */}
         <View style={styles.inputGroup}>
           <Text style={styles.inputLabel}>ชื่อยา / อาหารเสริม *</Text>
           <TextInput
             style={styles.input}
-            placeholder="เช่น แอสไพริน, Aspirin"
+            placeholder="เช่น แอสไพริน, Aspirin, ไทลินอล (หรือเลือกจากคลังด้านบน)"
             placeholderTextColor="#94A3B8"
             value={name}
-            onChangeText={setName}
+            onChangeText={(text) => {
+              setName(text);
+              if (selectedFromMaster && text !== selectedFromMaster) {
+                setSelectedFromMaster(null);
+              }
+            }}
           />
         </View>
 
@@ -205,7 +308,7 @@ export default function AddMedicationScreen() {
           <Text style={styles.nextButtonText}>ถัดไป: ตั้งค่าการรับประทาน →</Text>
         </TouchableOpacity>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -218,6 +321,141 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 16,
     paddingBottom: 40,
+  },
+  masterCatalogBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#EEF2FF',
+    borderWidth: 1.5,
+    borderColor: '#C7D2FE',
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 14,
+  },
+  masterCatalogLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  masterCatalogTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#3730A3',
+  },
+  masterCatalogSub: {
+    fontSize: 12,
+    color: '#6366F1',
+    marginTop: 2,
+  },
+  masterCatalogList: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    padding: 12,
+    marginBottom: 16,
+  },
+  masterCatalogHeader: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748B',
+    marginBottom: 10,
+  },
+  masterItemCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 8,
+  },
+  masterItemName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  masterItemMeta: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  masterItemCategoryBadge: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  masterItemCategoryText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  emptyMasterText: {
+    fontSize: 13,
+    color: '#94A3B8',
+    textAlign: 'center',
+    paddingVertical: 14,
+  },
+  selectedMasterIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    borderRadius: 12,
+    padding: 10,
+    marginBottom: 12,
+  },
+  selectedMasterText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#15803D',
+    marginLeft: 6,
+    marginRight: 6,
+  },
+  suggestionBox: {
+    marginBottom: 16,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  suggestionTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748B',
+    marginBottom: 8,
+  },
+  suggestionChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  suggestionChip: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+  },
+  suggestionChipActive: {
+    backgroundColor: '#6366F1',
+    borderColor: '#6366F1',
+  },
+  suggestionChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#4F46E5',
+  },
+  suggestionChipTextActive: {
+    color: '#FFFFFF',
   },
   sectionLabel: {
     fontSize: 14,

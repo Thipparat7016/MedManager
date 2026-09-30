@@ -6,17 +6,18 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Feather, Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '@/context/AppContext';
 import { PillIcon } from '@/components/ui/PillIcon';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 
 export default function MedicationsScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { medications, deleteMedication } = useApp();
   const [search, setSearch] = useState('');
   const [activeCategory, setActiveCategory] = useState<'ทั้งหมด' | 'ยา' | 'อาหารเสริม'>('ทั้งหมด');
@@ -45,10 +46,12 @@ export default function MedicationsScreen() {
     ]);
   };
 
+  const topInsetPadding = Math.max(insets.top, 24) + 14;
+
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <View style={styles.safeArea}>
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingTop: topInsetPadding }]}
         showsVerticalScrollIndicator={false}
       >
         {/* Top Header */}
@@ -140,16 +143,16 @@ export default function MedicationsScreen() {
             <View style={styles.emptyIconCircle}>
               <Feather name="plus-circle" size={40} color="#8B95F6" />
             </View>
-            <Text style={styles.emptyTitle}>ยังไม่มีรายการยาในระบบ</Text>
+            <Text style={styles.emptyTitle}>ยังไม่มีรายการยาใน "ยาของฉัน"</Text>
             <Text style={styles.emptySubtitle}>
-              กดปุ่ม "+ เพิ่มยา" เพื่อบันทึกยาประจำตัวของคุณ หรือเพิ่มข้อมูลผ่านระบบหลังบ้าน AdminMed
+              กดปุ่ม "+ เพิ่มยา" เพื่อเลือกยาจากคลังของระบบ (แอดมิน) หรือพิมพ์เพิ่มยาประจำตัวของคุณเอง
             </Text>
             <TouchableOpacity
               style={styles.emptyAddBtn}
               onPress={() => router.push('/add-medication')}
               activeOpacity={0.8}
             >
-              <Text style={styles.emptyAddBtnText}>+ เพิ่มยาตัวแรก</Text>
+              <Text style={styles.emptyAddBtnText}>+ เพิ่มยาประจำตัว</Text>
             </TouchableOpacity>
           </View>
         ) : (
@@ -231,7 +234,7 @@ export default function MedicationsScreen() {
           </>
         )}
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -242,7 +245,6 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 20,
-    paddingTop: 16,
     paddingBottom: 40,
   },
   headerRow: {

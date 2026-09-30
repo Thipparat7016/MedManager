@@ -5,83 +5,146 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
 } from 'react-native';
+import { useRouter } from 'expo-router';
 import { MaterialCommunityIcons, Feather, Ionicons } from '@expo/vector-icons';
 import { AppHeader } from '@/components/ui/AppHeader';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { useApp } from '@/context/AppContext';
+import { matchInteractionsForUser, MatchedInteractionResult } from '@/services/interactionMatcher';
 
 export default function FoodInteractionsScreen() {
+  const router = useRouter();
   const { interactions, medications } = useApp();
   const [selectedDrug, setSelectedDrug] = useState<string>('ทั้งหมด');
 
-  // Derive drug filters dynamically from active meds and interactions
-  const availableDrugs = Array.from(
-    new Set([
-      ...medications.map(m => m.name),
-      ...interactions.map(i => i.medicationName),
-    ])
-  ).filter(Boolean);
+  // User's active medications
+  const activeUserMeds = medications.filter(m => m.status === 'active');
 
-  const drugFilters = ['ทั้งหมด', ...availableDrugs];
+  // Automatically match user's medications with drug_food_interactions from Admin backend
+  const matchedList: MatchedInteractionResult[] = matchInteractionsForUser(activeUserMeds, interactions);
 
-  const filteredInteractions = interactions.filter(item => {
+  // Derive unique user drug names that actually have matched interactions
+  const matchedDrugNames = Array.from(
+    new Set(matchedList.map(item => item.matchedMedication.name))
+  );
+
+  const drugFilters = ['ทั้งหมด', ...matchedDrugNames];
+
+  // Filter matched interactions according to selected chip
+  const filteredList = matchedList.filter(item => {
     if (selectedDrug === 'ทั้งหมด') return true;
-    return item.medicationName.includes(selectedDrug) || item.medicationName.includes('ทุกชนิด');
+    return item.matchedMedication.name === selectedDrug;
   });
 
-  const avoidList = filteredInteractions.filter(i => i.interactionType === 'หลีกเลี่ยง');
-  const recommendList = filteredInteractions.filter(i => i.interactionType === 'แนะนำ');
+  const avoidList = filteredList.filter(i => i.interaction.interactionType === 'หลีกเลี่ยง');
+  const recommendList = filteredList.filter(i => i.interaction.interactionType === 'แนะนำ');
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <AppHeader title="ข้อมูลยาและอาหารที่ควรหลีกเลี่ยง" />
+    <View style={styles.safeArea}>
+      <AppHeader title="อาหารที่ควรหลีกเลี่ยง" />
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {interactions.length === 0 ? (
+        {/* CASE 1: User has NO medications in "ยาของฉัน" */}
+        {activeUserMeds.length === 0 ? (
           <View style={styles.emptyContainer}>
             <View style={styles.emptyIconCircle}>
-              <MaterialCommunityIcons name="silverware-fork-knife" size={40} color="#8B95F6" />
+              <MaterialCommunityIcons name="pill" size={44} color="#8B95F6" />
             </View>
-            <Text style={styles.emptyTitle}>ยังไม่มีข้อมูลอาหารที่ควรหลีกเลี่ยง</Text>
+            <Text style={styles.emptyTitle}>ยังไม่มีรายการยาใน "ยาของฉัน"</Text>
             <Text style={styles.emptySubtitle}>
-              ข้อมูลจะปรากฏเมื่อมียาที่ถูกบันทึก และมีข้อควรระวังจับคู่ในฐานข้อมูล Supabase
+              เมนูนี้จะเชื่อมต่อกับฐานข้อมูลระบบหลังบ้าน (AdminMed) อัตโนมัติ{'\n'}
+              และแสดงข้อควรระวังอาหารเฉพาะยาที่คุณเพิ่มลงในระบบ
             </Text>
+            <TouchableOpacity
+              style={styles.emptyAddBtn}
+              onPress={() => router.push('/add-medication')}
+              activeOpacity={0.8}
+            >
+              <Feather name="plus" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+              <Text style={styles.emptyAddBtnText}>เพิ่มยาใหม่ของคุณ</Text>
+            </TouchableOpacity>
+          </View>
+        ) : matchedList.length === 0 ? (
+          /* CASE 2: User HAS medications, but NONE match any food interaction in backend */
+          <View style={styles.emptyContainer}>
+            <View style={[styles.emptyIconCircle, { backgroundColor: '#ECFDF5' }]}>
+              <Ionicons name="shield-checkmark" size={44} color="#10B981" />
+            </View>
+            <Text style={styles.emptyTitle}>ไม่พบข้อควรระวังอาหารสำหรับยาของคุณ</Text>
+            <Text style={styles.emptySubtitle}>
+              ระบบได้นำยาที่คุณเพิ่ม ({activeUserMeds.map(m => m.name).join(', ')}) ไปตรวจสอบกับฐานข้อมูลหลังบ้านแล้ว{'\n'}
+              ไม่พบข้อห้ามหรือข้อควรระวังเกี่ยวกับอาหารในขณะนี้
+            </Text>
+            <View style={styles.infoBadge}>
+              <Ionicons name="information-circle-outline" size={16} color="#6366F1" />
+              <Text style={styles.infoBadgeText}>
+                ระบบจะแจ้งเตือนอัตโนมัติทันทีหากมีการอัปเดตข้อมูลในระบบหลังบ้าน หรือเมื่อคุณเพิ่มยาใหม่
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.outlineAddBtn}
+              onPress={() => router.push('/add-medication')}
+              activeOpacity={0.8}
+            >
+              <Feather name="plus" size={16} color="#4F46E5" style={{ marginRight: 6 }} />
+              <Text style={styles.outlineAddBtnText}>เพิ่มยาอื่นเพิ่มเติม</Text>
+            </TouchableOpacity>
           </View>
         ) : (
+          /* CASE 3: Active matches found between user medications and backend interactions */
           <>
+            {/* Sync Status Banner */}
+            <View style={styles.syncBanner}>
+              <View style={styles.syncBannerLeft}>
+                <Ionicons name="swap-horizontal" size={20} color="#4F46E5" />
+                <View style={{ marginLeft: 10, flex: 1 }}>
+                  <Text style={styles.syncBannerTitle}>เชื่อมต่อระบบหลังบ้านอัตโนมัติ</Text>
+                  <Text style={styles.syncBannerSubtitle}>
+                    ตรวจพบ {matchedList.length} ข้อควรระวัง จากยาที่คุณเพิ่ม ({matchedDrugNames.length} ชนิด)
+                  </Text>
+                </View>
+              </View>
+            </View>
+
             {/* Drug Filter Chips */}
-            {drugFilters.length > 1 && (
+            {drugFilters.length > 2 && (
               <>
-                <Text style={styles.filterTitle}>กรองตามยา</Text>
+                <Text style={styles.filterTitle}>กรองตามยาของคุณ</Text>
                 <ScrollView
                   horizontal
                   showsHorizontalScrollIndicator={false}
                   contentContainerStyle={styles.filterScroll}
                 >
-                  {drugFilters.map(drug => (
-                    <TouchableOpacity
-                      key={drug}
-                      style={[
-                        styles.filterChip,
-                        selectedDrug === drug && styles.filterChipActive,
-                      ]}
-                      onPress={() => setSelectedDrug(drug)}
-                      activeOpacity={0.7}
-                    >
-                      <Text
+                  {drugFilters.map(drug => {
+                    const count = drug === 'ทั้งหมด'
+                      ? matchedList.length
+                      : matchedList.filter(m => m.matchedMedication.name === drug).length;
+                    const isSelected = selectedDrug === drug;
+
+                    return (
+                      <TouchableOpacity
+                        key={drug}
                         style={[
-                          styles.filterChipText,
-                          selectedDrug === drug && styles.filterChipTextActive,
+                          styles.filterChip,
+                          isSelected && styles.filterChipActive,
                         ]}
+                        onPress={() => setSelectedDrug(drug)}
+                        activeOpacity={0.7}
                       >
-                        {drug}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
+                        <Text
+                          style={[
+                            styles.filterChipText,
+                            isSelected && styles.filterChipTextActive,
+                          ]}
+                        >
+                          {drug} ({count})
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
                 </ScrollView>
               </>
             )}
@@ -91,8 +154,9 @@ export default function FoodInteractionsScreen() {
               <>
                 <Text style={styles.sectionTitle}>อาหารที่ต้องหลีกเลี่ยง</Text>
                 {avoidList.map(item => {
-                  const isHigh = item.severity === 'สูง';
-                  const isMed = item.severity === 'กลาง';
+                  const inter = item.interaction;
+                  const isHigh = inter.severity === 'สูง';
+                  const isMed = inter.severity === 'กลาง';
 
                   return (
                     <View
@@ -104,49 +168,65 @@ export default function FoodInteractionsScreen() {
                         !isHigh && !isMed && styles.cardLowBorder,
                       ]}
                     >
+                      {/* Matched User Med Tag */}
+                      <View style={styles.matchedMedBadge}>
+                        <MaterialCommunityIcons name="pill" size={14} color="#4F46E5" />
+                        <Text style={styles.matchedMedText} numberOfLines={1}>
+                          ยาของคุณ: {item.matchedMedication.name} ({item.matchedMedication.dosage}{item.matchedMedication.unit})
+                        </Text>
+                      </View>
+
+                      {/* Header */}
                       <View style={styles.cardHeader}>
-                        <Text style={styles.foodName}>{item.foodName}</Text>
+                        <Text style={styles.foodName}>{inter.foodName}</Text>
                         <StatusBadge
-                          label={item.severity}
+                          label={inter.severity || 'ปานกลาง'}
                           variant={isHigh ? 'high' : isMed ? 'medium' : 'low'}
                           size="sm"
                         />
                       </View>
 
+                      {/* Interaction Rule */}
                       <View style={styles.infoRow}>
                         <MaterialCommunityIcons
-                          name="pill"
-                          size={14}
+                          name="alert-circle-outline"
+                          size={15}
                           color={isHigh ? '#EF4444' : isMed ? '#F97316' : '#EAB308'}
                           style={styles.iconStyle}
                         />
-                        <Text style={styles.infoText}>{item.medicationName}</Text>
+                        <Text style={styles.infoText}>
+                          ปฏิสัมพันธ์กับยา: <Text style={{ fontWeight: '700', color: '#1E293B' }}>{inter.medicationName}</Text>
+                        </Text>
                       </View>
 
-                      {item.hoursNote ? (
+                      {/* Timing / Hours Note */}
+                      {inter.hoursNote ? (
                         <View style={styles.infoRow}>
                           <Ionicons
                             name="time-outline"
-                            size={14}
+                            size={15}
                             color="#DC2626"
                             style={styles.iconStyle}
                           />
                           <Text style={[styles.infoTextBold, { color: '#DC2626' }]}>
-                            {item.hoursNote}
+                            คำแนะนำเวลา: {inter.hoursNote}
                           </Text>
                         </View>
                       ) : null}
 
-                      {item.impactDetails ? (
+                      {/* Impact Details */}
+                      {inter.impactDetails ? (
                         <View style={styles.impactBox}>
                           <Text style={styles.impactTitle}>ผลกระทบที่อาจเกิดขึ้น:</Text>
-                          <Text style={styles.impactText}>{item.impactDetails}</Text>
+                          <Text style={styles.impactText}>{inter.impactDetails}</Text>
                         </View>
                       ) : null}
 
-
+                      {/* Card Footer */}
                       <View style={styles.cardFooter}>
-                        <Text style={styles.sourceText}>แหล่งอ้างอิง: {item.sourceName || 'กรมการแพทย์'}</Text>
+                        <Text style={styles.sourceText}>
+                          ข้อมูลหลังบ้าน: {inter.sourceName || 'ระบบฐานข้อมูล MedManager'}
+                        </Text>
                       </View>
                     </View>
                   );
@@ -158,43 +238,45 @@ export default function FoodInteractionsScreen() {
             {recommendList.length > 0 && (
               <>
                 <Text style={[styles.sectionTitle, { marginTop: 24 }]}>อาหารที่แนะนำ</Text>
-                {recommendList.map(item => (
-                  <View key={item.id} style={styles.recommendCard}>
-                    <Text style={styles.recommendFoodName}>{item.foodName}</Text>
+                {recommendList.map(item => {
+                  const inter = item.interaction;
+                  return (
+                    <View key={item.id} style={styles.recommendCard}>
+                      <View style={styles.matchedMedBadge}>
+                        <MaterialCommunityIcons name="pill" size={14} color="#15803D" />
+                        <Text style={[styles.matchedMedText, { color: '#15803D' }]} numberOfLines={1}>
+                          ยาของคุณ: {item.matchedMedication.name}
+                        </Text>
+                      </View>
 
-                    <View style={styles.infoRow}>
-                      <MaterialCommunityIcons
-                        name="pill"
-                        size={14}
-                        color="#8B95F6"
-                        style={styles.iconStyle}
-                      />
-                      <Text style={styles.infoText}>{item.medicationName}</Text>
-                    </View>
+                      <Text style={styles.recommendFoodName}>{inter.foodName}</Text>
 
-                    <View style={styles.infoRow}>
-                      <Ionicons
-                        name="shield-checkmark"
-                        size={14}
-                        color="#10B981"
-                        style={styles.iconStyle}
-                      />
-                      <Text style={[styles.infoTextBold, { color: '#047857' }]}>
-                        {item.impactDetails}
-                      </Text>
-                    </View>
+                      <View style={styles.infoRow}>
+                        <Ionicons
+                          name="shield-checkmark"
+                          size={15}
+                          color="#10B981"
+                          style={styles.iconStyle}
+                        />
+                        <Text style={[styles.infoTextBold, { color: '#047857' }]}>
+                          {inter.impactDetails}
+                        </Text>
+                      </View>
 
-                    <View style={styles.cardFooter}>
-                      <Text style={styles.sourceText}>แหล่งอ้างอิง: {item.sourceName || 'กรมการแพทย์'}</Text>
+                      <View style={styles.cardFooter}>
+                        <Text style={styles.sourceText}>
+                          ข้อมูลหลังบ้าน: {inter.sourceName || 'ระบบฐานข้อมูล MedManager'}
+                        </Text>
+                      </View>
                     </View>
-                  </View>
-                ))}
+                  );
+                })}
               </>
             )}
           </>
         )}
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -213,13 +295,13 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 80,
+    paddingVertical: 60,
     paddingHorizontal: 20,
   },
   emptyIconCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 88,
+    height: 88,
+    borderRadius: 44,
     backgroundColor: '#EEF0FF',
     alignItems: 'center',
     justifyContent: 'center',
@@ -229,14 +311,83 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '800',
     color: '#0F172A',
-    marginBottom: 8,
+    marginBottom: 10,
     textAlign: 'center',
   },
   emptySubtitle: {
     fontSize: 14,
     color: '#64748B',
     textAlign: 'center',
-    lineHeight: 20,
+    lineHeight: 22,
+    marginBottom: 20,
+  },
+  emptyAddBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#6366F1',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 14,
+  },
+  emptyAddBtnText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  outlineAddBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EEF2FF',
+    borderWidth: 1.5,
+    borderColor: '#C7D2FE',
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 12,
+    marginTop: 16,
+  },
+  outlineAddBtnText: {
+    color: '#4F46E5',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  infoBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F5F6FF',
+    padding: 12,
+    borderRadius: 12,
+    marginVertical: 12,
+    borderWidth: 1,
+    borderColor: '#E0E7FF',
+  },
+  infoBadgeText: {
+    fontSize: 12,
+    color: '#4F46E5',
+    marginLeft: 8,
+    flex: 1,
+    lineHeight: 18,
+  },
+  syncBanner: {
+    backgroundColor: '#EEF2FF',
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: '#C7D2FE',
+    padding: 14,
+    marginBottom: 16,
+  },
+  syncBannerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  syncBannerTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#3730A3',
+  },
+  syncBannerSubtitle: {
+    fontSize: 12,
+    color: '#4F46E5',
+    marginTop: 2,
   },
   filterTitle: {
     fontSize: 13,
@@ -259,8 +410,8 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   filterChipActive: {
-    backgroundColor: '#BAE6FD',
-    borderColor: '#38BDF8',
+    backgroundColor: '#6366F1',
+    borderColor: '#6366F1',
   },
   filterChipText: {
     fontSize: 13,
@@ -268,7 +419,7 @@ const styles = StyleSheet.create({
     color: '#64748B',
   },
   filterChipTextActive: {
-    color: '#0369A1',
+    color: '#FFFFFF',
     fontWeight: '700',
   },
   sectionTitle: {
@@ -282,7 +433,12 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     borderWidth: 1.5,
     padding: 16,
-    marginBottom: 12,
+    marginBottom: 14,
+    shadowColor: '#6366F1',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 1,
   },
   cardHighBorder: {
     borderColor: '#FECACA',
@@ -293,16 +449,36 @@ const styles = StyleSheet.create({
   cardLowBorder: {
     borderColor: '#FEF08A',
   },
+  matchedMedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F5F6FF',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#E0E7FF',
+  },
+  matchedMedText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#4F46E5',
+    marginLeft: 6,
+  },
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 10,
   },
   foodName: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: '800',
     color: '#0F172A',
+    flex: 1,
+    marginRight: 8,
   },
   infoRow: {
     flexDirection: 'row',
@@ -316,42 +492,31 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#64748B',
     fontWeight: '500',
+    flex: 1,
   },
   infoTextBold: {
     fontSize: 13,
     fontWeight: '700',
+    flex: 1,
   },
   impactBox: {
     backgroundColor: '#FFF1F2',
-    borderRadius: 10,
-    padding: 10,
-    marginVertical: 6,
+    borderRadius: 12,
+    padding: 12,
+    marginVertical: 8,
+    borderWidth: 1,
+    borderColor: '#FFE4E6',
   },
   impactTitle: {
     fontSize: 12,
     fontWeight: '700',
     color: '#E11D48',
-    marginBottom: 2,
+    marginBottom: 4,
   },
   impactText: {
-    fontSize: 12,
+    fontSize: 13,
     color: '#9F1239',
-  },
-  recommendBox: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 10,
-    padding: 10,
-    marginVertical: 6,
-  },
-  recommendTitle: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#475569',
-    marginBottom: 2,
-  },
-  recommendText: {
-    fontSize: 12,
-    color: '#64748B',
+    lineHeight: 18,
   },
   cardFooter: {
     marginTop: 8,
@@ -370,7 +535,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: '#BBF7D0',
     padding: 16,
-    marginBottom: 12,
+    marginBottom: 14,
   },
   recommendFoodName: {
     fontSize: 16,

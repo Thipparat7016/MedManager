@@ -5,16 +5,17 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Feather, Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '@/context/AppContext';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 
 export default function AppointmentsScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { appointments, deleteAppointment } = useApp();
 
   const now = new Date();
@@ -70,10 +71,12 @@ export default function AppointmentsScreen() {
     return match ? parseInt(match[1], 10) : -1;
   }).filter(d => d > 0);
 
+  const topInsetPadding = Math.max(insets.top, 24) + 14;
+
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <View style={styles.safeArea}>
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingTop: topInsetPadding }]}
         showsVerticalScrollIndicator={false}
       >
         {/* Top Header */}
@@ -212,7 +215,7 @@ export default function AppointmentsScreen() {
           </>
         )}
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -223,7 +226,6 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 20,
-    paddingTop: 16,
     paddingBottom: 40,
   },
   headerRow: {

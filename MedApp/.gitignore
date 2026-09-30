@@ -42,5 +42,3 @@ example
 /ios
 /android
 
-# ignore services folder
-src/services/

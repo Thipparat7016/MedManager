@@ -9,10 +9,12 @@ import {
   AppNotification,
   UserProfile,
 } from '@/services/medService';
+import { isMedicationMatch } from '@/services/interactionMatcher';
 
 interface AppContextType {
   user: UserProfile | null;
   medications: Medication[];
+  masterMedications: Medication[];
   todaySchedule: ScheduleItem[];
   appointments: DoctorAppointment[];
   sideEffects: SideEffectLog[];
@@ -20,7 +22,8 @@ interface AppContextType {
   notifications: AppNotification[];
   isLoading: boolean;
   isAuthenticated: boolean;
-  login: (email: string, pass: string) => Promise<boolean>;
+  login: (email: string, pass: string) => Promise<{ success: boolean; error?: string }>;
+  register: (data: { name: string; email: string; phone?: string; password: string }) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
   refreshData: () => Promise<void>;
   markTaken: (scheduleId: string, isTaken?: boolean) => Promise<void>;
@@ -40,28 +43,35 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [medications, setMedications] = useState<Medication[]>([]);
+  const [masterMedications, setMasterMedications] = useState<Medication[]>([]);
   const [todaySchedule, setTodaySchedule] = useState<ScheduleItem[]>([]);
   const [appointments, setAppointments] = useState<DoctorAppointment[]>([]);
   const [sideEffects, setSideEffects] = useState<SideEffectLog[]>([]);
   const [interactions, setInteractions] = useState<DrugFoodInteraction[]>([]);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(true);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
 
   const loadAllData = async () => {
     try {
       setIsLoading(true);
-      const [u, meds, sched, apts, se, inter] = await Promise.all([
-        medService.getUserProfile(),
-        medService.getMedications(),
-        medService.getTodaySchedule(),
-        medService.getAppointments(),
-        medService.getSideEffects(),
-        medService.getInteractions(),
+      // 1. Immediately restore user profile & auth status
+      const u = await medService.getUserProfile().catch(() => null);
+      setUser(u);
+      setIsAuthenticated(Boolean(u && u.email));
+
+      // 2. Concurrently load application datasets
+      const [userMeds, masterMeds, sched, apts, se, inter] = await Promise.all([
+        medService.getMedications().catch(() => []),
+        medService.getMasterMedications().catch(() => []),
+        medService.getTodaySchedule().catch(() => []),
+        medService.getAppointments().catch(() => []),
+        medService.getSideEffects().catch(() => []),
+        medService.getInteractions().catch(() => []),
       ]);
 
-      setUser(u);
-      setMedications(meds);
+      setMedications(userMeds);
+      setMasterMedications(masterMeds);
       setTodaySchedule(sched);
       setAppointments(apts);
       setSideEffects(se);
@@ -88,7 +98,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         // Food warning for this upcoming med if any exists
         const matchingInter = inter.find(
           i => i.interactionType === 'หลีกเลี่ยง' && 
-          (i.medicationName.includes(nextPending.medicationName) || i.medicationName.includes('ทุกชนิด'))
+          isMedicationMatch(nextPending.medicationName, i.medicationName)
         );
         if (matchingInter) {
           dynamicNotifs.push({
@@ -114,8 +124,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         });
       });
 
-      // 3. Low stock warning for real medications
-      meds.filter(m => m.remaining !== undefined && m.lowStockThreshold !== undefined && m.remaining <= m.lowStockThreshold).forEach(m => {
+      // 3. Low stock warning for real user medications
+      userMeds.filter(m => m.remaining !== undefined && m.lowStockThreshold !== undefined && m.remaining <= m.lowStockThreshold).forEach(m => {
         dynamicNotifs.push({
           id: `notif-stock-${m.id}`,
           type: 'low_stock',
@@ -138,15 +148,45 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     loadAllData();
   }, []);
 
-  const login = async (email: string, pass: string) => {
-    setIsAuthenticated(true);
-    const profile = await medService.loginUser(email);
-    setUser(profile);
-    await loadAllData();
-    return true;
+  const login = async (email: string, pass: string): Promise<{ success: boolean; error?: string }> => {
+    try {
+      setIsLoading(true);
+      const profile = await medService.loginUser(email, pass);
+      setUser(profile);
+      setIsAuthenticated(true);
+      await loadAllData();
+      return { success: true };
+    } catch (e: any) {
+      console.warn('Login error:', e);
+      return { success: false, error: e?.message || 'เข้าสู่ระบบไม่สำเร็จ' };
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const register = async (data: {
+    name: string;
+    email: string;
+    phone?: string;
+    password: string;
+  }): Promise<{ success: boolean; error?: string }> => {
+    try {
+      setIsLoading(true);
+      const profile = await medService.registerUser(data);
+      setUser(profile);
+      setIsAuthenticated(true);
+      await loadAllData();
+      return { success: true };
+    } catch (e: any) {
+      console.warn('Register error:', e);
+      return { success: false, error: e?.message || 'สมัครสมาชิกไม่สำเร็จ' };
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const logout = async () => {
+    await medService.logoutUser();
     setIsAuthenticated(false);
     setUser(null);
   };
@@ -214,6 +254,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       value={{
         user,
         medications,
+        masterMedications,
         todaySchedule,
         appointments,
         sideEffects,
@@ -222,6 +263,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         isLoading,
         isAuthenticated,
         login,
+        register,
         logout,
         refreshData,
         markTaken,

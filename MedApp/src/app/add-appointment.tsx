@@ -6,9 +6,9 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   Alert,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { AppHeader } from '@/components/ui/AppHeader';
 import { useApp } from '@/context/AppContext';

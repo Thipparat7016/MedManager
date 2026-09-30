@@ -5,9 +5,9 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   Alert,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons, Feather } from '@expo/vector-icons';
 import { AppHeader } from '@/components/ui/AppHeader';
 import { useApp } from '@/context/AppContext';
