@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
-import { Check, Plus, Image as ImageIcon, Sparkles, Loader2, CheckCircle2, AlertCircle, Pill, Search } from 'lucide-react'
+import { Check, Plus, Image as ImageIcon, Sparkles, Loader2, CheckCircle2, AlertCircle, Pill, Search, ChevronDown } from 'lucide-react'
 import { dataService } from '../services/dataService'
 import { fetchDrugFromOpenFda, getDrugSuggestions, fetchMedicalEntity } from '../services/openFdaService'
 
@@ -10,15 +10,20 @@ export default function MedicationFormPage() {
   const fileInputRef = useRef(null)
   const dropdownRefEn = useRef(null)
   const dropdownRefTh = useRef(null)
+  const dropdownRefCategory = useRef(null)
+  const dropdownRefType = useRef(null)
+  const dropdownRefUnit = useRef(null)
   const isEditing = Boolean(id)
+
+  const [openCustomDropdown, setOpenCustomDropdown] = useState(null) // 'category' | 'type' | 'unit' | null
 
   const [formData, setFormData] = useState({
     name_th: '',
     name_en: '',
-    type: 'เม็ด',
+    type: '',
     dosage: '',
-    unit: 'mg',
-    category: 'ยา',
+    unit: '',
+    category: '',
     indications: '',
     instructions: '',
     precautions: '',
@@ -44,6 +49,13 @@ export default function MedicationFormPage() {
       const isOutsideTh = !dropdownRefTh.current || !dropdownRefTh.current.contains(event.target)
       if (isOutsideEn && isOutsideTh) {
         setActiveDropdownField(null)
+      }
+
+      const isOutsideCat = !dropdownRefCategory.current || !dropdownRefCategory.current.contains(event.target)
+      const isOutsideType = !dropdownRefType.current || !dropdownRefType.current.contains(event.target)
+      const isOutsideUnit = !dropdownRefUnit.current || !dropdownRefUnit.current.contains(event.target)
+      if (isOutsideCat && isOutsideType && isOutsideUnit) {
+        setOpenCustomDropdown(null)
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
@@ -101,6 +113,7 @@ export default function MedicationFormPage() {
 
   const handleEnglishNameChange = (e) => {
     const val = e.target.value
+    setOpenCustomDropdown(null)
     setFormData(prev => ({ ...prev, name_en: val }))
     setSuggestions(getDrugSuggestions(val, formData.category))
     setActiveDropdownField('name_en')
@@ -109,6 +122,7 @@ export default function MedicationFormPage() {
 
   const handleThaiNameChange = (e) => {
     const val = e.target.value
+    setOpenCustomDropdown(null)
     setFormData(prev => ({ ...prev, name_th: val }))
     setSuggestions(getDrugSuggestions(val, formData.category))
     setActiveDropdownField('name_th')
@@ -209,7 +223,128 @@ export default function MedicationFormPage() {
     )
   }
 
+  const categoryOptions = ['ยา', 'อาหารเสริม']
 
+  const typeOptions = [formData.category === 'อาหารเสริม' ? 'เม็ด' : 'เม็ด', 'แคปซูล', 'ยาน้ำ']
+
+  const unitOptions = ['mg', 'ml']
+
+  const handleSelectCategory = (cat) => {
+    setFormData(prev => ({ ...prev, category: cat }))
+    setOpenCustomDropdown(null)
+    const q = activeDropdownField === 'name_en' ? formData.name_en : formData.name_th
+    setSuggestions(getDrugSuggestions(q, cat))
+  }
+
+  const handleSelectType = (typ) => {
+    setFormData(prev => ({ ...prev, type: typ === 'ยาเม็ด' ? 'เม็ด' : typ }))
+    setOpenCustomDropdown(null)
+  }
+
+  const handleSelectUnit = (u) => {
+    setFormData(prev => ({ ...prev, unit: u }))
+    setOpenCustomDropdown(null)
+  }
+
+  const renderCustomDropdown = ({
+    dropdownKey,
+    selectedValue,
+    placeholder,
+    options,
+    onSelect,
+    containerRef
+  }) => {
+    const isOpen = openCustomDropdown === dropdownKey
+
+    return (
+      <div style={{ position: 'relative' }} ref={containerRef}>
+        <div
+          onClick={() => {
+            setActiveDropdownField(null)
+            setOpenCustomDropdown(prev => prev === dropdownKey ? null : dropdownKey)
+          }}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            width: '100%',
+            padding: '10px 14px',
+            fontSize: '14px',
+            backgroundColor: '#ffffff',
+            border: isOpen ? '2px solid var(--color-primary-500)' : '1px solid var(--border-input)',
+            boxShadow: isOpen ? '0 0 0 3px #DFF2FF' : 'none',
+            borderRadius: 'var(--radius-sm)',
+            cursor: 'pointer',
+            userSelect: 'none',
+            transition: 'border-color 0.15s ease, box-shadow 0.15s ease',
+            minHeight: '41px',
+            boxSizing: 'border-box'
+          }}
+        >
+          <span style={{
+            color: selectedValue ? '#0f172a' : 'var(--color-neutral-400)',
+            fontWeight: selectedValue ? 500 : 400
+          }}>
+            {selectedValue || placeholder}
+          </span>
+          <ChevronDown
+            size={16}
+            style={{
+              color: '#64748b',
+              transition: 'transform 0.2s ease',
+              transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+              flexShrink: 0,
+              marginLeft: '8px'
+            }}
+          />
+        </div>
+
+        {isOpen && (
+          <div
+            style={{
+              position: 'absolute',
+              top: 'calc(100% + 4px)',
+              left: 0,
+              right: 0,
+              backgroundColor: '#ffffff',
+              border: '1px solid #cbd5e1',
+              borderRadius: '8px',
+              boxShadow: '0 8px 20px -4px rgba(0, 0, 0, 0.12), 0 2px 6px -1px rgba(0, 0, 0, 0.06)',
+              zIndex: 100,
+              overflow: 'hidden'
+            }}
+          >
+            {options.map((item, idx) => {
+              const isSelected = selectedValue === item
+              return (
+                <div
+                  key={item}
+                  onMouseDown={(e) => {
+                    e.preventDefault()
+                    onSelect(item)
+                  }}
+                  style={{
+                    padding: '10px 14px',
+                    cursor: 'pointer',
+                    fontSize: '13.5px',
+                    color: isSelected ? '#0284c7' : '#0f172a',
+                    fontWeight: isSelected ? 600 : 400,
+                    backgroundColor: isSelected ? '#f0f9ff' : '#ffffff',
+                    borderBottom: idx === options.length - 1 ? 'none' : '1px solid #f1f5f9',
+                    transition: 'background-color 0.1s ease'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f0f9ff'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = isSelected ? '#f0f9ff' : '#ffffff'}
+                >
+                  {item}
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    )
+  }
 
   useEffect(() => {
     if (isEditing) {
@@ -225,10 +360,10 @@ export default function MedicationFormPage() {
         code: med.code,
         name_th: med.name_th || '',
         name_en: med.name_en || '',
-        type: med.type || 'เม็ด',
+        type: med.type || '',
         dosage: med.dosage || '',
-        unit: med.unit || 'mg',
-        category: med.category || 'ยา',
+        unit: med.unit || '',
+        category: med.category || '',
         indications: med.indications || '',
         instructions: med.instructions || '',
         precautions: med.precautions || '',
@@ -263,7 +398,14 @@ export default function MedicationFormPage() {
 
   const handleSubmit = async (e) => {
     if (e) e.preventDefault()
-    if (!formData.name_th.trim() || !formData.name_en.trim() || !formData.dosage.trim()) {
+    if (
+      !formData.name_th.trim() || 
+      !formData.name_en.trim() || 
+      !formData.category || 
+      !formData.type || 
+      !formData.dosage.trim() || 
+      !formData.unit.trim()
+    ) {
       setErrorMsg('กรุณากรอกข้อมูลที่จำเป็น (*) ให้ครบถ้วน')
       return
     }
@@ -420,15 +562,14 @@ export default function MedicationFormPage() {
                 <label className="form-label">
                   หมวดหมู่ <span className="required">*</span>
                 </label>
-                <select 
-                  name="category"
-                  className="form-select"
-                  value={formData.category}
-                  onChange={handleChange}
-                >
-                  <option value="ยา">ยา</option>
-                  <option value="อาหารเสริม">อาหารเสริม</option>
-                </select>
+                {renderCustomDropdown({
+                  dropdownKey: 'category',
+                  selectedValue: formData.category,
+                  placeholder: '-- เลือกหมวดหมู่ --',
+                  options: categoryOptions,
+                  onSelect: handleSelectCategory,
+                  containerRef: dropdownRefCategory
+                })}
               </div>
             </div>
 
@@ -437,16 +578,14 @@ export default function MedicationFormPage() {
                 <label className="form-label">
                   {formData.category === 'อาหารเสริม' ? 'รูปแบบ / ประเภท' : 'ประเภทยา'} <span className="required">*</span>
                 </label>
-                <select 
-                  name="type"
-                  className="form-select"
-                  value={formData.type === 'ยาเม็ด' ? 'เม็ด' : formData.type}
-                  onChange={handleChange}
-                >
-                  <option value="เม็ด">{formData.category === 'อาหารเสริม' ? 'เม็ด' : 'ยาเม็ด'}</option>
-                  <option value="แคปซูล">แคปซูล</option>
-                  <option value="ยาน้ำ">ยาน้ำ</option>
-                </select>
+                {renderCustomDropdown({
+                  dropdownKey: 'type',
+                  selectedValue: formData.type === 'เม็ด' && formData.category !== 'อาหารเสริม' ? 'ยาเม็ด' : formData.type,
+                  placeholder: `-- ${formData.category === 'อาหารเสริม' ? 'เลือกรูปแบบ / ประเภท' : 'เลือกประเภทยา'} --`,
+                  options: typeOptions,
+                  onSelect: handleSelectType,
+                  containerRef: dropdownRefType
+                })}
               </div>
 
               <div className="form-group" style={{ marginBottom: 0 }}>
@@ -468,15 +607,14 @@ export default function MedicationFormPage() {
                 <label className="form-label">
                   หน่วย <span className="required">*</span>
                 </label>
-                <input 
-                  type="text" 
-                  name="unit"
-                  className="form-input" 
-                  placeholder="mg / ml / IU / g"
-                  value={formData.unit}
-                  onChange={handleChange}
-                  required
-                />
+                {renderCustomDropdown({
+                  dropdownKey: 'unit',
+                  selectedValue: formData.unit,
+                  placeholder: '-- เลือกหน่วย --',
+                  options: unitOptions,
+                  onSelect: handleSelectUnit,
+                  containerRef: dropdownRefUnit
+                })}
               </div>
             </div>
           </div>

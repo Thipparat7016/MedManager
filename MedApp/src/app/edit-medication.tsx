@@ -24,6 +24,7 @@ export default function EditMedicationScreen() {
   const existingMed = medications.find(m => m.id === medId) || medications[0];
 
   const [name, setName] = useState(existingMed?.name || '');
+  const [category, setCategory] = useState<'ยา' | 'อาหารเสริม'>(existingMed?.category || 'ยา');
   const [type, setType] = useState(existingMed?.type || 'เม็ด');
   const [dosage, setDosage] = useState(existingMed?.dosage || '');
   const [unit, setUnit] = useState(existingMed?.unit || 'mg');
@@ -32,9 +33,13 @@ export default function EditMedicationScreen() {
   const [showUnitPicker, setShowUnitPicker] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
+  const categoryOptions: Array<'ยา' | 'อาหารเสริม'> = [
+    'ยา',
+    'อาหารเสริม',
+  ];
+
   const typeOptions: Array<'เม็ด' | 'อาหารเสริม' | 'แคปซูล' | 'ยาน้ำ'> = [
     'เม็ด',
-    'อาหารเสริม',
     'แคปซูล',
     'ยาน้ำ',
   ];
@@ -51,6 +56,7 @@ export default function EditMedicationScreen() {
     await saveMedication({
       ...existingMed,
       name,
+      category,
       type: type as any,
       dosage,
       unit,
@@ -91,6 +97,33 @@ export default function EditMedicationScreen() {
             onChangeText={setName}
             placeholder="ชื่อยา / อาหารเสริม"
           />
+        </View>
+
+        {/* Category Selection */}
+        <View style={styles.inputGroup}>
+          <Text style={styles.inputLabel}>หมวดหมู่</Text>
+          <View style={styles.chipsRow}>
+            {categoryOptions.map(c => {
+              const isSelected = category === c;
+              return (
+                <TouchableOpacity
+                  key={c}
+                  style={[styles.typeChip, isSelected && styles.typeChipActive]}
+                  onPress={() => setCategory(c)}
+                  activeOpacity={0.7}
+                >
+                  <Text
+                    style={[
+                      styles.typeChipText,
+                      isSelected && styles.typeChipTextActive,
+                    ]}
+                  >
+                    {c}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
         </View>
 
         {/* Type Selection */}
@@ -267,12 +300,15 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   typeChip: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
     paddingVertical: 10,
-    borderRadius: 20,
-    borderWidth: 1,
+    borderRadius: 22,
+    borderWidth: 1.5,
     borderColor: '#E2E8F0',
     backgroundColor: '#F8FAFC',
+    minWidth: 72,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   typeChipActive: {
     backgroundColor: '#8B95F6',
@@ -281,7 +317,7 @@ const styles = StyleSheet.create({
   typeChipText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#64748B',
+    color: '#475569',
   },
   typeChipTextActive: {
     color: '#FFFFFF',

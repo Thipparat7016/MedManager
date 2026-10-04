@@ -103,7 +103,7 @@ export default function HomeScreen() {
           </View>
           <Text style={styles.progressSubtext}>
             {totalCount === 0
-              ? 'ยังไม่มีตารางยาสำหรับวันนี้ เริ่มต้นเพิ่มยาใหม่ได้เลยครับ'
+              ? 'ยังไม่มีตารางรับประทานยายาสำหรับวันนี้'
               : remainingCount === 0
               ? 'ยอดเยี่ยม! คุณรับประทานยาครบทุกมื้อแล้วสำหรับวันนี้'
               : `กิน ${takenCount} ครั้ง • เหลืออีก ${remainingCount} ครั้ง • อย่าลืมทานยาให้ตรงเวลานะครับ`}
@@ -349,18 +349,19 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   progressCard: {
-    backgroundColor: '#FAFAFC',
-    borderRadius: 20,
-    borderWidth: 1.5,
-    borderColor: '#EEF0F8',
-    padding: 18,
+    backgroundColor: '#F9FBFC',
+    borderRadius: 11,
+    borderWidth: 1,
+    borderColor: '#DEE5F3',
+    padding: 13,
+    gap: 7,
     marginBottom: 16,
   },
   progressHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 0,
   },
   progressTitle: {
     fontSize: 16,
@@ -377,7 +378,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#E2E8F0',
     borderRadius: 5,
     overflow: 'hidden',
-    marginBottom: 10,
+    marginBottom: 0,
   },
   progressBarFill: {
     height: '100%',

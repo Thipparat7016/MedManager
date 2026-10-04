@@ -19,7 +19,8 @@ export default function AddMedicationScreen() {
   const { masterMedications } = useApp();
 
   const [name, setName] = useState('');
-  const [type, setType] = useState<'เม็ด' | 'อาหารเสริม' | 'แคปซูล' | 'ยาน้ำ'>('เม็ด');
+  const [category, setCategory] = useState<'ยา' | 'อาหารเสริม' | null>(null);
+  const [type, setType] = useState<'เม็ด' | 'อาหารเสริม' | 'แคปซูล' | 'ยาน้ำ' | null>(null);
   const [dosage, setDosage] = useState('');
   const [unit, setUnit] = useState('mg');
   const [notes, setNotes] = useState('');
@@ -27,18 +28,30 @@ export default function AddMedicationScreen() {
   const [showMasterCatalog, setShowMasterCatalog] = useState(false);
   const [selectedFromMaster, setSelectedFromMaster] = useState<string | null>(null);
 
+  const categoryOptions: Array<'ยา' | 'อาหารเสริม'> = [
+    'ยา',
+    'อาหารเสริม',
+  ];
+
   const typeOptions: Array<'เม็ด' | 'อาหารเสริม' | 'แคปซูล' | 'ยาน้ำ'> = [
     'เม็ด',
-    'อาหารเสริม',
     'แคปซูล',
     'ยาน้ำ',
   ];
 
-  const unitOptions = ['mg', 'ml', 'IU', 'g', 'เม็ด', 'หยด'];
+  const unitOptions = ['mg', 'ml'];
 
   const handleNext = () => {
     if (!name.trim()) {
       Alert.alert('กรุณากรอกข้อมูล', 'กรุณาระบุชื่อยาหรืออาหารเสริม');
+      return;
+    }
+    if (!category) {
+      Alert.alert('กรุณากรอกข้อมูล', 'กรุณาเลือกหมวดหมู่ (ยา หรือ อาหารเสริม)');
+      return;
+    }
+    if (!type) {
+      Alert.alert('กรุณากรอกข้อมูล', 'กรุณาเลือกประเภท (เม็ด, แคปซูล หรือ ยาน้ำ)');
       return;
     }
     if (!dosage.trim()) {
@@ -50,6 +63,7 @@ export default function AddMedicationScreen() {
       pathname: '/medication-settings',
       params: {
         name,
+        category,
         type,
         dosage,
         unit,
@@ -60,6 +74,9 @@ export default function AddMedicationScreen() {
 
   const handleSelectMasterMed = (item: Medication) => {
     setName(item.name);
+    if (item.category === 'ยา' || item.category === 'อาหารเสริม') {
+      setCategory(item.category);
+    }
     if (item.type === 'เม็ด' || item.type === 'อาหารเสริม' || item.type === 'แคปซูล' || item.type === 'ยาน้ำ') {
       setType(item.type);
     }
@@ -86,115 +103,23 @@ export default function AddMedicationScreen() {
         showsVerticalScrollIndicator={false}
       >
         {/* Photo Upload Area */}
-        <Text style={styles.sectionLabel}>รูปถ่ายยา / อาหารเสริม</Text>
+        <Text style={styles.sectionLabel}>รูปถ่าย</Text>
         <TouchableOpacity
           style={styles.photoUploadBox}
           onPress={() => Alert.alert('เลือกรูปภาพ', 'เลือกรูปภาพยาจากอุปกรณ์ของคุณ')}
           activeOpacity={0.8}
         >
           <Text style={styles.photoUploadPlaceholder}>
-            แตะเพื่อถ่ายรูปหรือเลือกจากคลัง
+            แตะเพื่อเลือกรูปภาพจากคลัง
           </Text>
         </TouchableOpacity>
-
-        <View style={styles.photoButtonsRow}>
-          <TouchableOpacity
-            style={styles.photoActionBtn}
-            onPress={() => Alert.alert('ถ่ายรูป', 'เปิดกล้องถ่ายรูป')}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.photoActionBtnText}>ถ่ายรูป</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.photoActionBtn}
-            onPress={() => Alert.alert('เลือกจากคลัง', 'เปิดคลังภาพ')}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.photoActionBtnText}>เลือกจากคลัง</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Master Catalog Selector Button */}
-        <TouchableOpacity
-          style={styles.masterCatalogBtn}
-          onPress={() => setShowMasterCatalog(!showMasterCatalog)}
-          activeOpacity={0.8}
-        >
-          <View style={styles.masterCatalogLeft}>
-            <MaterialCommunityIcons name="database-search" size={22} color="#4F46E5" />
-            <View style={{ marginLeft: 10 }}>
-              <Text style={styles.masterCatalogTitle}>เลือกจากคลังยาของระบบ (แอดมิน)</Text>
-              <Text style={styles.masterCatalogSub}>
-                มีข้อมูลยาพื้นฐาน {masterMedications.length} รายการในฐานข้อมูล
-              </Text>
-            </View>
-          </View>
-          <Ionicons
-            name={showMasterCatalog ? 'chevron-up' : 'chevron-down'}
-            size={20}
-            color="#4F46E5"
-          />
-        </TouchableOpacity>
-
-        {/* Master Catalog Dropdown List */}
-        {showMasterCatalog && (
-          <View style={styles.masterCatalogList}>
-            <Text style={styles.masterCatalogHeader}>
-              แตะยาที่ต้องการเพื่อดึงข้อมูลจากคลังแอดมินอัตโนมัติ:
-            </Text>
-            <ScrollView
-              style={{ maxHeight: 220 }}
-              nestedScrollEnabled={true}
-              showsVerticalScrollIndicator={true}
-            >
-              {filteredMasterList.length === 0 ? (
-                <Text style={styles.emptyMasterText}>
-                  ไม่พบยาที่ค้นหาในคลัง คุณสามารถพิมพ์ชื่อยาเองด้านล่างได้ครับ
-                </Text>
-              ) : (
-                filteredMasterList.map(item => (
-                  <TouchableOpacity
-                    key={item.id}
-                    style={styles.masterItemCard}
-                    onPress={() => handleSelectMasterMed(item)}
-                    activeOpacity={0.7}
-                  >
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.masterItemName}>{item.name}</Text>
-                      <Text style={styles.masterItemMeta}>
-                        {item.dosage} {item.unit} • {item.type}
-                      </Text>
-                    </View>
-                    <View style={styles.masterItemCategoryBadge}>
-                      <Text style={styles.masterItemCategoryText}>{item.category}</Text>
-                    </View>
-                  </TouchableOpacity>
-                ))
-              )}
-            </ScrollView>
-          </View>
-        )}
-
-        {/* Success indicator if chosen from master catalog */}
-        {selectedFromMaster && (
-          <View style={styles.selectedMasterIndicator}>
-            <Ionicons name="checkmark-circle" size={16} color="#16A34A" />
-            <Text style={styles.selectedMasterText} numberOfLines={1}>
-              เลือกจากคลัง: {selectedFromMaster} (แก้ไขข้อมูลด้านล่างได้)
-            </Text>
-            <TouchableOpacity onPress={() => setSelectedFromMaster(null)}>
-              <Ionicons name="close-circle" size={16} color="#94A3B8" />
-            </TouchableOpacity>
-          </View>
-        )}
 
         {/* Drug Name Input */}
         <View style={styles.inputGroup}>
           <Text style={styles.inputLabel}>ชื่อยา / อาหารเสริม *</Text>
           <TextInput
             style={styles.input}
-            placeholder="เช่น แอสไพริน, Aspirin, ไทลินอล (หรือเลือกจากคลังด้านบน)"
+            placeholder="เช่น แอสไพริน, Aspirin"
             placeholderTextColor="#94A3B8"
             value={name}
             onChangeText={(text) => {
@@ -204,6 +129,66 @@ export default function AddMedicationScreen() {
               }
             }}
           />
+        </View>
+
+        {/* Master Suggestions when typing */}
+        {name.trim().length > 0 && !selectedFromMaster && filteredMasterList.length > 0 && (
+          <View style={styles.suggestionBox}>
+            <Text style={styles.suggestionTitle}>💡 ยาที่ตรงกับในคลัง ({filteredMasterList.length})</Text>
+            <View style={styles.suggestionChips}>
+              {filteredMasterList.slice(0, 5).map(m => (
+                <TouchableOpacity
+                  key={m.id || m.name}
+                  style={styles.suggestionChip}
+                  onPress={() => handleSelectMasterMed(m)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.suggestionChipText}>
+                    {m.name} {m.dosage ? `(${m.dosage}${m.unit})` : ''}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        )}
+
+        {selectedFromMaster && (
+          <View style={styles.selectedMasterIndicator}>
+            <Ionicons name="checkmark-circle" size={18} color="#16A34A" />
+            <Text style={styles.selectedMasterText}>
+              ใช้ข้อมูลจากคลัง: {selectedFromMaster}
+            </Text>
+            <TouchableOpacity onPress={() => setSelectedFromMaster(null)}>
+              <Ionicons name="close-circle" size={18} color="#94A3B8" />
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Category Selection Chips */}
+        <View style={styles.inputGroup}>
+          <Text style={styles.inputLabel}>หมวดหมู่ *</Text>
+          <View style={styles.chipsRow}>
+            {categoryOptions.map(c => {
+              const isSelected = category === c;
+              return (
+                <TouchableOpacity
+                  key={c}
+                  style={[styles.typeChip, isSelected && styles.typeChipActive]}
+                  onPress={() => setCategory(category === c ? null : c)}
+                  activeOpacity={0.7}
+                >
+                  <Text
+                    style={[
+                      styles.typeChipText,
+                      isSelected && styles.typeChipTextActive,
+                    ]}
+                  >
+                    {c}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
         </View>
 
         {/* Drug Type Selection Chips */}
@@ -216,7 +201,7 @@ export default function AddMedicationScreen() {
                 <TouchableOpacity
                   key={t}
                   style={[styles.typeChip, isSelected && styles.typeChipActive]}
-                  onPress={() => setType(t)}
+                  onPress={() => setType(type === t ? null : t)}
                   activeOpacity={0.7}
                 >
                   <Text
@@ -255,7 +240,7 @@ export default function AddMedicationScreen() {
               activeOpacity={0.7}
             >
               <Text style={styles.unitText}>{unit}</Text>
-              <Ionicons name="chevron-down" size={18} color="#8B95F6" />
+              <Ionicons name="chevron-down" size={18} color="#cbcddeff" />
             </TouchableOpacity>
 
             {showUnitPicker && (
@@ -286,10 +271,10 @@ export default function AddMedicationScreen() {
 
         {/* Notes Textarea */}
         <View style={styles.inputGroup}>
-          <Text style={styles.inputLabel}>หมายเหตุ</Text>
+          <Text style={styles.inputLabel}>หมายเหตุ *</Text>
           <TextInput
             style={styles.textArea}
-            placeholder="เช่น ใช้รักษา... วัตถุประสงค์การใช้งาน..."
+            placeholder="เช่น ใช้รักษา,วัตถุประสงค์การใช้งาน"
             placeholderTextColor="#94A3B8"
             value={notes}
             onChangeText={setNotes}
@@ -305,7 +290,7 @@ export default function AddMedicationScreen() {
           onPress={handleNext}
           activeOpacity={0.8}
         >
-          <Text style={styles.nextButtonText}>ถัดไป: ตั้งค่าการรับประทาน →</Text>
+          <Text style={styles.nextButtonText}>กดไปต่อเพื่อตั้งค่าการรับประทาน</Text>
         </TouchableOpacity>
       </ScrollView>
     </View>
@@ -525,12 +510,15 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   typeChip: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
     paddingVertical: 10,
-    borderRadius: 20,
-    borderWidth: 1,
+    borderRadius: 22,
+    borderWidth: 1.5,
     borderColor: '#E2E8F0',
     backgroundColor: '#F8FAFC',
+    minWidth: 72,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   typeChipActive: {
     backgroundColor: '#8B95F6',
@@ -539,7 +527,7 @@ const styles = StyleSheet.create({
   typeChipText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#64748B',
+    color: '#475569',
   },
   typeChipTextActive: {
     color: '#FFFFFF',
@@ -550,9 +538,9 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   unitDropdown: {
-    height: 52,
+    height: 53,
     borderWidth: 1.5,
-    borderColor: '#C7D2FE',
+    borderColor: '#E2E8F0',
     borderRadius: 14,
     paddingHorizontal: 16,
     flexDirection: 'row',
@@ -562,8 +550,7 @@ const styles = StyleSheet.create({
   },
   unitText: {
     fontSize: 15,
-    fontWeight: '700',
-    color: '#0F172A',
+    color: '#b1b6c3ff',
   },
   unitPickerMenu: {
     position: 'absolute',
@@ -600,7 +587,7 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
     borderRadius: 16,
     padding: 14,
-    fontSize: 14,
+    fontSize: 15,
     color: '#0F172A',
     height: 100,
     backgroundColor: '#FAFAFC',

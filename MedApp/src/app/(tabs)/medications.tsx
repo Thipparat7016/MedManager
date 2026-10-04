@@ -134,25 +134,19 @@ export default function MedicationsScreen() {
             </Text>
           </TouchableOpacity>
         </View>
-
-        {/* Section: Active */}
-        <Text style={styles.sectionTitle}>กำลังใช้งาน</Text>
         {/* Empty State */}
         {medications.length === 0 ? (
           <View style={styles.emptyContainer}>
-            <View style={styles.emptyIconCircle}>
-              <Feather name="plus-circle" size={40} color="#8B95F6" />
-            </View>
             <Text style={styles.emptyTitle}>ยังไม่มีรายการยาใน "ยาของฉัน"</Text>
             <Text style={styles.emptySubtitle}>
-              กดปุ่ม "+ เพิ่มยา" เพื่อเลือกยาจากคลังของระบบ (แอดมิน) หรือพิมพ์เพิ่มยาประจำตัวของคุณเอง
+              กดปุ่ม + เพื่อเพิ่มยา
             </Text>
             <TouchableOpacity
               style={styles.emptyAddBtn}
               onPress={() => router.push('/add-medication')}
               activeOpacity={0.8}
             >
-              <Text style={styles.emptyAddBtnText}>+ เพิ่มยาประจำตัว</Text>
+              <Text style={styles.emptyAddBtnText}>+ เพิ่มยา</Text>
             </TouchableOpacity>
           </View>
         ) : (

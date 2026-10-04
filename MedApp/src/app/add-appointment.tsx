@@ -17,15 +17,11 @@ export default function AddAppointmentScreen() {
   const router = useRouter();
   const { addAppointment } = useApp();
 
-  const now = new Date();
-  const pad = (n: number) => n.toString().padStart(2, '0');
-  const defaultDate = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear() + 543}`;
-
   const [doctorName, setDoctorName] = useState('');
   const [department, setDepartment] = useState('');
   const [hospital, setHospital] = useState('');
-  const [date, setDate] = useState(defaultDate);
-  const [time, setTime] = useState('09:00 น.');
+  const [date, setDate] = useState('');
+  const [time, setTime] = useState('');
   const [details, setDetails] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -34,15 +30,23 @@ export default function AddAppointmentScreen() {
       Alert.alert('กรุณากรอกข้อมูล', 'กรุณาระบุชื่อแพทย์');
       return;
     }
+    if (!date.trim()) {
+      Alert.alert('กรุณากรอกข้อมูล', 'กรุณาระบุวันที่นัดหมาย');
+      return;
+    }
+    if (!time.trim()) {
+      Alert.alert('กรุณากรอกข้อมูล', 'กรุณาระบุเวลานัดหมาย');
+      return;
+    }
 
     setIsSubmitting(true);
     await addAppointment({
-      doctorName,
+      doctorName: doctorName.trim(),
       department: department.trim() || 'ตรวจสุขภาพ',
       hospital: hospital.trim() || 'โรงพยาบาล',
-      date: date.trim() || defaultDate,
-      time: time.trim() || '09:00 น.',
-      details,
+      date: date.trim(),
+      time: time.trim(),
+      details: details.trim(),
       status: 'confirmed',
     });
     setIsSubmitting(false);

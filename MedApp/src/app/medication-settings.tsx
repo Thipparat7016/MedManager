@@ -25,6 +25,7 @@ export default function MedicationSettingsScreen() {
   const defaultDate = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear() + 543}`;
 
   const drugName = (params.name as string) || '';
+  const drugCategory = (params.category as 'ยา' | 'อาหารเสริม') || (params.type === 'อาหารเสริม' ? 'อาหารเสริม' : 'ยา');
   const drugType = (params.type as any) || 'เม็ด';
   const drugDose = (params.dosage as string) || '1';
   const drugUnit = (params.unit as string) || 'เม็ด';
@@ -72,7 +73,7 @@ export default function MedicationSettingsScreen() {
         id: `med-${Date.now()}`,
         name: drugName,
         type: drugType,
-        category: drugType === 'อาหารเสริม' ? 'อาหารเสริม' : 'ยา',
+        category: drugCategory,
         dosage: drugDose,
         unit: drugUnit,
         frequency: frequencyCount,
