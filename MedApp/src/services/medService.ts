@@ -97,6 +97,11 @@ export interface UserProfile {
   notifyLowStock: boolean;
 }
 
+function isValidUUID(str?: string | null): boolean {
+  if (!str) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str);
+}
+
 export const medService = {
   // --------------------------------------------------------------------------
   // Cache Cleanup for Mock Data
@@ -471,8 +476,30 @@ export const medService = {
     return [];
   },
 
+  getDefaultTimesForFrequency(freq: number): string[] {
+    switch (freq) {
+      case 1:
+        return ['08:00'];
+      case 2:
+        return ['08:00', '20:00'];
+      case 3:
+        return ['08:00', '12:00', '20:00'];
+      case 4:
+        return ['08:00', '12:00', '18:00', '21:00'];
+      default:
+        return ['08:00'];
+    }
+  },
+
   async saveMedication(med: Medication): Promise<Medication> {
     try {
+      // Determine effective times if active
+      let effectiveTimes = med.times || [];
+      if (med.status === 'active' && effectiveTimes.length === 0) {
+        effectiveTimes = this.getDefaultTimesForFrequency(med.frequency || 1);
+        med.times = effectiveTimes;
+      }
+
       const current = await this.getMedications();
       const existingIdx = current.findIndex(m => m.id === med.id || (m.name === med.name && m.dosage === med.dosage));
       let updated: Medication[];
@@ -486,26 +513,53 @@ export const medService = {
 
       await safeStorage.setItem('med_user_medications_list', JSON.stringify(updated));
 
-      // Create user_schedules for today if times are provided
-      if (med.times && med.times.length > 0 && supabase) {
-        const today = new Date().toISOString().split('T')[0];
-        const user = await this.getUserProfile();
-        const userUUID = user?.id && user.id.includes('-') && !user.id.startsWith('user-') ? user.id : null;
+      // Manage today's schedule in local storage
+      const today = new Date().toISOString().split('T')[0];
+      const scheduleKey = `med_schedule_${today}`;
 
-        const scheduleItems = med.times.map(t => ({
-          user_id: userUUID,
-          medication_id: med.id && med.id.includes('-') ? med.id : null,
-          medication_name: med.name,
+      let currentSchedule: ScheduleItem[] = [];
+      const localStr = await safeStorage.getItem(scheduleKey);
+      if (localStr) {
+        try {
+          const parsed = JSON.parse(localStr);
+          if (Array.isArray(parsed)) {
+            currentSchedule = parsed;
+          }
+        } catch {}
+      }
+
+      // Remove previous schedule entries for this medication on today
+      currentSchedule = currentSchedule.filter(
+        s => s.medicationName !== med.name && s.medicationId !== med.id
+      );
+
+      // If active, generate today's schedule entries
+      let newScheduleItems: ScheduleItem[] = [];
+      if (med.status === 'active' && effectiveTimes.length > 0) {
+        newScheduleItems = effectiveTimes.map((t, idx) => ({
+          id: `sch-${Date.now()}-${idx}`,
+          medicationId: med.id,
+          medicationName: med.name,
           dosage: med.dosage,
           unit: med.unit,
           type: med.type,
-          meal_timing: med.mealTiming || 'หลังอาหาร',
-          time: t.includes('น.') ? t : `${t} น.`,
+          mealTiming: med.mealTiming || 'หลังอาหาร',
+          time: t.includes('น.') ? t.trim() : `${t.trim()} น.`,
           date: today,
-          is_taken: false,
-          is_skipped: false,
+          isTaken: false,
+          isSkipped: false,
         }));
 
+        currentSchedule = [...currentSchedule, ...newScheduleItems].sort((a, b) =>
+          a.time.localeCompare(b.time)
+        );
+      }
+
+      // ALWAYS update local storage for today
+      await safeStorage.setItem(scheduleKey, JSON.stringify(currentSchedule));
+
+      // Sync to Supabase user_schedules
+      if (supabase) {
         try {
           await supabase
             .from('user_schedules')
@@ -513,14 +567,37 @@ export const medService = {
             .eq('date', today)
             .eq('medication_name', med.name);
 
-          await supabase.from('user_schedules').insert(scheduleItems);
+          if (med.status === 'active' && newScheduleItems.length > 0) {
+            const user = await this.getUserProfile();
+            const userUUID = user?.id && isValidUUID(user.id) ? user.id : null;
+            const medUUID = isValidUUID(med.id) ? med.id : null;
+
+            const supabaseRows = newScheduleItems.map(item => ({
+              user_id: userUUID,
+              medication_id: medUUID,
+              medication_name: item.medicationName,
+              dosage: item.dosage,
+              unit: item.unit,
+              type: item.type,
+              meal_timing: item.mealTiming,
+              time: item.time,
+              date: item.date,
+              is_taken: false,
+              is_skipped: false,
+            }));
+
+            await supabase.from('user_schedules').insert(supabaseRows);
+          }
         } catch (schErr) {
           console.warn('Failed to insert user_schedules to Supabase:', schErr);
         }
       }
 
       // Log Activity to Supabase
-      await this.logActivity(`ผู้ใช้เพิ่มยาใน "ยาของฉัน": ${med.name}`, `ขนาด ${med.dosage} ${med.unit} (${med.category})`);
+      await this.logActivity(
+        `ผู้ใช้บันทึกยาใน "ยาของฉัน": ${med.name}`,
+        `ขนาด ${med.dosage} ${med.unit} (${med.status === 'active' ? 'สร้างตารางยาแล้ว' : 'บันทึกเฉพาะข้อมูล'})`
+      );
     } catch (e) {
       console.warn('Failed to save user medication:', e);
     }
@@ -534,6 +611,20 @@ export const medService = {
       const medToDelete = current.find(m => m.id === id);
       const updated = current.filter(m => m.id !== id);
       await safeStorage.setItem('med_user_medications_list', JSON.stringify(updated));
+
+      // Remove from today's schedule
+      const today = new Date().toISOString().split('T')[0];
+      const scheduleKey = `med_schedule_${today}`;
+      const localStr = await safeStorage.getItem(scheduleKey);
+      if (localStr && medToDelete) {
+        try {
+          const parsed: ScheduleItem[] = JSON.parse(localStr);
+          const filtered = parsed.filter(
+            s => s.medicationName !== medToDelete.name && s.medicationId !== id
+          );
+          await safeStorage.setItem(scheduleKey, JSON.stringify(filtered));
+        } catch {}
+      }
 
       if (supabase && medToDelete) {
         try {
@@ -587,8 +678,9 @@ export const medService = {
   async getTodaySchedule(): Promise<ScheduleItem[]> {
     await this.purgeMockCacheIfNeeded();
     const today = new Date().toISOString().split('T')[0];
+    const key = `med_schedule_${today}`;
 
-    // Try Supabase user_schedules table
+    // 1. Try Supabase user_schedules table
     if (supabase) {
       try {
         const { data, error } = await supabase
@@ -598,7 +690,7 @@ export const medService = {
           .order('time', { ascending: true });
 
         if (!error && data && data.length > 0) {
-          return data.map((d: any) => ({
+          const items: ScheduleItem[] = data.map((d: any) => ({
             id: d.id,
             medicationId: d.medication_id,
             medicationName: d.medication_name,
@@ -606,26 +698,71 @@ export const medService = {
             unit: d.unit,
             type: d.type,
             mealTiming: d.meal_timing,
-            time: d.time,
+            time: d.time.includes('น.') ? d.time.trim() : `${d.time.trim()} น.`,
             date: d.date,
             isTaken: d.is_taken,
             takenAt: d.taken_at,
             isSkipped: d.is_skipped,
           }));
+          await safeStorage.setItem(key, JSON.stringify(items));
+          return items;
+        }
+      } catch (e) {
+        console.warn('Error reading from Supabase user_schedules:', e);
+      }
+    }
+
+    // 2. Try local storage for today
+    const local = await safeStorage.getItem(key);
+    if (local) {
+      try {
+        const parsed = JSON.parse(local);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // filter out old mock data
+          const clean = parsed.filter(item => !String(item.id).startsWith('mock-'));
+          if (clean.length > 0) {
+            return clean;
+          }
         }
       } catch {}
     }
 
-    // Try local storage for today
-    const key = `med_schedule_${today}`;
-    const local = await safeStorage.getItem(key);
-    if (local) {
-      const parsed = JSON.parse(local);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        // filter out old mock data
-        const clean = parsed.filter(item => !item.id.startsWith('sch-'));
-        return clean;
+    // 3. Fallback: Build today's schedule from user's active medications
+    try {
+      const activeMeds = (await this.getMedications()).filter(m => m.status === 'active');
+      if (activeMeds.length > 0) {
+        const generated: ScheduleItem[] = [];
+        for (const med of activeMeds) {
+          const times =
+            med.times && med.times.length > 0
+              ? med.times
+              : this.getDefaultTimesForFrequency(med.frequency || 1);
+
+          times.forEach((t, idx) => {
+            generated.push({
+              id: `sch-${med.id}-${idx}`,
+              medicationId: med.id,
+              medicationName: med.name,
+              dosage: med.dosage,
+              unit: med.unit,
+              type: med.type,
+              mealTiming: med.mealTiming || 'หลังอาหาร',
+              time: t.includes('น.') ? t.trim() : `${t.trim()} น.`,
+              date: today,
+              isTaken: false,
+              isSkipped: false,
+            });
+          });
+        }
+
+        if (generated.length > 0) {
+          generated.sort((a, b) => a.time.localeCompare(b.time));
+          await safeStorage.setItem(key, JSON.stringify(generated));
+          return generated;
+        }
       }
+    } catch (e) {
+      console.warn('Error generating schedule from active medications:', e);
     }
 
     return [];
@@ -650,8 +787,8 @@ export const medService = {
 
     await safeStorage.setItem(key, JSON.stringify(updated));
 
-    // Sync to Supabase user_schedules if exists
-    if (supabase) {
+    // Sync to Supabase user_schedules if exists and valid UUID
+    if (supabase && isValidUUID(scheduleId)) {
       try {
         await supabase
           .from('user_schedules')

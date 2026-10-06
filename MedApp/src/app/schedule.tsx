@@ -46,7 +46,8 @@ export default function ScheduleScreen() {
 
   const [selectedDayIndex, setSelectedDayIndex] = useState(dayOfWeek);
 
-  const timeSlots = Array.from(new Set(todaySchedule.map(s => s.time)));
+  const cleanTime = (t?: string) => (t || '').replace(' น.', '').trim();
+  const timeSlots = Array.from(new Set(todaySchedule.map(s => cleanTime(s.time)))).sort();
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -144,7 +145,7 @@ export default function ScheduleScreen() {
           </View>
         ) : (
           timeSlots.map(time => {
-            const items = todaySchedule.filter(s => s.time === time);
+            const items = todaySchedule.filter(s => cleanTime(s.time) === time);
             return (
               <View key={time} style={styles.timeGroup}>
                 <Text style={styles.timeTitle}>{time} น.</Text>

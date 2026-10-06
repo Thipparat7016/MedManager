@@ -7,9 +7,11 @@ import {
   StyleSheet,
   ScrollView,
   Alert,
+  Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { AppHeader } from '@/components/ui/AppHeader';
 import { useApp } from '@/context/AppContext';
 import { Medication } from '@/services/medService';
@@ -19,10 +21,11 @@ export default function AddMedicationScreen() {
   const { masterMedications } = useApp();
 
   const [name, setName] = useState('');
+  const [imageUri, setImageUri] = useState<string | null>(null);
   const [category, setCategory] = useState<'ยา' | 'อาหารเสริม' | null>(null);
   const [type, setType] = useState<'เม็ด' | 'อาหารเสริม' | 'แคปซูล' | 'ยาน้ำ' | null>(null);
   const [dosage, setDosage] = useState('');
-  const [unit, setUnit] = useState('mg');
+  const [unit, setUnit] = useState('');
   const [notes, setNotes] = useState('');
   const [showUnitPicker, setShowUnitPicker] = useState(false);
   const [showMasterCatalog, setShowMasterCatalog] = useState(false);
@@ -40,6 +43,81 @@ export default function AddMedicationScreen() {
   ];
 
   const unitOptions = ['mg', 'ml'];
+
+  const pickImageFromLibrary = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('ต้องการสิทธิ์การเข้าถึง', 'กรุณาอนุญาตให้แอปเข้าถึงรูปภาพเพื่อเลือกรูปถ่ายยา');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        setImageUri(result.assets[0].uri);
+      }
+    } catch (error) {
+      console.warn('Image picker error:', error);
+      Alert.alert('ข้อผิดพลาด', 'ไม่สามารถเลือกรูปภาพได้');
+    }
+  };
+
+  const takePhotoWithCamera = async () => {
+    try {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('ต้องการสิทธิ์การเข้าถึง', 'กรุณาอนุญาตให้แอปเข้าถึงกล้องถ่ายรูป');
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync({
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        setImageUri(result.assets[0].uri);
+      }
+    } catch (error) {
+      console.warn('Camera error:', error);
+      Alert.alert('ข้อผิดพลาด', 'ไม่สามารถถ่ายภาพได้');
+    }
+  };
+
+  const handleSelectPhoto = () => {
+    Alert.alert(
+      'รูปถ่ายยา / อาหารเสริม',
+      'เลือกวิธีการเพิ่มรูปภาพ',
+      [
+        {
+          text: 'ถ่ายภาพจากกล้อง',
+          onPress: takePhotoWithCamera,
+        },
+        {
+          text: 'เลือกจากคลังภาพ',
+          onPress: pickImageFromLibrary,
+        },
+        ...(imageUri
+          ? [
+              {
+                text: 'ลบรูปภาพ',
+                style: 'destructive' as const,
+                onPress: () => setImageUri(null),
+              },
+            ]
+          : []),
+        {
+          text: 'ยกเลิก',
+          style: 'cancel' as const,
+        },
+      ]
+    );
+  };
 
   const handleNext = () => {
     if (!name.trim()) {
@@ -68,6 +146,7 @@ export default function AddMedicationScreen() {
         dosage,
         unit,
         notes,
+        imageUrl: imageUri || '',
       },
     });
   };
@@ -84,6 +163,9 @@ export default function AddMedicationScreen() {
     setUnit(item.unit || 'mg');
     if (item.instructions || item.precautions) {
       setNotes([item.instructions, item.precautions].filter(Boolean).join('\n'));
+    }
+    if (item.imageUrl) {
+      setImageUri(item.imageUrl);
     }
     setSelectedFromMaster(item.name);
     setShowMasterCatalog(false);
@@ -106,12 +188,25 @@ export default function AddMedicationScreen() {
         <Text style={styles.sectionLabel}>รูปถ่าย</Text>
         <TouchableOpacity
           style={styles.photoUploadBox}
-          onPress={() => Alert.alert('เลือกรูปภาพ', 'เลือกรูปภาพยาจากอุปกรณ์ของคุณ')}
+          onPress={handleSelectPhoto}
           activeOpacity={0.8}
         >
-          <Text style={styles.photoUploadPlaceholder}>
-            แตะเพื่อเลือกรูปภาพจากคลัง
-          </Text>
+          {imageUri ? (
+            <>
+              <Image source={{ uri: imageUri }} style={styles.uploadedImage} />
+              <View style={styles.changePhotoButton}>
+                <Ionicons name="camera" size={14} color="#FFFFFF" />
+                <Text style={styles.changePhotoText}>เปลี่ยนรูป</Text>
+              </View>
+            </>
+          ) : (
+            <View style={styles.photoPlaceholderContainer}>
+              <Ionicons name="camera-outline" size={28} color="#8B95F6" />
+              <Text style={styles.photoUploadPlaceholder}>
+                แตะเพื่อเลือกรูปภาพจากคลัง
+              </Text>
+            </View>
+          )}
         </TouchableOpacity>
 
         {/* Drug Name Input */}
@@ -122,47 +217,9 @@ export default function AddMedicationScreen() {
             placeholder="เช่น แอสไพริน, Aspirin"
             placeholderTextColor="#94A3B8"
             value={name}
-            onChangeText={(text) => {
-              setName(text);
-              if (selectedFromMaster && text !== selectedFromMaster) {
-                setSelectedFromMaster(null);
-              }
-            }}
+            onChangeText={setName}
           />
         </View>
-
-        {/* Master Suggestions when typing */}
-        {name.trim().length > 0 && !selectedFromMaster && filteredMasterList.length > 0 && (
-          <View style={styles.suggestionBox}>
-            <Text style={styles.suggestionTitle}>💡 ยาที่ตรงกับในคลัง ({filteredMasterList.length})</Text>
-            <View style={styles.suggestionChips}>
-              {filteredMasterList.slice(0, 5).map(m => (
-                <TouchableOpacity
-                  key={m.id || m.name}
-                  style={styles.suggestionChip}
-                  onPress={() => handleSelectMasterMed(m)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.suggestionChipText}>
-                    {m.name} {m.dosage ? `(${m.dosage}${m.unit})` : ''}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-        )}
-
-        {selectedFromMaster && (
-          <View style={styles.selectedMasterIndicator}>
-            <Ionicons name="checkmark-circle" size={18} color="#16A34A" />
-            <Text style={styles.selectedMasterText}>
-              ใช้ข้อมูลจากคลัง: {selectedFromMaster}
-            </Text>
-            <TouchableOpacity onPress={() => setSelectedFromMaster(null)}>
-              <Ionicons name="close-circle" size={18} color="#94A3B8" />
-            </TouchableOpacity>
-          </View>
-        )}
 
         {/* Category Selection Chips */}
         <View style={styles.inputGroup}>
@@ -239,8 +296,10 @@ export default function AddMedicationScreen() {
               onPress={() => setShowUnitPicker(!showUnitPicker)}
               activeOpacity={0.7}
             >
-              <Text style={styles.unitText}>{unit}</Text>
-              <Ionicons name="chevron-down" size={18} color="#cbcddeff" />
+              <Text style={[styles.unitText, !unit && styles.unitTextPlaceholder]}>
+                {unit || 'mg'}
+              </Text>
+              <Ionicons name="chevron-down" size={18} color="#94A3B8" />
             </TouchableOpacity>
 
             {showUnitPicker && (
@@ -458,11 +517,40 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 12,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  photoPlaceholderContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
   },
   photoUploadPlaceholder: {
     fontSize: 13,
     color: '#94A3B8',
     fontWeight: '500',
+  },
+  uploadedImage: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  changePhotoButton: {
+    position: 'absolute',
+    bottom: 8,
+    right: 8,
+    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  changePhotoText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
   },
   photoButtonsRow: {
     flexDirection: 'row',
@@ -548,10 +636,14 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     backgroundColor: '#FAFAFC',
   },
-  unitText: {
-    fontSize: 15,
-    color: '#b1b6c3ff',
+unitText: {
+  fontSize: 15,
+  color: '#0F172A',  
+},
+ unitTextPlaceholder: {
+    color: '#94A3B8', // สีเทาอ่อนตอนยังไม่เลือก (รหัสเดียวกับ Placeholder ช่องอื่น)
   },
+
   unitPickerMenu: {
     position: 'absolute',
     top: 80,

@@ -52,7 +52,8 @@ export default function HomeScreen() {
   ).length;
 
   // Group today's schedule by time
-  const timeSlots = Array.from(new Set(todaySchedule.map(s => s.time)));
+  const cleanTime = (t?: string) => (t || '').replace(' น.', '').trim();
+  const timeSlots = Array.from(new Set(todaySchedule.map(s => cleanTime(s.time)))).sort();
 
   const topInsetPadding = Math.max(insets.top, 24) + 14;
 
@@ -242,10 +243,10 @@ export default function HomeScreen() {
           </View>
         ) : (
           timeSlots.map(time => {
-            const itemsAtTime = todaySchedule.filter(s => s.time === time);
+            const itemsAtTime = todaySchedule.filter(s => cleanTime(s.time) === time);
             return (
               <View key={time} style={styles.timeSlotGroup}>
-                <Text style={styles.timeSlotLabel}>{time}</Text>
+                <Text style={styles.timeSlotLabel}>{time} น.</Text>
                 {itemsAtTime.map(item => (
                   <View key={item.id} style={styles.scheduleCard}>
                     <PillIcon type={item.type || item.medicationName} />

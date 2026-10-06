@@ -239,7 +239,7 @@ export default function MedicationListPage() {
                     <td style={{ textAlign: 'center' }}>{item.type}</td>
                     <td style={{ textAlign: 'center' }}>{item.dosage} {item.unit}</td>
                     <td style={{ textAlign: 'center' }}>
-                      <span className={item.category === 'ยา' ? 'pill-chip-purple' : 'pill-chip-amber'}>
+                      <span className={item.category === 'ยา' ? 'pill-chip-blue' : 'pill-chip-amber'}>
                         {item.category}
                       </span>
                     </td>
@@ -383,7 +383,7 @@ export default function MedicationListPage() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', fontSize: '14px', marginTop: '14px' }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div><strong>รหัสยา:</strong> {viewMed.code}</div>
-                <div><strong>หมวดหมู่:</strong> {viewMed.category}</div>
+                <div><strong>หมวดหมู่:</strong> <span className={viewMed.category === 'ยา' ? 'pill-chip-blue' : 'pill-chip-amber'} style={{ marginLeft: '4px' }}>{viewMed.category}</span></div>
                 <div><strong>ประเภทยา:</strong> {viewMed.type}</div>
                 <div><strong>ขนาดยา:</strong> {viewMed.dosage} {viewMed.unit}</div>
               </div>
