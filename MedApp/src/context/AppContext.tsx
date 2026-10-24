@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import {
   medService,
   Medication,
@@ -10,6 +10,7 @@ import {
   UserProfile,
 } from '@/services/medService';
 import { isMedicationMatch } from '@/services/interactionMatcher';
+import { supabase } from '@/services/supabase';
 
 interface AppContextType {
   user: UserProfile | null;
@@ -52,9 +53,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
 
-  const loadAllData = async () => {
+  const loadAllData = useCallback(async (showGlobalLoading = false) => {
     try {
-      setIsLoading(true);
+      if (showGlobalLoading) {
+        setIsLoading(true);
+      }
       // 1. Immediately restore user profile & auth status
       const u = await medService.getUserProfile().catch(() => null);
       setUser(u);
@@ -140,12 +143,49 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     } catch (e) {
       console.warn('Error initializing app context data:', e);
     } finally {
-      setIsLoading(false);
+      if (showGlobalLoading) {
+        setIsLoading(false);
+      }
     }
-  };
+  }, []);
 
   useEffect(() => {
-    loadAllData();
+    loadAllData(true);
+
+    // Supabase Realtime Subscription for Live Sync with AdminMed
+    if (supabase) {
+      const channel = supabase
+        .channel('realtime:app-sync')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'medications' },
+          async () => {
+            try {
+              const freshMasterMeds = await medService.getMasterMedications();
+              setMasterMedications(freshMasterMeds);
+            } catch (err) {
+              console.warn('Realtime sync error for medications:', err);
+            }
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'drug_food_interactions' },
+          async () => {
+            try {
+              const freshInteractions = await medService.getInteractions();
+              setInteractions(freshInteractions);
+            } catch (err) {
+              console.warn('Realtime sync error for interactions:', err);
+            }
+          }
+        )
+        .subscribe();
+
+      return () => {
+        supabase?.removeChannel(channel);
+      };
+    }
   }, []);
 
   const login = async (email: string, pass: string): Promise<{ success: boolean; error?: string }> => {
@@ -191,9 +231,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     setUser(null);
   };
 
-  const refreshData = async () => {
-    await loadAllData();
-  };
+  const refreshData = useCallback(async () => {
+    await loadAllData(false);
+  }, [loadAllData]);
 
   const markTaken = async (scheduleId: string, isTaken: boolean = true) => {
     const updated = await medService.markScheduleTaken(scheduleId, isTaken);
@@ -214,29 +254,29 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   const saveMedication = async (med: Medication) => {
     const saved = await medService.saveMedication(med);
-    await loadAllData();
+    await loadAllData(false);
     return saved;
   };
 
   const deleteMedication = async (id: string) => {
     await medService.deleteMedication(id);
-    await loadAllData();
+    await loadAllData(false);
   };
 
   const addAppointment = async (apt: Omit<DoctorAppointment, 'id'>) => {
     const saved = await medService.addAppointment(apt);
-    await loadAllData();
+    await loadAllData(false);
     return saved;
   };
 
   const deleteAppointment = async (id: string) => {
     await medService.deleteAppointment(id);
-    await loadAllData();
+    await loadAllData(false);
   };
 
   const addSideEffect = async (log: Omit<SideEffectLog, 'id' | 'createdAt'>) => {
     const saved = await medService.addSideEffect(log);
-    await loadAllData();
+    await loadAllData(false);
     return saved;
   };
 

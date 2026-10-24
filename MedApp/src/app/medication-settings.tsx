@@ -557,7 +557,7 @@ export default function MedicationSettingsScreen() {
 
         {/* Warnings / Precautions Textarea */}
         <View style={styles.inputGroup}>
-          <Text style={styles.sectionLabel}>คำเตือน / ข้อควรระวัง</Text>
+          <Text style={styles.sectionLabel}>ข้อควรระวัง / ผลข้างเคียง</Text>
           <TextInput
             style={styles.textArea}
             placeholder="เช่น ห้ามรับประทานพร้อมยาชนิด..."

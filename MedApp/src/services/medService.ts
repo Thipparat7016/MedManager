@@ -27,8 +27,8 @@ export interface DrugFoodInteraction {
   id: string;
   medicationName: string;
   foodName: string;
-  interactionType: 'หลีกเลี่ยง' | 'แนะนำ' | 'ข้อควรระวัง';
-  severity: 'สูง' | 'กลาง' | 'ต่ำ';
+  interactionType: 'หลีกเลี่ยง' | 'แนะนำ' | 'แนะนำให้รับประทานร่วม' | 'ข้อควรระวัง' | string;
+  severity?: 'สูง' | 'กลาง' | 'ต่ำ' | string;
   hoursNote?: string;
   impactDetails: string;
   sourceName: string;
@@ -712,60 +712,71 @@ export const medService = {
       }
     }
 
-    // 2. Try local storage for today
+    // 2. Try local storage for today, then reconcile with active medications
+    let scheduleItems: ScheduleItem[] = [];
     const local = await safeStorage.getItem(key);
     if (local) {
       try {
         const parsed = JSON.parse(local);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          // filter out old mock data
-          const clean = parsed.filter(item => !String(item.id).startsWith('mock-'));
-          if (clean.length > 0) {
-            return clean;
-          }
+        if (Array.isArray(parsed)) {
+          scheduleItems = parsed.filter(item => !String(item.id).startsWith('mock-'));
         }
       } catch {}
     }
 
-    // 3. Fallback: Build today's schedule from user's active medications
+    // 3. Reconcile with active medications in real-time
     try {
       const activeMeds = (await this.getMedications()).filter(m => m.status === 'active');
       if (activeMeds.length > 0) {
-        const generated: ScheduleItem[] = [];
-        for (const med of activeMeds) {
-          const times =
-            med.times && med.times.length > 0
-              ? med.times
-              : this.getDefaultTimesForFrequency(med.frequency || 1);
+        // Keep existing schedule items that belong to active meds (preserving isTaken status)
+        let valid = scheduleItems.filter(s =>
+          activeMeds.some(m => m.id === s.medicationId || m.name === s.medicationName)
+        );
 
-          times.forEach((t, idx) => {
-            generated.push({
-              id: `sch-${med.id}-${idx}`,
-              medicationId: med.id,
-              medicationName: med.name,
-              dosage: med.dosage,
-              unit: med.unit,
-              type: med.type,
-              mealTiming: med.mealTiming || 'หลังอาหาร',
-              time: t.includes('น.') ? t.trim() : `${t.trim()} น.`,
-              date: today,
-              isTaken: false,
-              isSkipped: false,
+        // Find any active medication missing from today's schedule
+        const missingMeds = activeMeds.filter(
+          m => !valid.some(s => s.medicationId === m.id || s.medicationName === m.name)
+        );
+
+        if (missingMeds.length > 0) {
+          for (const med of missingMeds) {
+            const times =
+              med.times && med.times.length > 0
+                ? med.times
+                : this.getDefaultTimesForFrequency(med.frequency || 1);
+
+            times.forEach((t, idx) => {
+              valid.push({
+                id: `sch-${med.id}-${idx}`,
+                medicationId: med.id,
+                medicationName: med.name,
+                dosage: med.dosage,
+                unit: med.unit,
+                type: med.type,
+                mealTiming: med.mealTiming || 'หลังอาหาร',
+                time: t.includes('น.') ? t.trim() : `${t.trim()} น.`,
+                date: today,
+                isTaken: false,
+                isSkipped: false,
+              });
             });
-          });
+          }
         }
 
-        if (generated.length > 0) {
-          generated.sort((a, b) => a.time.localeCompare(b.time));
-          await safeStorage.setItem(key, JSON.stringify(generated));
-          return generated;
+        valid.sort((a, b) => a.time.localeCompare(b.time));
+        await safeStorage.setItem(key, JSON.stringify(valid));
+        return valid;
+      } else {
+        if (scheduleItems.length > 0) {
+          await safeStorage.setItem(key, JSON.stringify([]));
         }
+        return [];
       }
     } catch (e) {
-      console.warn('Error generating schedule from active medications:', e);
+      console.warn('Error syncing schedule with active medications:', e);
     }
 
-    return [];
+    return scheduleItems;
   },
 
   async markScheduleTaken(scheduleId: string, isTaken: boolean): Promise<ScheduleItem[]> {

@@ -13,6 +13,7 @@ import { Ionicons, MaterialCommunityIcons, Feather } from '@expo/vector-icons';
 import { AppHeader } from '@/components/ui/AppHeader';
 import { PillIcon } from '@/components/ui/PillIcon';
 import { useApp } from '@/context/AppContext';
+import { isMedicationMatch, formatCleanDrugName, formatCleanFoodName, formatConciseText } from '@/services/interactionMatcher';
 
 export default function ConfirmIntakeScreen() {
   const router = useRouter();
@@ -29,10 +30,15 @@ export default function ConfirmIntakeScreen() {
     targetItem = todaySchedule.find(s => s.medicationName === params.medName);
   }
 
-  // Find associated food interaction
+  // Find associated food interaction using smart matching
+  const targetMed = targetItem
+    ? medications.find(m => m.name === targetItem?.medicationName)
+    : medications.find(m => m.name === params.medName) || medications[0];
   const targetMedName = targetItem?.medicationName || params.medName || (medications[0]?.name ?? '');
+  const extraContext = [targetMed?.instructions, targetMed?.precautions].filter(Boolean).join(' ');
+
   const foodWarning = interactions.find(
-    i => targetMedName && i.medicationName.includes(targetMedName) && i.interactionType === 'หลีกเลี่ยง'
+    i => targetMedName && i.interactionType === 'หลีกเลี่ยง' && isMedicationMatch(targetMedName, i.medicationName, extraContext)
   );
 
   const handleConfirm = async () => {
@@ -92,7 +98,7 @@ export default function ConfirmIntakeScreen() {
     );
   }
 
-  const medName = targetItem?.medicationName || targetMedName || 'รายการยา';
+  const medName = formatCleanDrugName(targetItem?.medicationName || targetMedName || 'รายการยา');
   const medDose = targetItem?.dosage || '1 เม็ด';
   const medMeal = targetItem?.mealTiming || 'หลังอาหาร';
   const medTime = targetItem?.time ? `${targetItem.time} น.` : 'ตามกำหนด';
@@ -109,7 +115,7 @@ export default function ConfirmIntakeScreen() {
           <View style={styles.pillIconWrap}>
             <PillIcon type={medName} size={48} />
           </View>
-          <Text style={styles.medTitle}>{medName}</Text>
+          <Text style={styles.medTitle} numberOfLines={1}>{medName}</Text>
           <Text style={styles.medSubtitle}>{medDose}</Text>
           <View style={styles.timeBadge}>
             <Text style={styles.timeBadgeText}>{medTime} • {medMeal}</Text>
@@ -123,15 +129,17 @@ export default function ConfirmIntakeScreen() {
               <Ionicons name="warning" size={16} color="#DC2626" style={styles.cautionIcon} />
               <Text style={styles.cautionTitle}>ข้อควรระวังด้านอาหาร</Text>
             </View>
-            <Text style={styles.avoidLabel}>หลีกเลี่ยง: {foodWarning.foodName}</Text>
+            <Text style={styles.avoidLabel} numberOfLines={1}>หลีกเลี่ยง: {formatCleanFoodName(foodWarning.foodName)}</Text>
             {foodWarning.impactDetails ? (
-              <Text style={styles.avoidItem}>• {foodWarning.impactDetails}</Text>
+              <Text style={styles.avoidItem} numberOfLines={2}>
+                • {formatConciseText(foodWarning.impactDetails, 80)}
+              </Text>
             ) : null}
 
             {foodWarning.hoursNote ? (
               <View style={styles.hoursBox}>
                 <Ionicons name="time-outline" size={15} color="#DC2626" style={{ marginRight: 6 }} />
-                <Text style={styles.hoursText}>{foodWarning.hoursNote}</Text>
+                <Text style={styles.hoursText} numberOfLines={1}>{foodWarning.hoursNote}</Text>
               </View>
             ) : null}
           </View>

@@ -1,22 +1,43 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
   ScrollView,
+  RefreshControl,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { MaterialCommunityIcons, Feather, Ionicons } from '@expo/vector-icons';
 import { AppHeader } from '@/components/ui/AppHeader';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { useApp } from '@/context/AppContext';
-import { matchInteractionsForUser, MatchedInteractionResult } from '@/services/interactionMatcher';
+import {
+  matchInteractionsForUser,
+  MatchedInteractionResult,
+  formatCleanDrugName,
+  formatCleanFoodName,
+  formatConciseText,
+} from '@/services/interactionMatcher';
 
 export default function FoodInteractionsScreen() {
   const router = useRouter();
-  const { interactions, medications } = useApp();
+  const { interactions, medications, refreshData } = useApp();
   const [selectedDrug, setSelectedDrug] = useState<string>('ทั้งหมด');
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Auto-refresh when navigating to screen to ensure backend updates from AdminMed appear immediately
+  useFocusEffect(
+    useCallback(() => {
+      refreshData();
+    }, [refreshData])
+  );
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await refreshData();
+    setRefreshing(false);
+  }, [refreshData]);
 
   // User's active medications
   const activeUserMeds = medications.filter(m => m.status === 'active');
@@ -24,9 +45,9 @@ export default function FoodInteractionsScreen() {
   // Automatically match user's medications with drug_food_interactions from Admin backend
   const matchedList: MatchedInteractionResult[] = matchInteractionsForUser(activeUserMeds, interactions);
 
-  // Derive unique user drug names that actually have matched interactions
+  // Derive unique user drug names that actually have matched interactions (cleaned of parentheses)
   const matchedDrugNames = Array.from(
-    new Set(matchedList.map(item => item.matchedMedication.name))
+    new Set(matchedList.map(item => formatCleanDrugName(item.matchedMedication.name)))
   );
 
   const drugFilters = ['ทั้งหมด', ...matchedDrugNames];
@@ -34,11 +55,18 @@ export default function FoodInteractionsScreen() {
   // Filter matched interactions according to selected chip
   const filteredList = matchedList.filter(item => {
     if (selectedDrug === 'ทั้งหมด') return true;
-    return item.matchedMedication.name === selectedDrug;
+    return formatCleanDrugName(item.matchedMedication.name) === selectedDrug;
   });
 
-  const avoidList = filteredList.filter(i => i.interaction.interactionType === 'หลีกเลี่ยง');
-  const recommendList = filteredList.filter(i => i.interaction.interactionType === 'แนะนำ');
+  const avoidList = filteredList.filter(
+    i => i.interaction.interactionType === 'หลีกเลี่ยง' || i.interaction.interactionType?.includes('หลีกเลี่ยง')
+  );
+  const recommendList = filteredList.filter(
+    i =>
+      i.interaction.interactionType === 'แนะนำ' ||
+      i.interaction.interactionType === 'แนะนำให้รับประทานร่วม' ||
+      i.interaction.interactionType?.includes('แนะนำ')
+  );
 
   return (
     <View style={styles.safeArea}>
@@ -46,6 +74,9 @@ export default function FoodInteractionsScreen() {
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#6366F1']} />
+        }
       >
         {/* CASE 1: User has NO medications in "ยาของฉัน" */}
         {activeUserMeds.length === 0 ? (
@@ -75,7 +106,7 @@ export default function FoodInteractionsScreen() {
             </View>
             <Text style={styles.emptyTitle}>ไม่พบข้อควรระวังอาหารสำหรับยาของคุณ</Text>
             <Text style={styles.emptySubtitle}>
-              ระบบได้นำยาที่คุณเพิ่ม ({activeUserMeds.map(m => m.name).join(', ')}) ไปตรวจสอบกับฐานข้อมูลหลังบ้านแล้ว{'\n'}
+              ระบบได้นำยาที่คุณเพิ่ม ({activeUserMeds.map(m => formatCleanDrugName(m.name)).join(', ')}) ไปตรวจสอบกับฐานข้อมูลหลังบ้านแล้ว{'\n'}
               ไม่พบข้อห้ามหรือข้อควรระวังเกี่ยวกับอาหารในขณะนี้
             </Text>
             <View style={styles.infoBadge}>
@@ -99,11 +130,11 @@ export default function FoodInteractionsScreen() {
             {/* Sync Status Banner */}
             <View style={styles.syncBanner}>
               <View style={styles.syncBannerLeft}>
-                <Ionicons name="swap-horizontal" size={20} color="#4F46E5" />
+                <Ionicons name="shield-checkmark" size={18} color="#4F46E5" />
                 <View style={{ marginLeft: 10, flex: 1 }}>
-                  <Text style={styles.syncBannerTitle}>เชื่อมต่อระบบหลังบ้านอัตโนมัติ</Text>
+                  <Text style={styles.syncBannerTitle}>เชื่อมต่อระบบตรวจสอบข้อควรระวังอัตโนมัติ</Text>
                   <Text style={styles.syncBannerSubtitle}>
-                    ตรวจพบ {matchedList.length} ข้อควรระวัง จากยาที่คุณเพิ่ม ({matchedDrugNames.length} ชนิด)
+                    ตรวจพบ {matchedList.length} ข้อควรระวัง จากยาที่คุณทาน ({matchedDrugNames.length} รายการ)
                   </Text>
                 </View>
               </View>
@@ -121,7 +152,7 @@ export default function FoodInteractionsScreen() {
                   {drugFilters.map(drug => {
                     const count = drug === 'ทั้งหมด'
                       ? matchedList.length
-                      : matchedList.filter(m => m.matchedMedication.name === drug).length;
+                      : matchedList.filter(m => formatCleanDrugName(m.matchedMedication.name) === drug).length;
                     const isSelected = selectedDrug === drug;
 
                     return (
@@ -152,11 +183,14 @@ export default function FoodInteractionsScreen() {
             {/* Section 1: Foods to Avoid */}
             {avoidList.length > 0 && (
               <>
-                <Text style={styles.sectionTitle}>อาหารที่ต้องหลีกเลี่ยง</Text>
+                <Text style={styles.sectionTitle}>อาหารที่ควรหลีกเลี่ยง</Text>
                 {avoidList.map(item => {
                   const inter = item.interaction;
                   const isHigh = inter.severity === 'สูง';
                   const isMed = inter.severity === 'กลาง';
+                  const cleanUserMed = formatCleanDrugName(item.matchedMedication.name);
+                  const cleanInterMed = formatCleanDrugName(inter.medicationName);
+                  const isDifferentDrug = cleanInterMed && cleanInterMed.toLowerCase() !== cleanUserMed.toLowerCase();
 
                   return (
                     <View
@@ -172,13 +206,13 @@ export default function FoodInteractionsScreen() {
                       <View style={styles.matchedMedBadge}>
                         <MaterialCommunityIcons name="pill" size={14} color="#4F46E5" />
                         <Text style={styles.matchedMedText} numberOfLines={1}>
-                          ยาของคุณ: {item.matchedMedication.name} ({item.matchedMedication.dosage}{item.matchedMedication.unit})
+                          ยาของคุณ: {cleanUserMed}
                         </Text>
                       </View>
 
                       {/* Header */}
                       <View style={styles.cardHeader}>
-                        <Text style={styles.foodName}>{inter.foodName}</Text>
+                        <Text style={styles.foodName} numberOfLines={1}>{formatCleanFoodName(inter.foodName)}</Text>
                         <StatusBadge
                           label={inter.severity || 'ปานกลาง'}
                           variant={isHigh ? 'high' : isMed ? 'medium' : 'low'}
@@ -186,48 +220,45 @@ export default function FoodInteractionsScreen() {
                         />
                       </View>
 
-                      {/* Interaction Rule */}
-                      <View style={styles.infoRow}>
-                        <MaterialCommunityIcons
-                          name="alert-circle-outline"
-                          size={15}
-                          color={isHigh ? '#EF4444' : isMed ? '#F97316' : '#EAB308'}
-                          style={styles.iconStyle}
-                        />
-                        <Text style={styles.infoText}>
-                          ปฏิสัมพันธ์กับยา: <Text style={{ fontWeight: '700', color: '#1E293B' }}>{inter.medicationName}</Text>
-                        </Text>
-                      </View>
+                      {/* Active ingredient/interaction rule shown only if different from user med name */}
+                      {isDifferentDrug ? (
+                        <View style={styles.infoRow}>
+                          <MaterialCommunityIcons
+                            name="alert-circle-outline"
+                            size={14}
+                            color={isHigh ? '#EF4444' : isMed ? '#F97316' : '#EAB308'}
+                            style={styles.iconStyle}
+                          />
+                          <Text style={styles.infoText} numberOfLines={1}>
+                            ตัวยาที่ระวัง: <Text style={{ fontWeight: '700', color: '#1E293B' }}>{cleanInterMed}</Text>
+                          </Text>
+                        </View>
+                      ) : null}
 
                       {/* Timing / Hours Note */}
                       {inter.hoursNote ? (
                         <View style={styles.infoRow}>
                           <Ionicons
                             name="time-outline"
-                            size={15}
+                            size={14}
                             color="#DC2626"
                             style={styles.iconStyle}
                           />
-                          <Text style={[styles.infoTextBold, { color: '#DC2626' }]}>
+                          <Text style={[styles.infoTextBold, { color: '#DC2626' }]} numberOfLines={1}>
                             คำแนะนำเวลา: {inter.hoursNote}
                           </Text>
                         </View>
                       ) : null}
 
-                      {/* Impact Details */}
+                      {/* Impact Details - Concise display */}
                       {inter.impactDetails ? (
                         <View style={styles.impactBox}>
-                          <Text style={styles.impactTitle}>ผลกระทบที่อาจเกิดขึ้น:</Text>
-                          <Text style={styles.impactText}>{inter.impactDetails}</Text>
+                          <Text style={styles.impactTitle}>ผลกระทบโดยย่อ:</Text>
+                          <Text style={styles.impactText} numberOfLines={2}>
+                            {formatConciseText(inter.impactDetails, 90)}
+                          </Text>
                         </View>
                       ) : null}
-
-                      {/* Card Footer */}
-                      <View style={styles.cardFooter}>
-                        <Text style={styles.sourceText}>
-                          ข้อมูลหลังบ้าน: {inter.sourceName || 'ระบบฐานข้อมูล MedManager'}
-                        </Text>
-                      </View>
                     </View>
                   );
                 })}
@@ -237,19 +268,20 @@ export default function FoodInteractionsScreen() {
             {/* Section 2: Foods Recommended */}
             {recommendList.length > 0 && (
               <>
-                <Text style={[styles.sectionTitle, { marginTop: 24 }]}>อาหารที่แนะนำ</Text>
+                <Text style={[styles.sectionTitle, { marginTop: 20 }]}>อาหารที่แนะนำ</Text>
                 {recommendList.map(item => {
                   const inter = item.interaction;
+                  const cleanUserMed = formatCleanDrugName(item.matchedMedication.name);
                   return (
                     <View key={item.id} style={styles.recommendCard}>
                       <View style={styles.matchedMedBadge}>
                         <MaterialCommunityIcons name="pill" size={14} color="#15803D" />
                         <Text style={[styles.matchedMedText, { color: '#15803D' }]} numberOfLines={1}>
-                          ยาของคุณ: {item.matchedMedication.name}
+                          ยาของคุณ: {cleanUserMed}
                         </Text>
                       </View>
 
-                      <Text style={styles.recommendFoodName}>{inter.foodName}</Text>
+                      <Text style={styles.recommendFoodName} numberOfLines={1}>{formatCleanFoodName(inter.foodName)}</Text>
 
                       <View style={styles.infoRow}>
                         <Ionicons
@@ -258,14 +290,8 @@ export default function FoodInteractionsScreen() {
                           color="#10B981"
                           style={styles.iconStyle}
                         />
-                        <Text style={[styles.infoTextBold, { color: '#047857' }]}>
-                          {inter.impactDetails}
-                        </Text>
-                      </View>
-
-                      <View style={styles.cardFooter}>
-                        <Text style={styles.sourceText}>
-                          ข้อมูลหลังบ้าน: {inter.sourceName || 'ระบบฐานข้อมูล MedManager'}
+                        <Text style={[styles.infoTextBold, { color: '#047857' }]} numberOfLines={2}>
+                          {formatConciseText(inter.impactDetails, 90)}
                         </Text>
                       </View>
                     </View>

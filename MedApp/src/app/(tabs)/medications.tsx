@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '@/context/AppContext';
 import { PillIcon } from '@/components/ui/PillIcon';
 import { StatusBadge } from '@/components/ui/StatusBadge';
+import { formatCleanDrugName } from '@/services/interactionMatcher';
 
 export default function MedicationsScreen() {
   const router = useRouter();
@@ -163,7 +164,7 @@ export default function MedicationsScreen() {
                     <PillIcon type={item.type || item.name} />
                     <View style={styles.medCardDetails}>
                       <View style={styles.nameRow}>
-                        <Text style={styles.medCardName}>{item.name}</Text>
+                        <Text style={styles.medCardName} numberOfLines={1}>{formatCleanDrugName(item.name)}</Text>
                         {isLowStock && <StatusBadge label="ใกล้หมด" variant="low_stock" size="sm" />}
                       </View>
                       <Text style={styles.medCardMeta}>
@@ -198,7 +199,7 @@ export default function MedicationsScreen() {
 
                     <TouchableOpacity
                       style={styles.actionBtnDelete}
-                      onPress={() => handleDelete(item.id, item.name)}
+                      onPress={() => handleDelete(item.id, formatCleanDrugName(item.name))}
                       activeOpacity={0.7}
                     >
                       <Feather name="x" size={16} color="#EF4444" />
@@ -216,7 +217,7 @@ export default function MedicationsScreen() {
                   <View key={item.id} style={styles.inactiveCard}>
                     <PillIcon type={item.name} disabled />
                     <View style={styles.inactiveDetails}>
-                      <Text style={styles.inactiveName}>{item.name}</Text>
+                      <Text style={styles.inactiveName} numberOfLines={1}>{formatCleanDrugName(item.name)}</Text>
                       <Text style={styles.inactiveMeta}>
                         {item.dosage}{item.unit} • {item.type}{item.endDate ? ` • หยุด ${item.endDate}` : ''}
                       </Text>

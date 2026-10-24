@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { AppHeader } from '@/components/ui/AppHeader';
 import { PillIcon } from '@/components/ui/PillIcon';
 import { useApp } from '@/context/AppContext';
+import { formatCleanDrugName } from '@/services/interactionMatcher';
 
 export default function EditMedicationScreen() {
   const router = useRouter();
@@ -23,7 +24,7 @@ export default function EditMedicationScreen() {
   const medId = params.id as string;
   const existingMed = medications.find(m => m.id === medId) || medications[0];
 
-  const [name, setName] = useState(existingMed?.name || '');
+  const [name, setName] = useState(formatCleanDrugName(existingMed?.name) || '');
   const [category, setCategory] = useState<'ยา' | 'อาหารเสริม'>(existingMed?.category || 'ยา');
   const [type, setType] = useState(existingMed?.type || 'เม็ด');
   const [dosage, setDosage] = useState(existingMed?.dosage || '');
@@ -55,7 +56,7 @@ export default function EditMedicationScreen() {
     setIsSaving(true);
     await saveMedication({
       ...existingMed,
-      name,
+      name: formatCleanDrugName(name.trim()),
       category,
       type: type as any,
       dosage,
@@ -81,7 +82,7 @@ export default function EditMedicationScreen() {
         <View style={styles.previewCard}>
           <PillIcon type={type} />
           <View style={styles.previewDetails}>
-            <Text style={styles.previewName}>{name}</Text>
+            <Text style={styles.previewName} numberOfLines={1}>{formatCleanDrugName(name)}</Text>
             <Text style={styles.previewMeta}>
               {dosage}{unit} • {type} • {frequency} ครั้ง/วัน
             </Text>

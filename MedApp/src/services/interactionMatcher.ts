@@ -45,11 +45,61 @@ export function extractDrugTokens(name: string): string[] {
 }
 
 /**
+ * Clean drug name by removing details inside parentheses
+ * e.g., "ทิฟฟี่ (พาราเซตามอล + คลอร์เฟนิรามีน + ฟีนิลเอฟรีน)" -> "ทิฟฟี่"
+ * e.g., "ไทลินอล (พาราเซตามอล 500 มก.)" -> "ไทลินอล"
+ * e.g., "ดีคอลเจน พริน (Decolgen Prin)" -> "ดีคอลเจน พริน"
+ */
+export function formatCleanDrugName(rawName?: string | null): string {
+  if (!rawName) return '';
+  const cleaned = rawName
+    .replace(/\s*[\(\（\[【][^\)\）\]】]*[\)\）\]】]?\s*/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return cleaned || rawName.trim();
+}
+
+/**
+ * Clean food name by removing details inside parentheses
+ * e.g., "เครื่องดื่มที่มีคาเฟอีน (ชาเข้มข้น, กาแฟ, เครื่องดื่มชูกำลัง)" -> "เครื่องดื่มที่มีคาเฟอีน"
+ * e.g., "กาแฟ, ชาเข้มข้น, ธัญพืชไม่ขัดสี (อาหารที่มีไฟเตตสูง)" -> "กาแฟ, ชาเข้มข้น, ธัญพืชไม่ขัดสี"
+ */
+export function formatCleanFoodName(rawFoodName?: string | null): string {
+  if (!rawFoodName) return '';
+  const cleaned = rawFoodName
+    .replace(/\s*[\(\（\[【][^\)\）\]】]*[\)\）\]】]?\s*/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return cleaned || rawFoodName.trim();
+}
+
+/**
+ * Extract extra formula/ingredients from parentheses if present
+ * e.g., "ทิฟฟี่ (พาราเซตามอล + คลอร์เฟนิรามีน + ฟีนิลเอฟรีน)" -> "พาราเซตามอล + คลอร์เฟนิรามีน + ฟีนิลเอฟรีน"
+ */
+export function extractDrugDetails(rawName?: string | null): string {
+  if (!rawName) return '';
+  const match = rawName.match(/[\(\（\[【]([^\)\）\]】]+)[\)\）\]】]/);
+  return match ? match[1].trim() : '';
+}
+
+/**
+ * Truncate long descriptions to a concise summary (แสดงพอสังเขป)
+ */
+export function formatConciseText(text?: string | null, maxLength: number = 80): string {
+  if (!text) return '';
+  const trimmed = text.trim().replace(/\s+/g, ' ');
+  if (trimmed.length <= maxLength) return trimmed;
+  return trimmed.slice(0, maxLength) + '...';
+}
+
+/**
  * Check if a user's medication matches an admin interaction's medication_name
  */
 export function isMedicationMatch(
   userMedName: string,
-  interactionMedName: string
+  interactionMedName: string,
+  userMedContext?: string
 ): boolean {
   if (!userMedName || !interactionMedName) return false;
 
@@ -61,13 +111,21 @@ export function isMedicationMatch(
     return true;
   }
 
-  // 2. Direct substring match (either direction)
+  // 2. Direct clean base name match (e.g. "ทิฟฟี่" vs "ทิฟฟี่")
+  const baseUser = formatCleanDrugName(userMedName).toLowerCase();
+  const baseInter = formatCleanDrugName(interactionMedName).toLowerCase();
+  if (baseUser && baseInter && (baseUser === baseInter || baseUser.includes(baseInter) || baseInter.includes(baseUser))) {
+    return true;
+  }
+
+  // 3. Direct substring match (either direction)
   if (cleanUser.includes(cleanInter) || cleanInter.includes(cleanUser)) {
     return true;
   }
 
-  // 3. Token-based matching
-  const userTokens = extractDrugTokens(userMedName);
+  // 3. Token-based matching (checking name and any formula/context)
+  const userFull = userMedName + (userMedContext ? ' ' + userMedContext : '');
+  const userTokens = extractDrugTokens(userFull);
   const interTokens = extractDrugTokens(interactionMedName);
 
   for (const uToken of userTokens) {
@@ -106,7 +164,8 @@ export function matchInteractionsForUser(
 
   for (const med of activeMeds) {
     for (const inter of allInteractions) {
-      if (isMedicationMatch(med.name, inter.medicationName)) {
+      const extraContext = [med.instructions, med.precautions].filter(Boolean).join(' ');
+      if (isMedicationMatch(med.name, inter.medicationName, extraContext)) {
         const pairKey = `${med.id || med.name}-${inter.id}-${inter.foodName}`;
         if (!seenPairs.has(pairKey)) {
           seenPairs.add(pairKey);

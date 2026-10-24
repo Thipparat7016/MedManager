@@ -226,7 +226,7 @@ export default function InteractionListPage() {
                 <th style={{ width: '70px', textAlign: 'center' }}>ID</th>
                 <th style={{ width: '20%' }}>ชื่อยา / อาหารเสริม (TH/EN)</th>
                 <th style={{ width: '18%' }}>อาหาร / กลุ่มอาหาร</th>
-                <th style={{ width: '16%', textAlign: 'center' }}>ประเภท</th>
+                <th style={{ width: '16%', textAlign: 'center' }}>ประเภทปฏิสัมพันธ์</th>
                 <th style={{ width: '10%', textAlign: 'center' }}>ความรุนแรง</th>
                 <th style={{ width: '14%', textAlign: 'center' }}>ช่วงเวลางด</th>
                 <th style={{ width: '12%' }}>แหล่งอ้างอิง</th>
@@ -413,7 +413,7 @@ export default function InteractionListPage() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', fontSize: '14px', marginTop: '14px' }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div><strong>อาหาร/กลุ่มอาหาร:</strong> {viewItem.food_name}</div>
-                <div><strong>ประเภท:</strong> {viewItem.interaction_type}</div>
+                <div><strong>ประเภทปฏิสัมพันธ์:</strong> {viewItem.interaction_type}</div>
                 <div><strong>ความรุนแรง:</strong> <span className={`badge-severity ${viewItem.severity === 'สูง' ? 'high' : viewItem.severity === 'ต่ำ' ? 'low' : 'medium'}`} style={{ marginLeft: '4px' }}>{viewItem.severity}</span></div>
                 <div><strong>ช่วงเวลางด:</strong> {viewItem.hours_note || `${viewItem.hours_before} ชม. ก่อน - ${viewItem.hours_after} ชม. หลัง`}</div>
               </div>

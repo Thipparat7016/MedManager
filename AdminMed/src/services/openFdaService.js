@@ -4,12 +4,14 @@ import {
   getSupplementSuggestions,
   fetchSupplementFromApi
 } from './supplementService.js'
+import { resolveMedicationImage } from './drugImageService.js'
 
 export {
   POPULAR_SUPPLEMENT_MAP,
   findSupplementPreset,
   getSupplementSuggestions,
-  fetchSupplementFromApi
+  fetchSupplementFromApi,
+  resolveMedicationImage
 }
 
 // ==============================================================================
@@ -993,6 +995,7 @@ export function getDrugSuggestions(query = '', categoryFilter = '') {
     unit: val.unit,
     type: val.type,
     category: 'ยา',
+    image_url: ''
   }));
 
   const supplementEntries = Object.entries(POPULAR_SUPPLEMENT_MAP).map(([key, val]) => ({
@@ -1003,6 +1006,7 @@ export function getDrugSuggestions(query = '', categoryFilter = '') {
     unit: val.unit,
     type: val.type,
     category: 'อาหารเสริม',
+    image_url: ''
   }));
 
   let combined = [];
@@ -1237,6 +1241,7 @@ export async function fetchDrugFromOpenFda(drugName) {
       instructions: matchedPreset.instructions_th,
       precautions: matchedPreset.precautions_th,
       source: 'ฐานข้อมูลเภสัชกรรมมาตรฐาน (อย. / FDA)',
+      image_url: ''
     };
   }
 
@@ -1287,6 +1292,7 @@ export async function fetchDrugFromOpenFda(drugName) {
       instructions,
       precautions,
       source: 'openFDA (U.S. FDA)',
+      image_url: ''
     };
   }
 
@@ -1302,27 +1308,31 @@ export async function fetchMedicalEntity(query, preferredCategory = '') {
   const q = (query || '').trim();
   if (!q) throw new Error('กรุณาระบุชื่อยาหรืออาหารเสริมก่อนค้นหา');
 
+  let entity = null;
+
   // If category is explicitly 'อาหารเสริม' or matches supplement preset
   if (preferredCategory === 'อาหารเสริม' || findSupplementPreset(q)) {
     try {
-      return await fetchSupplementFromApi(q);
+      entity = await fetchSupplementFromApi(q);
     } catch (suppErr) {
       try {
-        return await fetchDrugFromOpenFda(q);
+        entity = await fetchDrugFromOpenFda(q);
       } catch (fdaErr) {
         throw suppErr;
       }
     }
-  }
-
-  // Otherwise, try drug first
-  try {
-    return await fetchDrugFromOpenFda(q);
-  } catch (fdaErr) {
+  } else {
+    // Otherwise, try drug first
     try {
-      return await fetchSupplementFromApi(q);
-    } catch (suppErr) {
-      throw new Error(`ไม่พบข้อมูลยาหรืออาหารเสริมสำหรับ "${q}" ในฐานข้อมูล`);
+      entity = await fetchDrugFromOpenFda(q);
+    } catch (fdaErr) {
+      try {
+        entity = await fetchSupplementFromApi(q);
+      } catch (suppErr) {
+        throw new Error(`ไม่พบข้อมูลยาหรืออาหารเสริมสำหรับ "${q}" ในฐานข้อมูล`);
+      }
     }
   }
+
+  return entity;
 }

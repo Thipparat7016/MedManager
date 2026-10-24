@@ -12,6 +12,7 @@ import { Ionicons, Feather } from '@expo/vector-icons';
 import { AppHeader } from '@/components/ui/AppHeader';
 import { PillIcon } from '@/components/ui/PillIcon';
 import { useApp } from '@/context/AppContext';
+import { formatCleanDrugName } from '@/services/interactionMatcher';
 
 export default function ScheduleScreen() {
   const router = useRouter();
@@ -153,23 +154,11 @@ export default function ScheduleScreen() {
                   <View key={item.id} style={styles.itemCard}>
                     <PillIcon type={item.type || item.medicationName} />
                     <View style={styles.itemDetails}>
-                      <Text style={styles.itemName}>{item.medicationName}</Text>
+                      <Text style={styles.itemName} numberOfLines={1}>{formatCleanDrugName(item.medicationName)}</Text>
                       <Text style={styles.itemMeta}>
                         {item.dosage} • 1 {item.type} • {item.mealTiming}
                       </Text>
                     </View>
-                    <TouchableOpacity
-                      style={[
-                        styles.checkCircle,
-                        item.isTaken && styles.checkCircleActive,
-                      ]}
-                      onPress={() => markTaken(item.id, !item.isTaken)}
-                      activeOpacity={0.7}
-                    >
-                      {item.isTaken && (
-                        <Ionicons name="checkmark" size={16} color="#FFFFFF" />
-                      )}
-                    </TouchableOpacity>
                   </View>
                 ))}
               </View>

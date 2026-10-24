@@ -144,6 +144,33 @@ export const dataService = {
 
   async saveMedication(data) {
     if (!supabase) throw new Error('Supabase is not configured')
+
+    // Check for duplicate medication name (name_th or name_en)
+    const normalizeStr = (str) => (str || '').trim().replace(/\s+/g, ' ').toLowerCase()
+    const targetTh = normalizeStr(data.name_th)
+    const targetEn = normalizeStr(data.name_en)
+
+    const { data: allMeds, error: fetchMedsError } = await supabase
+      .from('medications')
+      .select('id, name_th, name_en')
+
+    if (!fetchMedsError && allMeds) {
+      const duplicate = allMeds.find(m => {
+        if (data.id && String(m.id) === String(data.id)) return false
+        const existingTh = normalizeStr(m.name_th)
+        const existingEn = normalizeStr(m.name_en)
+        return (targetTh && existingTh === targetTh) || (targetEn && existingEn === targetEn)
+      })
+
+      if (duplicate) {
+        const dupTh = normalizeStr(duplicate.name_th)
+        if (targetTh && dupTh === targetTh) {
+          throw new Error(`ชื่อยาภาษาไทย "${data.name_th.trim()}" มีอยู่ในระบบแล้ว ไม่สามารถเพิ่มซ้ำได้`)
+        } else {
+          throw new Error(`ชื่อยาภาษาอังกฤษ "${data.name_en.trim()}" มีอยู่ในระบบแล้ว ไม่สามารถเพิ่มซ้ำได้`)
+        }
+      }
+    }
     
     // If editing existing record with UUID id
     if (data.id && !data.id.startsWith('med-')) {
@@ -266,6 +293,28 @@ export const dataService = {
 
   async saveInteraction(data) {
     if (!supabase) throw new Error('Supabase is not configured')
+
+    // Check for duplicate drug-food interaction (medication_name and food_name)
+    const normalizeStr = (str) => (str || '').trim().replace(/\s+/g, ' ').toLowerCase()
+    const targetMed = normalizeStr(data.medication_name)
+    const targetFood = normalizeStr(data.food_name)
+
+    const { data: allInteractions, error: fetchInterError } = await supabase
+      .from('drug_food_interactions')
+      .select('id, medication_name, food_name')
+
+    if (!fetchInterError && allInteractions) {
+      const duplicate = allInteractions.find(item => {
+        if (data.id && String(item.id) === String(data.id)) return false
+        const existingMed = normalizeStr(item.medication_name)
+        const existingFood = normalizeStr(item.food_name)
+        return existingMed === targetMed && existingFood === targetFood
+      })
+
+      if (duplicate) {
+        throw new Error(`มีข้อมูลปฏิสัมพันธ์ระหว่างยา "${data.medication_name.trim()}" กับอาหาร "${data.food_name.trim()}" ในระบบแล้ว ไม่สามารถเพิ่มซ้ำได้`)
+      }
+    }
 
     const hoursNote = data.hours_note || (data.hours_before || data.hours_after ? `${data.hours_before || 0} ชม. ก่อน-${data.hours_after || 0} ชม. หลัง` : '')
 

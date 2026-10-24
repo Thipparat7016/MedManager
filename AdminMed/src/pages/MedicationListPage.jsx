@@ -388,15 +388,15 @@ export default function MedicationListPage() {
                 <div><strong>ขนาดยา:</strong> {viewMed.dosage} {viewMed.unit}</div>
               </div>
               <div style={{ borderTop: '1px solid var(--color-neutral-100)', paddingTop: '10px' }}>
-                <div style={{ fontWeight: 600, color: 'var(--color-neutral-800)', marginBottom: '4px' }}>ข้อบ่งใช้ (Indications):</div>
+                <div style={{ fontWeight: 600, color: 'var(--color-neutral-800)', marginBottom: '4px' }}>สรรพคุณ:</div>
                 <div style={{ color: 'var(--color-neutral-600)', fontSize: '13.5px' }}>{viewMed.indications || '-'}</div>
               </div>
               <div style={{ borderTop: '1px solid var(--color-neutral-100)', paddingTop: '10px' }}>
-                <div style={{ fontWeight: 600, color: 'var(--color-neutral-800)', marginBottom: '4px' }}>วิธีรับประทาน / คำแนะนำ (Instructions):</div>
+                <div style={{ fontWeight: 600, color: 'var(--color-neutral-800)', marginBottom: '4px' }}>วิธีรับประทาน / คำแนะนำ:</div>
                 <div style={{ color: 'var(--color-neutral-600)', fontSize: '13.5px' }}>{viewMed.instructions || '-'}</div>
               </div>
               <div style={{ borderTop: '1px solid var(--color-neutral-100)', paddingTop: '10px' }}>
-                <div style={{ fontWeight: 600, color: 'var(--color-neutral-800)', marginBottom: '4px' }}>ข้อควรระวังและผลข้างเคียง (Precautions):</div>
+                <div style={{ fontWeight: 600, color: 'var(--color-neutral-800)', marginBottom: '4px' }}>ข้อควรระวัง / ผลข้างเคียง:</div>
                 <div style={{ color: 'var(--color-neutral-600)', fontSize: '13.5px' }}>{viewMed.precautions || '-'}</div>
               </div>
             </div>

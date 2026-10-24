@@ -576,6 +576,19 @@ body {
   gap: 24px;
 }
 
+.form-2col-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 28px;
+  align-items: start;
+}
+
+@media (max-width: 1100px) {
+  .form-2col-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Segmented Buttons Group */
 .segmented-group {
   display: grid;
@@ -894,9 +907,9 @@ body {
   border-radius: var(--radius-pill);
   font-size: 12px;
   font-weight: 600;
-  background-color: var(--color-warning-50);
-  color: var(--color-warning-700);
-  border: 1px solid var(--color-warning-100);
+  background-color: #e8e4fb;
+  color: #7C6CD8;
+  border: 1px solid #c9c3ee;
 }
 
 /* --------------------------------------------------------------------------

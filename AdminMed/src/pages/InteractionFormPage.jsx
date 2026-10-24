@@ -313,7 +313,8 @@ export default function InteractionFormPage() {
       }, 800)
     } catch (err) {
       console.error('Save interaction error:', err)
-      setErrorMsg(err?.message ? `เกิดข้อผิดพลาดจาก Supabase: ${err.message}` : 'เกิดข้อผิดพลาดในการบันทึกข้อมูล')
+      setErrorMsg(err?.message || 'เกิดข้อผิดพลาดในการบันทึกข้อมูล')
+      window.scrollTo({ top: 0, behavior: 'smooth' })
     } finally {
       setSaving(false)
     }
