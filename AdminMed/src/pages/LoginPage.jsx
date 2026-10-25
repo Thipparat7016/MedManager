@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Eye, EyeOff } from 'lucide-react'
 import { dataService } from '../services/dataService'
@@ -11,6 +11,12 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
 
+  useEffect(() => {
+    if (dataService.isAuthenticated()) {
+      navigate('/dashboard', { replace: true })
+    }
+  }, [navigate])
+
   const handleLogin = async (e) => {
     if (e) e.preventDefault()
     if (!email.trim() || !password.trim()) {
@@ -22,16 +28,10 @@ export default function LoginPage() {
     setErrorMsg('')
     try {
       await dataService.login(email.trim(), password)
-      navigate('/dashboard')
+      navigate('/dashboard', { replace: true })
     } catch (err) {
-      console.error('Supabase Auth error:', err)
-      if (err?.message?.includes('Invalid login credentials')) {
-        setErrorMsg('อีเมลหรือรหัสผ่านไม่ถูกต้อง')
-      } else if (err?.message?.includes('Email not confirmed')) {
-        setErrorMsg('อีเมลนี้ยังไม่ได้ยืนยันตัวตน (Email not confirmed)')
-      } else {
-        setErrorMsg(err?.message || 'เข้าสู่ระบบไม่สำเร็จ โปรดตรวจสอบข้อมูลอีกครั้ง')
-      }
+      console.error('Login error:', err)
+      setErrorMsg(err?.message || 'เข้าสู่ระบบไม่สำเร็จ โปรดตรวจสอบข้อมูลอีกครั้ง')
     } finally {
       setLoading(false)
     }

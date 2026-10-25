@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS medications (
 CREATE TABLE IF NOT EXISTS drug_food_interactions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   code VARCHAR(50),
-  medication_id UUID REFERENCES medications(id) ON DELETE SET NULL,
+  medication_id UUID REFERENCES medications(id) ON DELETE CASCADE,
   medication_name VARCHAR(255) NOT NULL,
   food_name VARCHAR(255) NOT NULL,
   interaction_type VARCHAR(100) NOT NULL, -- หลีกเลี่ยง, แนะนำ, ข้อควรระวัง

@@ -70,6 +70,7 @@ export default function InteractionFormPage() {
     const dbItems = medications
       .filter(m => m.name_th || m.th)
       .map(m => ({
+        id: m.id,
         key: m.id || m.name_en || m.name_th,
         th: m.name_th || m.th,
         en: m.name_en || m.en || '',
@@ -120,6 +121,7 @@ export default function InteractionFormPage() {
     if (item) {
       setFormData({
         id: item.id,
+        medication_id: item.medication_id || '',
         medication_name: item.medication_name || '',
         food_name: item.food_name || '',
         interaction_type: item.interaction_type || 'หลีกเลี่ยง',
@@ -142,6 +144,7 @@ export default function InteractionFormPage() {
     const val = e.target.value
     setFormData(prev => ({ 
       ...prev, 
+      medication_id: '',
       medication_name: val,
       food_name: '' 
     }))
@@ -162,6 +165,7 @@ export default function InteractionFormPage() {
     const selectedName = item.th || item.name_th
     setFormData(prev => ({
       ...prev,
+      medication_id: item.id || null,
       medication_name: selectedName,
       food_name: ''
     }))

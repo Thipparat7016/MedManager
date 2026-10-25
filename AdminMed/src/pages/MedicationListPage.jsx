@@ -81,19 +81,27 @@ export default function MedicationListPage() {
   }
 
   const handleDeleteOne = async (id, name) => {
-    if (window.confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบยา "${name}"?`)) {
-      await dataService.deleteMedication(id)
-      await loadMedications()
-      setSelectedIds(prev => prev.filter(item => item !== id))
+    if (window.confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบ "${name}"?\n(ข้อมูลปฏิสัมพันธ์ยา-อาหารที่เกี่ยวข้องจะถูกลบออกด้วย)`)) {
+      try {
+        await dataService.deleteMedication(id)
+        await loadMedications()
+        setSelectedIds(prev => prev.filter(item => item !== id))
+      } catch (err) {
+        alert('เกิดข้อผิดพลาดในการลบข้อมูล: ' + (err?.message || err))
+      }
     }
   }
 
   const handleDeleteSelected = async () => {
     if (selectedIds.length === 0) return
-    if (window.confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบยาที่เลือกทั้งหมด ${selectedIds.length} รายการ?`)) {
-      await dataService.deleteMultipleMedications(selectedIds)
-      setSelectedIds([])
-      await loadMedications()
+    if (window.confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบรายการยา/อาหารเสริมที่เลือกทั้งหมด ${selectedIds.length} รายการ?\n(ข้อมูลปฏิสัมพันธ์ยา-อาหารที่เกี่ยวข้องจะถูกลบออกด้วย)`)) {
+      try {
+        await dataService.deleteMultipleMedications(selectedIds)
+        setSelectedIds([])
+        await loadMedications()
+      } catch (err) {
+        alert('เกิดข้อผิดพลาดในการลบข้อมูล: ' + (err?.message || err))
+      }
     }
   }
 

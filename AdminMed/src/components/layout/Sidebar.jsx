@@ -10,10 +10,10 @@ export default function Sidebar({ adminProfile }) {
   const isMedicationActive = location.pathname.startsWith('/medications')
   const isInteractionActive = location.pathname.startsWith('/interactions')
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     if (window.confirm('คุณต้องการออกจากระบบหรือไม่?')) {
-      dataService.logout()
-      navigate('/login')
+      await dataService.logout()
+      navigate('/login', { replace: true })
     }
   }
 

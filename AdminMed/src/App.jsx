@@ -8,16 +8,47 @@ import MedicationFormPage from './pages/MedicationFormPage'
 import InteractionListPage from './pages/InteractionListPage'
 import InteractionFormPage from './pages/InteractionFormPage'
 import SettingsPage from './pages/SettingsPage'
+import { dataService } from './services/dataService'
+
+function ProtectedRoute({ children }) {
+  const isAuth = dataService.isAuthenticated()
+  if (!isAuth) {
+    return <Navigate to="/login" replace />
+  }
+  return children
+}
+
+function PublicRoute({ children }) {
+  const isAuth = dataService.isAuthenticated()
+  if (isAuth) {
+    return <Navigate to="/dashboard" replace />
+  }
+  return children
+}
 
 export default function App() {
   return (
     <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <Routes>
         {/* Public Login Route */}
-        <Route path="/login" element={<LoginPage />} />
+        <Route 
+          path="/login" 
+          element={
+            <PublicRoute>
+              <LoginPage />
+            </PublicRoute>
+          } 
+        />
 
         {/* Protected Admin Routes */}
-        <Route path="/" element={<AdminLayout />}>
+        <Route 
+          path="/" 
+          element={
+            <ProtectedRoute>
+              <AdminLayout />
+            </ProtectedRoute>
+          }
+        >
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard" element={<DashboardPage />} />
           
@@ -36,6 +67,9 @@ export default function App() {
           
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Route>
+
+        {/* Catch-all route */}
+        <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     </BrowserRouter>
   )

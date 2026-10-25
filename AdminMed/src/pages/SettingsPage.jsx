@@ -1,14 +1,22 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { useOutletContext, useSearchParams } from 'react-router-dom'
-import { Camera, Check, Search, Trash2 } from 'lucide-react'
+import { useNavigate, useOutletContext, useSearchParams } from 'react-router-dom'
+import { Camera, Check, Search, Trash2, LogOut } from 'lucide-react'
 import { dataService } from '../services/dataService'
 
 export default function SettingsPage() {
+  const navigate = useNavigate()
   const { adminProfile, reloadProfile } = useOutletContext()
   const [searchParams, setSearchParams] = useSearchParams()
   const initialTab = searchParams.get('tab') === 'users' ? 'users' : 'admin'
   const [activeTab, setActiveTab] = useState(initialTab)
   const fileInputRef = useRef(null)
+
+  const handleLogout = async () => {
+    if (window.confirm('คุณต้องการออกจากระบบหรือไม่?')) {
+      await dataService.logout()
+      navigate('/login', { replace: true })
+    }
+  }
 
   // Admin Profile Form
   const [formData, setFormData] = useState({
@@ -315,7 +323,17 @@ export default function SettingsPage() {
                 />
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px' }}>
+                <button 
+                  type="button" 
+                  className="btn btn-delete"
+                  onClick={handleLogout}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '10px 18px' }}
+                >
+                  <LogOut size={16} />
+                  <span>ออกจากระบบ</span>
+                </button>
+
                 <button 
                   type="submit" 
                   className="btn btn-primary"
