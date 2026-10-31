@@ -127,8 +127,18 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         });
       });
 
-      // 3. Low stock warning for real user medications
-      userMeds.filter(m => m.remaining !== undefined && m.lowStockThreshold !== undefined && m.remaining <= m.lowStockThreshold).forEach(m => {
+      // 3. Low stock warning for real user medications (only when stock tracking is configured)
+      userMeds
+        .filter(
+          m =>
+            m.remaining !== undefined &&
+            m.remaining !== null &&
+            m.lowStockThreshold !== undefined &&
+            m.lowStockThreshold !== null &&
+            m.lowStockThreshold > 0 &&
+            m.remaining <= m.lowStockThreshold
+        )
+        .forEach(m => {
         dynamicNotifs.push({
           id: `notif-stock-${m.id}`,
           type: 'low_stock',

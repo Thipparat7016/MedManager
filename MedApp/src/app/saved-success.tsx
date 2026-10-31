@@ -18,9 +18,19 @@ export default function SavedSuccessScreen() {
   const drugDose = (params.dosage as string) || '';
   const drugUnit = (params.unit as string) || '';
   const timesStr = (params.times as string) || 'ตามที่กำหนด';
-  const remainingStr = (params.remaining as string) || '0';
-  const lowStockStr = (params.lowStock as string) || '0';
+  const remainingStr = ((params.remaining as string) || '').trim();
+  const lowStockStr = ((params.lowStock as string) || '').trim();
   const startDateStr = (params.startDate as string) || 'วันนี้';
+  const durationStr = (params.duration as string) || 'ทุกวัน';
+
+  const stockSummaryText =
+    remainingStr && lowStockStr
+      ? `คงเหลือ: ${remainingStr} เม็ด • แจ้งเตือนเมื่อเหลือ ${lowStockStr} เม็ด`
+      : remainingStr
+      ? `คงเหลือ: ${remainingStr} เม็ด`
+      : lowStockStr
+      ? `แจ้งเตือนเมื่อเหลือ ${lowStockStr} เม็ด`
+      : '';
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -45,12 +55,12 @@ export default function SavedSuccessScreen() {
 
           <Text style={styles.summaryMedName}>{drugName} {drugDose}{drugUnit}</Text>
           <Text style={styles.summaryItem}>{timesStr}</Text>
-          <Text style={styles.summaryItem}>ทุกวัน • เริ่ม {startDateStr}</Text>
+          <Text style={styles.summaryItem}>{durationStr} • เริ่ม {startDateStr}</Text>
           <Text style={styles.summaryItem}>แจ้งเตือนก่อน 30 นาที</Text>
           <Text style={styles.summaryItem}>แจ้งเตือนอาหารที่ต้องหลีกเลี่ยง</Text>
-          <Text style={styles.summaryItem}>
-            คงเหลือ: {remainingStr} เม็ด • แจ้งเตือนเมื่อเหลือ {lowStockStr} เม็ด
-          </Text>
+          {stockSummaryText ? (
+            <Text style={styles.summaryItem}>{stockSummaryText}</Text>
+          ) : null}
         </View>
 
         {/* Action Buttons */}

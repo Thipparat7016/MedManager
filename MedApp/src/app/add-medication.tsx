@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -34,6 +34,7 @@ const MEAL_TIMES = [
 
 export default function AddMedicationScreen() {
   const router = useRouter();
+  const scrollViewRef = useRef<ScrollView>(null);
   const { masterMedications, saveMedication, refreshData } = useApp();
 
   // Re-sync master medications from AdminMed whenever this screen is opened/focused
@@ -97,6 +98,16 @@ export default function AddMedicationScreen() {
   const [showExpiryDatePicker, setShowExpiryDatePicker] = useState<boolean>(false);
   const [precautions, setPrecautions] = useState<string>('');
   const [isSaving, setIsSaving] = useState(false);
+  const [formErrors, setFormErrors] = useState<{
+    name?: string;
+    frequency?: string;
+    duration?: string;
+    times?: string;
+  }>({});
+  const [previewMedImage, setPreviewMedImage] = useState<{
+    uri: string;
+    name: string;
+  } | null>(null);
 
   // Filter master catalog by search query (matches clean name, raw formula, code, or category)
   const filteredCatalog = useMemo(() => {
@@ -143,6 +154,7 @@ export default function AddMedicationScreen() {
     }
     setSelectedFromMaster(cleanName);
     setShowDropdown(false);
+    setFormErrors(prev => (prev.name ? { ...prev, name: undefined } : prev));
   };
 
   // Time Modal Handlers
@@ -189,6 +201,7 @@ export default function AddMedicationScreen() {
     }
     setMealTiming(modalMealTiming);
     setShowTimeModal(false);
+    setFormErrors(prev => (prev.times ? { ...prev, times: undefined } : prev));
   };
 
   const handleDeleteTime = (index: number) => {
@@ -252,14 +265,41 @@ export default function AddMedicationScreen() {
   const handleConfirmCustomDays = () => {
     setSelectedMonthDates(tempSelectedMonthDates);
     setShowCustomDaysModal(false);
+    if (tempSelectedMonthDates.length > 0) {
+      setFormErrors(prev => (prev.duration ? { ...prev, duration: undefined } : prev));
+    }
   };
 
-  // Save handler (directly saves and redirects to saved-success)
+  // Save handler (validates required fields for both save buttons, then redirects to saved-success)
   const handleSave = async (createSchedule: boolean) => {
+    const newErrors: {
+      name?: string;
+      frequency?: string;
+      duration?: string;
+      times?: string;
+    } = {};
+
     if (!name.trim()) {
-      Alert.alert('กรุณากรอกข้อมูล', 'กรุณาระบุชื่อยาหรืออาหารเสริม');
+      newErrors.name = 'กรุณากรอกหรือเลือกชื่อยา / อาหารเสริม';
+    }
+    if (!frequencyCount || frequencyCount < 1) {
+      newErrors.frequency = 'กรุณาเลือกจำนวนต่อครั้ง';
+    }
+    if (!durationMode) {
+      newErrors.duration = 'กรุณาเลือกระยะเวลา';
+    } else if (durationMode === 'กำหนดเอง' && selectedMonthDates.length === 0) {
+      newErrors.duration = 'กรุณาเลือกวันที่รับประทานยาอย่างน้อย 1 วัน';
+    }
+    if (timesList.length === 0) {
+      newErrors.times = 'กรุณาเลือกเวลารับประทานอย่างน้อย 1 เวลา';
+    }
+
+    if (Object.keys(newErrors).length > 0) {
+      setFormErrors(newErrors);
+      scrollViewRef.current?.scrollTo({ y: 0, animated: true });
       return;
     }
+    setFormErrors({});
 
     setIsSaving(true);
     try {
@@ -271,32 +311,18 @@ export default function AddMedicationScreen() {
           : 'กำหนดวันเอง';
       }
 
-      let effectiveTimes: string[] = [];
-      if (createSchedule) {
-        if (timesList.length > 0) {
-          effectiveTimes = timesList;
-        } else {
-          switch (frequencyCount) {
-            case 1:
-              effectiveTimes = ['08:00'];
-              break;
-            case 2:
-              effectiveTimes = ['08:00', '20:00'];
-              break;
-            case 3:
-              effectiveTimes = ['08:00', '12:00', '20:00'];
-              break;
-            case 4:
-              effectiveTimes = ['08:00', '12:00', '18:00', '21:00'];
-              break;
-            default:
-              effectiveTimes = ['08:00'];
-              break;
-          }
-        }
-      }
-
+      const effectiveTimes = [...timesList];
       const cleanMedName = formatCleanDrugName(name.trim());
+
+      const trimmedStock = currentStock.trim();
+      const parsedRemaining = trimmedStock !== '' ? parseInt(trimmedStock, 10) : undefined;
+      const validRemaining =
+        parsedRemaining !== undefined && !isNaN(parsedRemaining) ? parsedRemaining : undefined;
+
+      const trimmedLowStock = lowStockAlert.trim();
+      const parsedLowStock = trimmedLowStock !== '' ? parseInt(trimmedLowStock, 10) : undefined;
+      const validLowStock =
+        parsedLowStock !== undefined && !isNaN(parsedLowStock) ? parsedLowStock : undefined;
 
       await saveMedication({
         id: `med-${Date.now()}`,
@@ -306,8 +332,9 @@ export default function AddMedicationScreen() {
         dosage: dosage,
         unit: unit,
         frequency: frequencyCount,
-        remaining: parseInt(currentStock, 10) || 0,
-        lowStockThreshold: parseInt(lowStockAlert, 10) || 0,
+        remaining: validRemaining,
+        lowStockThreshold: validLowStock,
+        expiryDate: expiryDate.trim() || undefined,
         status: createSchedule ? 'active' : 'inactive',
         times: effectiveTimes,
         mealTiming: mealTiming || undefined,
@@ -324,12 +351,13 @@ export default function AddMedicationScreen() {
           name: cleanMedName,
           dosage: dosage,
           unit: unit,
-          times: effectiveTimes.length > 0
+          times: createSchedule
             ? effectiveTimes.map(t => `${t} น.`).join(' • ')
             : 'บันทึกเฉพาะข้อมูลยา (ไม่สร้างตาราง)',
-          remaining: currentStock || '0',
-          lowStock: lowStockAlert || '0',
+          remaining: validRemaining !== undefined ? String(validRemaining) : '',
+          lowStock: validLowStock !== undefined ? String(validLowStock) : '',
           startDate: formattedStartDate,
+          duration: durationNote,
         },
       });
     } catch (e: any) {
@@ -342,6 +370,7 @@ export default function AddMedicationScreen() {
     <View style={styles.safeArea}>
       <AppHeader title="เพิ่มยาใหม่" />
       <ScrollView
+        ref={scrollViewRef}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
@@ -351,7 +380,9 @@ export default function AddMedicationScreen() {
         {/* 2. ชื่อยา / อาหารเสริม * พร้อม Dropdown / Hint ดึงจาก Backend */}
         {/* ========================================================================= */}
         <View style={styles.inputGroup}>
-          <Text style={styles.inputLabel}>ชื่อยา / อาหารเสริม *</Text>
+          <Text style={styles.inputLabel}>
+            ชื่อยา / อาหารเสริม <Text style={styles.requiredAsterisk}>*</Text>
+          </Text>
           <TextInput
             style={styles.input}
             placeholder="เช่น แอสไพริน, Aspirin"
@@ -360,9 +391,15 @@ export default function AddMedicationScreen() {
             onChangeText={(text) => {
               setName(text);
               setShowDropdown(true);
+              if (text.trim()) {
+                setFormErrors(prev => (prev.name ? { ...prev, name: undefined } : prev));
+              }
             }}
             onFocus={() => setShowDropdown(true)}
           />
+          {formErrors.name ? (
+            <Text style={styles.fieldErrorText}>{formErrors.name}</Text>
+          ) : null}
 
           {/* Hint / Dropdown list from Backend (AdminMed) */}
           {showDropdown && filteredCatalog.length > 0 && (
@@ -378,38 +415,58 @@ export default function AddMedicationScreen() {
 
               {filteredCatalog.map((item, idx) => {
                 const itemUri = resolveImageUri(item.imageUrl);
+                const cleanItemName = formatCleanDrugName(item.name);
                 return (
-                  <TouchableOpacity
+                  <View
                     key={item.id || item.name + idx}
                     style={styles.masterItemCard}
-                    onPress={() => handleSelectMasterMed(item)}
-                    activeOpacity={0.7}
                   >
-                    <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-                      {itemUri ? (
+                    {itemUri ? (
+                      <TouchableOpacity
+                        onPress={() =>
+                          setPreviewMedImage({
+                            uri: itemUri,
+                            name: cleanItemName,
+                          })
+                        }
+                        activeOpacity={0.75}
+                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 4 }}
+                      >
                         <Image
                           source={{ uri: itemUri }}
                           style={styles.dropdownThumbImage}
                           resizeMode="cover"
                         />
-                      ) : (
+                      </TouchableOpacity>
+                    ) : (
+                      <TouchableOpacity
+                        onPress={() => handleSelectMasterMed(item)}
+                        activeOpacity={0.7}
+                      >
                         <PillIcon type={item.type || 'เม็ด'} size={18} containerSize={36} />
-                      )}
+                      </TouchableOpacity>
+                    )}
+
+                    <TouchableOpacity
+                      style={styles.masterItemSelectArea}
+                      onPress={() => handleSelectMasterMed(item)}
+                      activeOpacity={0.7}
+                    >
                       <View style={{ marginLeft: 10, flex: 1 }}>
                         <Text style={styles.masterItemName} numberOfLines={1}>
-                          {formatCleanDrugName(item.name)}
+                          {cleanItemName}
                         </Text>
                         <Text style={styles.masterItemMeta} numberOfLines={1}>
                           {item.category || 'ยา'} • {item.type || 'เม็ด'} • {item.dosage || ''} {item.unit || ''}
                         </Text>
                       </View>
-                    </View>
-                    <View style={styles.masterItemCategoryBadge}>
-                      <Text style={styles.masterItemCategoryText}>
-                        {item.category || 'ยา'}
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
+                      <View style={styles.masterItemCategoryBadge}>
+                        <Text style={styles.masterItemCategoryText}>
+                          {item.category || 'ยา'}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  </View>
                 );
               })}
             </View>
@@ -421,7 +478,9 @@ export default function AddMedicationScreen() {
         {/* ========================================================================= */}
 
         {/* จำนวนต่อครั้ง (Original counter from medication-settings.tsx) */}
-        <Text style={styles.sectionLabel}>จำนวนต่อครั้ง</Text>
+        <Text style={styles.sectionLabel}>
+          จำนวนต่อครั้ง <Text style={styles.requiredAsterisk}>*</Text>
+        </Text>
         <View style={styles.counterRow}>
           <TouchableOpacity
             style={styles.counterBtn}
@@ -440,13 +499,26 @@ export default function AddMedicationScreen() {
           </TouchableOpacity>
           <Text style={styles.counterUnit}>ครั้ง / วัน</Text>
         </View>
+        {formErrors.frequency ? (
+          <Text style={[styles.fieldErrorText, styles.sectionErrorText]}>
+            {formErrors.frequency}
+          </Text>
+        ) : null}
 
         {/* ระยะเวลา (ทุกวัน vs กำหนดเอง) */}
-        <Text style={styles.sectionLabel}>ระยะเวลา</Text>
+        <Text style={styles.sectionLabel}>
+          ระยะเวลา <Text style={styles.requiredAsterisk}>*</Text>
+        </Text>
         <View style={styles.chipsRow}>
           <TouchableOpacity
             style={[styles.chip, durationMode === 'ทุกวัน' && styles.chipActive]}
-            onPress={() => setDurationMode(durationMode === 'ทุกวัน' ? null : 'ทุกวัน')}
+            onPress={() => {
+              const nextMode = durationMode === 'ทุกวัน' ? null : 'ทุกวัน';
+              setDurationMode(nextMode);
+              if (nextMode === 'ทุกวัน') {
+                setFormErrors(prev => (prev.duration ? { ...prev, duration: undefined } : prev));
+              }
+            }}
             activeOpacity={0.7}
           >
             <Text
@@ -471,16 +543,28 @@ export default function AddMedicationScreen() {
             </Text>
           </TouchableOpacity>
         </View>
+        {formErrors.duration ? (
+          <Text style={[styles.fieldErrorText, styles.sectionErrorText]}>
+            {formErrors.duration}
+          </Text>
+        ) : null}
 
         {/* ========================================================================= */}
         {/* เวลารับประทาน (แสดงรายการเวลาที่เลือก + ปุ่มเพิ่มเวลาเปิด Popup) */}
         {/* ========================================================================= */}
         <View style={styles.timesHeaderRow}>
-          <Text style={styles.sectionLabel}>เวลารับประทาน</Text>
+          <Text style={styles.sectionLabel}>
+            เวลารับประทาน <Text style={styles.requiredAsterisk}>*</Text>
+          </Text>
           <TouchableOpacity onPress={handleOpenAddTime} activeOpacity={0.7}>
             <Text style={styles.addTimeLink}>+ เพิ่มเวลา</Text>
           </TouchableOpacity>
         </View>
+        {formErrors.times ? (
+          <Text style={[styles.fieldErrorText, styles.sectionErrorText]}>
+            {formErrors.times}
+          </Text>
+        ) : null}
 
         {timesList.length > 0 &&
           timesList.map((time, idx) => (
@@ -908,6 +992,49 @@ export default function AddMedicationScreen() {
         initialDate={expiryDate}
         title="เลือกวันหมดอายุ"
       />
+
+      {/* ========================================================================= */}
+      {/* 4. MEDICATION IMAGE PREVIEW MODAL (Popup ขยายรูปภาพยาจาก Dropdown) */}
+      {/* ========================================================================= */}
+      <Modal
+        visible={Boolean(previewMedImage)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPreviewMedImage(null)}
+      >
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={() => setPreviewMedImage(null)}
+        >
+          <Pressable
+            style={styles.imagePreviewModalContainer}
+            onPress={e => e.stopPropagation()}
+          >
+            <View style={styles.imagePreviewHeader}>
+              <Text style={[styles.modalTitle, { flex: 1, marginRight: 10 }]} numberOfLines={2}>
+                {previewMedImage?.name || 'รูปภาพยา'}
+              </Text>
+              <TouchableOpacity
+                onPress={() => setPreviewMedImage(null)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                style={styles.imagePreviewCloseBtn}
+              >
+                <Feather name="x" size={20} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            {previewMedImage?.uri ? (
+              <View style={styles.imagePreviewFrame}>
+                <Image
+                  source={{ uri: previewMedImage.uri }}
+                  style={styles.imagePreviewLarge}
+                  resizeMode="contain"
+                />
+              </View>
+            ) : null}
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -927,6 +1054,20 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#1E293B',
     marginBottom: 10,
+  },
+  requiredAsterisk: {
+    color: '#EF4444',
+    fontWeight: '700',
+  },
+  fieldErrorText: {
+    fontSize: 12,
+    color: '#EF4444',
+    fontWeight: '600',
+    marginTop: 6,
+  },
+  sectionErrorText: {
+    marginTop: -8,
+    marginBottom: 14,
   },
   photoUploadBox: {
     height: 150,
@@ -1013,10 +1154,58 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 8,
   },
+  masterItemSelectArea: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   dropdownThumbImage: {
     width: 36,
     height: 36,
     borderRadius: 8,
+  },
+  imagePreviewModalContainer: {
+    width: '100%',
+    maxWidth: 380,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 22,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  imagePreviewHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  imagePreviewCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  imagePreviewFrame: {
+    width: '100%',
+    height: 280,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 10,
+    overflow: 'hidden',
+  },
+  imagePreviewLarge: {
+    width: '100%',
+    height: '100%',
   },
   masterItemName: {
     fontSize: 14,

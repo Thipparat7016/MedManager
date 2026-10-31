@@ -38,13 +38,20 @@ export const CalendarModal: React.FC<CalendarModalProps> = ({
   title = 'เลือกวันที่',
 }) => {
   const today = useMemo(() => new Date(), []);
+  const getYearPageBase = (y: number) => y - ((((y - 2024) % 12) + 12) % 12);
+
   const [viewYear, setViewYear] = useState<number>(today.getFullYear());
   const [viewMonth, setViewMonth] = useState<number>(today.getMonth());
   const [selectedDate, setSelectedDate] = useState<SelectedDateObj | null>(null);
+  const [pickerMode, setPickerMode] = useState<'day' | 'month' | 'year'>('day');
+  const [yearPageStart, setYearPageStart] = useState<number>(() =>
+    getYearPageBase(today.getFullYear())
+  );
 
   // Parse initialDate if provided, or initialize to today's date when opened
   useEffect(() => {
     if (!visible) return;
+    setPickerMode('day');
 
     if (initialDate && initialDate.trim()) {
       const parts = initialDate.trim().split(/[\/\-.]/);
@@ -58,6 +65,7 @@ export const CalendarModal: React.FC<CalendarModalProps> = ({
           setSelectedDate({ day: d, month: normMonth, year: normYear });
           setViewMonth(normMonth);
           setViewYear(normYear);
+          setYearPageStart(getYearPageBase(normYear));
           return;
         }
       }
@@ -71,6 +79,7 @@ export const CalendarModal: React.FC<CalendarModalProps> = ({
     setSelectedDate({ day: curDay, month: curMonth, year: curYear });
     setViewMonth(curMonth);
     setViewYear(curYear);
+    setYearPageStart(getYearPageBase(curYear));
   }, [initialDate, visible]);
 
   // Calendar calculations
@@ -122,6 +131,34 @@ export const CalendarModal: React.FC<CalendarModalProps> = ({
     }
   };
 
+  const handleSelectMonth = (mIdx: number) => {
+    setViewMonth(mIdx);
+    setSelectedDate(prev => {
+      if (!prev) return prev;
+      const maxDay = new Date(viewYear, mIdx + 1, 0).getDate();
+      return {
+        day: Math.min(prev.day, maxDay),
+        month: mIdx,
+        year: viewYear,
+      };
+    });
+    setPickerMode('day');
+  };
+
+  const handleSelectYear = (yr: number) => {
+    setViewYear(yr);
+    setSelectedDate(prev => {
+      if (!prev) return prev;
+      const maxDay = new Date(yr, viewMonth + 1, 0).getDate();
+      return {
+        day: Math.min(prev.day, maxDay),
+        month: viewMonth,
+        year: yr,
+      };
+    });
+    setPickerMode('day');
+  };
+
   const handleConfirm = () => {
     if (!selectedDate) {
       onClose();
@@ -162,90 +199,214 @@ export const CalendarModal: React.FC<CalendarModalProps> = ({
             </TouchableOpacity>
           </View>
 
-          {/* Month & Year Navigation Row (จัดสมดุล ไม่มีสัญลักษณ์ลูกศรคู่ << >>) */}
+          {/* Month & Year Navigation Row (แยกกดเลือกเดือนและเลือกปีได้) */}
           <View style={styles.navRow}>
             <TouchableOpacity
               style={styles.navBtn}
-              onPress={handlePrevMonth}
+              onPress={
+                pickerMode === 'year'
+                  ? () => setYearPageStart(prev => prev - 12)
+                  : pickerMode === 'month'
+                  ? () => setViewYear(prev => prev - 1)
+                  : handlePrevMonth
+              }
               activeOpacity={0.7}
             >
               <Feather name="chevron-left" size={20} color="#475569" />
             </TouchableOpacity>
 
-            <View style={styles.monthYearTitleBox}>
-              <Text style={styles.monthYearTitle}>
-                {THAI_MONTHS[viewMonth]} {viewYear}
-              </Text>
-            </View>
+            {pickerMode === 'year' ? (
+              <TouchableOpacity
+                style={styles.monthYearTitleBox}
+                onPress={() => setPickerMode('day')}
+                activeOpacity={0.7}
+              >
+                <View style={styles.monthYearTitleRow}>
+                  <Text style={styles.monthYearTitle}>
+                    {yearPageStart} - {yearPageStart + 11}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.monthYearSplitBox}>
+                {/* ปุ่มกดเลือกเดือน */}
+                <TouchableOpacity
+                  style={[
+                    styles.headerSelectorPill,
+                    pickerMode === 'month' && styles.headerSelectorPillActive,
+                  ]}
+                  onPress={() =>
+                    setPickerMode(prev => (prev === 'month' ? 'day' : 'month'))
+                  }
+                  activeOpacity={0.7}
+                >
+                  <Text
+                    style={[
+                      styles.monthYearTitle,
+                      pickerMode === 'month' && styles.headerSelectorTextActive,
+                    ]}
+                  >
+                    {THAI_MONTHS[viewMonth]}
+                  </Text>
+                </TouchableOpacity>
+
+                {/* ปุ่มกดเลือกปี */}
+                <TouchableOpacity
+                  style={styles.headerSelectorPill}
+                  onPress={() => {
+                    setYearPageStart(getYearPageBase(viewYear));
+                    setPickerMode('year');
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.monthYearTitle}>{viewYear}</Text>
+                </TouchableOpacity>
+              </View>
+            )}
 
             <TouchableOpacity
               style={styles.navBtn}
-              onPress={handleNextMonth}
+              onPress={
+                pickerMode === 'year'
+                  ? () => setYearPageStart(prev => prev + 12)
+                  : pickerMode === 'month'
+                  ? () => setViewYear(prev => prev + 1)
+                  : handleNextMonth
+              }
               activeOpacity={0.7}
             >
               <Feather name="chevron-right" size={20} color="#475569" />
             </TouchableOpacity>
           </View>
 
-          {/* Weekday Labels (อา - ส) จัด 7 คอลัมน์ให้สมดุลตรงกับวันที่ */}
-          <View style={styles.weekdaysRow}>
-            {WEEKDAY_NAMES.map((w, idx) => (
-              <View key={w} style={styles.weekdayCol}>
-                <Text
-                  style={[
-                    styles.weekdayText,
-                    idx === 0 && { color: '#EF4444' }, // Sun in red
-                    idx === 6 && { color: '#6366F1' }, // Sat in indigo
-                  ]}
-                >
-                  {w}
-                </Text>
-              </View>
-            ))}
-          </View>
-
-          {/* Calendar Weeks & Days Grid (จัดแบบแถว 7 คอลัมน์สมบูรณ์ ไม่มีการปัดตกหล่น) */}
-          <View style={styles.calendarContainer}>
-            {weeks.map((week, wIdx) => (
-              <View key={`week-${wIdx}`} style={styles.weekRow}>
-                {week.map((day, dIdx) => {
-                  if (day === null) {
-                    return <View key={`empty-${wIdx}-${dIdx}`} style={styles.dayCell} />;
-                  }
-
-                  // Action/วงกลมเลือกวันจะแสดงเฉพาะเมื่อตรงทั้งวัน-เดือน-ปีที่เลือกเท่านั้น
-                  // เมื่อเลื่อนไปเดือนก่อนหน้า/เดือนถัดไป จะไม่มีวงกลมค้าง
-                  const isSelected =
-                    selectedDate !== null &&
-                    selectedDate.day === day &&
-                    selectedDate.month === viewMonth &&
-                    selectedDate.year === viewYear;
-
-                  return (
-                    <View key={`day-${wIdx}-${day}`} style={styles.dayCell}>
+          {pickerMode === 'year' ? (
+            /* Year Selection Grid (3x4 ในกรอบปฏิทินเดิม พอกดปีแล้วกลับมาหน้าเลือกวัน) */
+            <View style={styles.yearGridContainer}>
+              {[0, 1, 2, 3].map(rowIdx => (
+                <View key={`yr-row-${rowIdx}`} style={styles.yearRow}>
+                  {[0, 1, 2].map(colIdx => {
+                    const yr = yearPageStart + rowIdx * 3 + colIdx;
+                    const isYearSelected = yr === viewYear;
+                    return (
                       <TouchableOpacity
+                        key={`yr-${yr}`}
                         style={[
-                          styles.dayChip,
-                          isSelected && styles.dayChipSelected,
+                          styles.yearChip,
+                          isYearSelected && styles.yearChipSelected,
                         ]}
-                        onPress={() => setSelectedDate({ day, month: viewMonth, year: viewYear })}
+                        onPress={() => handleSelectYear(yr)}
                         activeOpacity={0.7}
                       >
                         <Text
                           style={[
-                            styles.dayText,
-                            isSelected && styles.dayTextSelected,
+                            styles.yearChipText,
+                            isYearSelected && styles.yearChipTextSelected,
                           ]}
                         >
-                          {day}
+                          {yr}
                         </Text>
                       </TouchableOpacity>
-                    </View>
-                  );
-                })}
+                    );
+                  })}
+                </View>
+              ))}
+            </View>
+          ) : pickerMode === 'month' ? (
+            /* Month Selection Grid (3x4 ทั้ง 12 เดือน พอกดเดือนแล้วกลับมาหน้าเลือกวัน) */
+            <View style={styles.yearGridContainer}>
+              {[0, 1, 2, 3].map(rowIdx => (
+                <View key={`mo-row-${rowIdx}`} style={styles.yearRow}>
+                  {[0, 1, 2].map(colIdx => {
+                    const mIdx = rowIdx * 3 + colIdx;
+                    const isMonthSelected = mIdx === viewMonth;
+                    return (
+                      <TouchableOpacity
+                        key={`mo-${mIdx}`}
+                        style={[
+                          styles.yearChip,
+                          isMonthSelected && styles.yearChipSelected,
+                        ]}
+                        onPress={() => handleSelectMonth(mIdx)}
+                        activeOpacity={0.7}
+                      >
+                        <Text
+                          style={[
+                            styles.monthChipText,
+                            isMonthSelected && styles.yearChipTextSelected,
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {THAI_MONTHS[mIdx]}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              ))}
+            </View>
+          ) : (
+            <>
+              {/* Weekday Labels (อา - ส) จัด 7 คอลัมน์ให้สมดุลตรงกับวันที่ */}
+              <View style={styles.weekdaysRow}>
+                {WEEKDAY_NAMES.map((w, idx) => (
+                  <View key={w} style={styles.weekdayCol}>
+                    <Text
+                      style={[
+                        styles.weekdayText,
+                        idx === 0 && { color: '#EF4444' }, // Sun in red
+                        idx === 6 && { color: '#6366F1' }, // Sat in indigo
+                      ]}
+                    >
+                      {w}
+                    </Text>
+                  </View>
+                ))}
               </View>
-            ))}
-          </View>
+
+              {/* Calendar Weeks & Days Grid (จัดแบบแถว 7 คอลัมน์สมบูรณ์ ไม่มีการปัดตกหล่น) */}
+              <View style={styles.calendarContainer}>
+                {weeks.map((week, wIdx) => (
+                  <View key={`week-${wIdx}`} style={styles.weekRow}>
+                    {week.map((day, dIdx) => {
+                      if (day === null) {
+                        return <View key={`empty-${wIdx}-${dIdx}`} style={styles.dayCell} />;
+                      }
+
+                      // Action/วงกลมเลือกวันจะแสดงเฉพาะเมื่อตรงทั้งวัน-เดือน-ปีที่เลือกเท่านั้น
+                      // เมื่อเลื่อนไปเดือนก่อนหน้า/เดือนถัดไป จะไม่มีวงกลมค้าง
+                      const isSelected =
+                        selectedDate !== null &&
+                        selectedDate.day === day &&
+                        selectedDate.month === viewMonth &&
+                        selectedDate.year === viewYear;
+
+                      return (
+                        <View key={`day-${wIdx}-${day}`} style={styles.dayCell}>
+                          <TouchableOpacity
+                            style={[
+                              styles.dayChip,
+                              isSelected && styles.dayChipSelected,
+                            ]}
+                            onPress={() => setSelectedDate({ day, month: viewMonth, year: viewYear })}
+                            activeOpacity={0.7}
+                          >
+                            <Text
+                              style={[
+                                styles.dayText,
+                                isSelected && styles.dayTextSelected,
+                              ]}
+                            >
+                              {day}
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                      );
+                    })}
+                  </View>
+                ))}
+              </View>
+            </>
+          )}
 
           {/* Footer Actions (ยกเลิก / ตกลง) จัดขนาดและสมดุลเท่ากัน */}
           <View style={styles.actionsRow}>
@@ -342,11 +503,81 @@ const styles = StyleSheet.create({
   monthYearTitleBox: {
     flex: 1,
     alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 4,
+  },
+  monthYearSplitBox: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  headerSelectorPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  headerSelectorPillActive: {
+    backgroundColor: '#EEF2FF',
+  },
+  headerSelectorTextActive: {
+    color: '#6366F1',
+  },
+  monthYearTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
   },
   monthYearTitle: {
     fontSize: 15,
     fontWeight: '800',
     color: '#1E293B',
+  },
+  monthChipText: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  yearGridContainer: {
+    marginBottom: 18,
+    paddingVertical: 6,
+    gap: 10,
+  },
+  yearRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  yearChip: {
+    flex: 1,
+    height: 46,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#F8FAFC',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  yearChipSelected: {
+    backgroundColor: '#6366F1',
+    borderColor: '#6366F1',
+    shadowColor: '#6366F1',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  yearChipText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  yearChipTextSelected: {
+    color: '#FFFFFF',
+    fontWeight: '800',
   },
   weekdaysRow: {
     flexDirection: 'row',

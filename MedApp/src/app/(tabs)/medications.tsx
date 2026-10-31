@@ -154,8 +154,8 @@ export default function MedicationsScreen() {
           <>
             {filteredActive.map(item => {
               const isLowStock =
-                item.remaining !== undefined &&
-                item.lowStockThreshold !== undefined &&
+                item.remaining !== undefined && item.remaining !== null &&
+                item.lowStockThreshold !== undefined && item.lowStockThreshold !== null && item.lowStockThreshold > 0 &&
                 item.remaining <= item.lowStockThreshold;
 
               return (
@@ -170,7 +170,7 @@ export default function MedicationsScreen() {
                       <Text style={styles.medCardMeta}>
                         {item.dosage}{item.unit} • {item.type} • {item.frequency} ครั้ง/วัน
                       </Text>
-                      <Text style={styles.medCardStock}>คงเหลือ: {item.remaining} เม็ด</Text>
+                      {item.remaining !== undefined && item.remaining !== null && <Text style={styles.medCardStock}>คงเหลือ: {item.remaining} เม็ด</Text>}
                     </View>
                   </View>
 

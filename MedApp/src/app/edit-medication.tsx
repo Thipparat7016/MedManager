@@ -30,7 +30,7 @@ export default function EditMedicationScreen() {
   const [dosage, setDosage] = useState(existingMed?.dosage || '');
   const [unit, setUnit] = useState(existingMed?.unit || 'mg');
   const [frequency, setFrequency] = useState(existingMed?.frequency?.toString() || '1');
-  const [remaining, setRemaining] = useState(existingMed?.remaining?.toString() || '0');
+  const [remaining, setRemaining] = useState(existingMed?.remaining !== undefined && existingMed?.remaining !== null ? existingMed.remaining.toString() : '');
   const [showUnitPicker, setShowUnitPicker] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -62,7 +62,7 @@ export default function EditMedicationScreen() {
       dosage,
       unit,
       frequency: parseInt(frequency, 10) || 1,
-      remaining: parseInt(remaining, 10) || 0,
+      remaining: remaining.trim() !== '' && !isNaN(parseInt(remaining, 10)) ? parseInt(remaining, 10) : undefined,
     });
     setIsSaving(false);
 

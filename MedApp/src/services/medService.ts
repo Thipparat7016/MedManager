@@ -10,7 +10,7 @@ export interface Medication {
   dosage: string;
   unit: string;
   frequency: number; // times per day
-  remaining: number;
+  remaining?: number;
   lowStockThreshold?: number;
   expiryDate?: string;
   instructions?: string;
