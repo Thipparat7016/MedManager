@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,34 +6,73 @@ import {
   StyleSheet,
   ScrollView,
   Alert,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons, Feather } from '@expo/vector-icons';
 import { AppHeader } from '@/components/ui/AppHeader';
 import { useApp } from '@/context/AppContext';
+import { AppNotification } from '@/services/medService';
 
 export default function NotificationsScreen() {
-  const { notifications, clearNotifications, markTaken, todaySchedule, postponeSchedule } = useApp();
+  const {
+    notifications,
+    clearNotifications,
+    markTaken,
+    todaySchedule,
+    postponeSchedule,
+    refreshData,
+  } = useApp();
 
-  const handleConfirmTake = async (notifId: string) => {
-    // Find matching pending schedule
-    const pendingItem = todaySchedule.find(s => !s.isTaken);
-    if (pendingItem) {
+  useFocusEffect(
+    useCallback(() => {
+      refreshData();
+    }, [refreshData])
+  );
+
+  const findScheduleItemForNotif = (notif: AppNotification) => {
+    if (notif.scheduleId) {
+      const byId = todaySchedule.find(s => s.id === notif.scheduleId);
+      if (byId) return byId;
+    }
+    if (notif.id.startsWith('notif-remind-')) {
+      const extractedId = notif.id.replace('notif-remind-', '');
+      const byExtracted = todaySchedule.find(s => s.id === extractedId);
+      if (byExtracted) return byExtracted;
+    }
+    return todaySchedule.find(
+      s =>
+        !s.isTaken &&
+        (!notif.medicationName || s.medicationName === notif.medicationName) &&
+        (!notif.time || s.time === notif.time)
+    );
+  };
+
+  const handleConfirmTake = async (notif: AppNotification) => {
+    const pendingItem = findScheduleItemForNotif(notif);
+    if (pendingItem && !pendingItem.isTaken) {
       await markTaken(pendingItem.id, true);
     }
     Alert.alert('บันทึกสำเร็จ', 'ยืนยันการรับประทานยาเรียบร้อยแล้ว');
   };
 
-  const handlePostpone = (notifId: string) => {
-    const pendingItem = todaySchedule.find(s => !s.isTaken);
-    if (pendingItem) {
-      postponeSchedule(pendingItem.id, 30);
+  const handlePostpone = async (notif: AppNotification) => {
+    const pendingItem = findScheduleItemForNotif(notif);
+    if (pendingItem && !pendingItem.isTaken) {
+      await postponeSchedule(pendingItem.id, 30);
     }
     Alert.alert('เลื่อนเวลา', 'เลื่อนการแจ้งเตือนออกไป 30 นาทีแล้ว');
   };
 
   const handleClearAll = () => {
     if (notifications.length === 0) return;
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined' && window.confirm('ต้องการล้างการแจ้งเตือนทั้งหมดหรือไม่?')) {
+        clearNotifications();
+      }
+      return;
+    }
     Alert.alert('ล้างการแจ้งเตือน', 'ต้องการล้างการแจ้งเตือนทั้งหมดหรือไม่?', [
       { text: 'ยกเลิก', style: 'cancel' },
       { text: 'ล้างทั้งหมด', style: 'destructive', onPress: clearNotifications },
@@ -89,7 +128,7 @@ export default function NotificationsScreen() {
                         <View style={styles.actionButtonsRow}>
                           <TouchableOpacity
                             style={styles.btnConfirm}
-                            onPress={() => handleConfirmTake(notif.id)}
+                            onPress={() => handleConfirmTake(notif)}
                             activeOpacity={0.8}
                           >
                             <Ionicons name="checkmark" size={16} color="#FFFFFF" style={{ marginRight: 4 }} />
@@ -97,7 +136,7 @@ export default function NotificationsScreen() {
                           </TouchableOpacity>
                           <TouchableOpacity
                             style={styles.btnPostpone}
-                            onPress={() => handlePostpone(notif.id)}
+                            onPress={() => handlePostpone(notif)}
                             activeOpacity={0.7}
                           >
                             <Text style={styles.btnPostponeText}>เลื่อน 30 นาที</Text>

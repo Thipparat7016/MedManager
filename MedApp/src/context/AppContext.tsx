@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import {
   medService,
   Medication,
@@ -8,9 +8,23 @@ import {
   SideEffectLog,
   AppNotification,
   UserProfile,
+  getMedicationStockStatus,
 } from '@/services/medService';
-import { isMedicationMatch } from '@/services/interactionMatcher';
+import { isMedicationMatch, formatCleanDrugName, formatCleanFoodName } from '@/services/interactionMatcher';
 import { supabase } from '@/services/supabase';
+
+function getMealCategory(timeStr?: string, mealTiming?: string): string {
+  if (mealTiming === 'ก่อนนอน') return 'ก่อนนอน';
+  const clean = (timeStr || '').replace(' น.', '').trim();
+  const hour = parseInt(clean.split(':')[0], 10);
+  if (!isNaN(hour)) {
+    if (hour >= 5 && hour < 11) return 'มื้อเช้า';
+    if (hour >= 11 && hour < 15) return 'มื้อกลางวัน';
+    if (hour >= 15 && hour < 20) return 'มื้อเย็น';
+    return 'ก่อนนอน';
+  }
+  return 'มื้อเช้า';
+}
 
 interface AppContextType {
   user: UserProfile | null;
@@ -27,12 +41,16 @@ interface AppContextType {
   register: (data: { name: string; email: string; phone?: string; password: string }) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
   refreshData: () => Promise<void>;
-  markTaken: (scheduleId: string, isTaken?: boolean) => Promise<void>;
-  postponeSchedule: (scheduleId: string, minutes?: number) => void;
-  skipSchedule: (scheduleId: string) => void;
+  getScheduleForDate: (dateStr?: string) => Promise<ScheduleItem[]>;
+  toggleChecklist: (scheduleId: string, isChecked: boolean, dateStr?: string) => Promise<void>;
+  confirmCheckedIntake: (scheduleIds: string[], dateStr?: string) => Promise<void>;
+  markTaken: (scheduleId: string, isTaken?: boolean, dateStr?: string) => Promise<void>;
+  postponeSchedule: (scheduleId: string, minutes?: number) => Promise<void>;
+  skipSchedule: (scheduleId: string) => Promise<void>;
   saveMedication: (med: Medication) => Promise<Medication>;
   deleteMedication: (id: string) => Promise<void>;
   addAppointment: (apt: Omit<DoctorAppointment, 'id'>) => Promise<DoctorAppointment>;
+  updateAppointment: (apt: DoctorAppointment) => Promise<DoctorAppointment>;
   deleteAppointment: (id: string) => Promise<void>;
   addSideEffect: (log: Omit<SideEffectLog, 'id' | 'createdAt'>) => Promise<SideEffectLog>;
   updateProfile: (profile: Partial<UserProfile>) => Promise<void>;
@@ -52,6 +70,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const dismissedNotifIdsRef = useRef<Set<string>>(new Set());
 
   const loadAllData = useCallback(async (showGlobalLoading = false) => {
     try {
@@ -80,40 +99,93 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       setSideEffects(se);
       setInteractions(inter);
 
-      // Generate dynamic notifications based on real data
+      // Generate dynamic notifications based on real data (synced with Checklist & Schedule)
       const dynamicNotifs: AppNotification[] = [];
-      
-      // 1. Upcoming medication reminder
-      const nextPending = sched.find(s => !s.isTaken && !s.isSkipped);
-      if (nextPending) {
-        dynamicNotifs.push({
-          id: `notif-remind-${nextPending.id}`,
-          type: 'med_reminder',
-          title: 'ถึงเวลารับประทานยา',
-          message: `${nextPending.medicationName} ${nextPending.dosage}${nextPending.unit} — 1 ${nextPending.type} ${nextPending.mealTiming}`,
-          time: nextPending.time,
-          date: 'วันนี้',
-          isActionable: true,
-          medicationName: nextPending.medicationName,
-          dosage: `${nextPending.dosage}${nextPending.unit}`,
-        });
 
-        // Food warning for this upcoming med if any exists
-        const matchingInter = inter.find(
-          i => i.interactionType === 'หลีกเลี่ยง' && 
-          isMedicationMatch(nextPending.medicationName, i.medicationName)
+      // 1A. Upcoming medication reminders for ALL unconfirmed items in the next upcoming meal
+      const firstPending = sched.find(s => !s.isTaken && !s.isSkipped);
+      if (firstPending) {
+        const targetMeal = getMealCategory(firstPending.time, firstPending.mealTiming);
+        const nextMealPendingItems = sched.filter(
+          s =>
+            !s.isTaken &&
+            !s.isSkipped &&
+            getMealCategory(s.time, s.mealTiming) === targetMeal
         );
-        if (matchingInter) {
+
+        const emittedFoodKeys = new Set<string>();
+
+        nextMealPendingItems.forEach(pendingItem => {
+          const cleanName = formatCleanDrugName(pendingItem.medicationName);
+          const detailRight = [
+            `${pendingItem.doseCount || 1} ${pendingItem.type}`,
+            pendingItem.mealTiming,
+          ]
+            .filter(Boolean)
+            .join(' ');
+
           dynamicNotifs.push({
-            id: `notif-food-${matchingInter.id}`,
-            type: 'food_warning',
-            title: 'แจ้งเตือนล่วงหน้า: อาหาร',
-            message: `งด ${matchingInter.foodName} สำหรับ ${nextPending.medicationName}`,
-            time: nextPending.time,
+            id: `notif-remind-${pendingItem.id}`,
+            scheduleId: pendingItem.id,
+            type: 'med_reminder',
+            title: 'ถึงเวลารับประทานยา',
+            message: `${cleanName} ${pendingItem.dosage}${pendingItem.unit} — ${detailRight}`,
+            time: pendingItem.time,
             date: 'วันนี้',
+            isActionable: true,
+            medicationName: pendingItem.medicationName,
+            dosage: `${pendingItem.dosage}${pendingItem.unit}`,
+            isRead: false,
           });
-        }
+
+          const matchingInter = inter.find(
+            i =>
+              (i.interactionType === 'หลีกเลี่ยง' || i.interactionType?.includes('หลีกเลี่ยง')) &&
+              isMedicationMatch(pendingItem.medicationName, i.medicationName)
+          );
+          if (matchingInter) {
+            const foodKey = `${matchingInter.id}-${pendingItem.medicationName}`;
+            if (!emittedFoodKeys.has(foodKey)) {
+              emittedFoodKeys.add(foodKey);
+              dynamicNotifs.push({
+                id: `notif-food-${matchingInter.id}-${pendingItem.id}`,
+                scheduleId: pendingItem.id,
+                type: 'food_warning',
+                title: 'แจ้งเตือนล่วงหน้า: อาหาร',
+                message: `งด ${formatCleanFoodName(matchingInter.foodName)} สำหรับ ${cleanName}`,
+                time: pendingItem.time,
+                date: 'วันนี้',
+                isRead: false,
+              });
+            }
+          }
+        });
       }
+
+      // 1B. Confirmed medication cards ("ยืนยันรับประทานยาแล้ว") synced whether confirmed via Checklist or Notification
+      const confirmedToday = [...sched.filter(s => s.isTaken)].reverse();
+      confirmedToday.forEach(takenItem => {
+        const cleanName = formatCleanDrugName(takenItem.medicationName);
+        const detailRight = [
+          `${takenItem.doseCount || 1} ${takenItem.type}`,
+          takenItem.mealTiming,
+        ]
+          .filter(Boolean)
+          .join(' ');
+
+        dynamicNotifs.push({
+          id: `notif-taken-${takenItem.id}`,
+          scheduleId: takenItem.id,
+          type: 'med_taken',
+          title: 'ยืนยันรับประทานยาแล้ว',
+          message: `${cleanName} ${takenItem.dosage}${takenItem.unit} — ${detailRight}`,
+          time: takenItem.takenAt || takenItem.time,
+          date: 'วันนี้',
+          medicationName: takenItem.medicationName,
+          dosage: `${takenItem.dosage}${takenItem.unit}`,
+          isRead: true,
+        });
+      });
 
       // 2. Upcoming doctor appointments
       apts.filter(a => a.status === 'confirmed').forEach(a => {
@@ -124,32 +196,26 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           message: `${a.doctorName} • ${a.hospital} - ${a.time}`,
           time: a.time,
           date: 'เร็วๆ นี้',
+          isRead: false,
         });
       });
 
-      // 3. Low stock warning for real user medications (only when stock tracking is configured)
+      // 3. Low stock warning for real user medications (1-day buffer + custom threshold, only when stock is tracked)
       userMeds
-        .filter(
-          m =>
-            m.remaining !== undefined &&
-            m.remaining !== null &&
-            m.lowStockThreshold !== undefined &&
-            m.lowStockThreshold !== null &&
-            m.lowStockThreshold > 0 &&
-            m.remaining <= m.lowStockThreshold
-        )
+        .filter(m => m.status === 'active' && getMedicationStockStatus(m).isLowStock)
         .forEach(m => {
-        dynamicNotifs.push({
-          id: `notif-stock-${m.id}`,
-          type: 'low_stock',
-          title: 'ยาใกล้หมด',
-          message: `${m.name} เหลือ ${m.remaining} เม็ด กรุณาสั่งซื้อเพิ่ม`,
-          time: '09:00 น.',
-          date: 'แจ้งเตือน',
+          dynamicNotifs.push({
+            id: `notif-stock-${m.id}`,
+            type: 'low_stock',
+            title: 'ยาใกล้หมด',
+            message: `${formatCleanDrugName(m.name)} เหลือ ${m.remaining} ${m.type || 'เม็ด'} กรุณาสั่งซื้อเพิ่ม`,
+            time: '09:00 น.',
+            date: 'แจ้งเตือน',
+            isRead: false,
+          });
         });
-      });
 
-      setNotifications(dynamicNotifs);
+      setNotifications(dynamicNotifs.filter(n => !dismissedNotifIdsRef.current.has(n.id)));
     } catch (e) {
       console.warn('Error initializing app context data:', e);
     } finally {
@@ -245,21 +311,33 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     await loadAllData(false);
   }, [loadAllData]);
 
-  const markTaken = async (scheduleId: string, isTaken: boolean = true) => {
-    const updated = await medService.markScheduleTaken(scheduleId, isTaken);
-    setTodaySchedule(updated);
+  const getScheduleForDate = useCallback(async (dateStr?: string) => {
+    return medService.getScheduleForDate(dateStr);
+  }, []);
+
+  const toggleChecklist = async (scheduleId: string, isChecked: boolean, dateStr?: string) => {
+    await medService.toggleScheduleChecked(scheduleId, isChecked, dateStr);
+    await loadAllData(false);
   };
 
-  const postponeSchedule = (scheduleId: string, minutes: number = 30) => {
-    setTodaySchedule(prev =>
-      prev.map(item => (item.id === scheduleId ? { ...item, time: '14:30 น.' } : item))
-    );
+  const confirmCheckedIntake = async (scheduleIds: string[], dateStr?: string) => {
+    await medService.confirmCheckedSchedules(scheduleIds, dateStr);
+    await loadAllData(false);
   };
 
-  const skipSchedule = (scheduleId: string) => {
-    setTodaySchedule(prev =>
-      prev.map(item => (item.id === scheduleId ? { ...item, isSkipped: true } : item))
-    );
+  const markTaken = async (scheduleId: string, isTaken: boolean = true, dateStr?: string) => {
+    await medService.markScheduleTaken(scheduleId, isTaken, dateStr);
+    await loadAllData(false);
+  };
+
+  const postponeSchedule = async (scheduleId: string, minutes: number = 30) => {
+    await medService.postponeSchedule(scheduleId, minutes);
+    await loadAllData(false);
+  };
+
+  const skipSchedule = async (scheduleId: string) => {
+    await medService.skipSchedule(scheduleId);
+    await loadAllData(false);
   };
 
   const saveMedication = async (med: Medication) => {
@@ -279,6 +357,12 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     return saved;
   };
 
+  const updateAppointment = async (apt: DoctorAppointment) => {
+    const updated = await medService.updateAppointment(apt);
+    await loadAllData(false);
+    return updated;
+  };
+
   const deleteAppointment = async (id: string) => {
     await medService.deleteAppointment(id);
     await loadAllData(false);
@@ -296,7 +380,10 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const clearNotifications = () => {
-    setNotifications([]);
+    setNotifications(prev => {
+      prev.forEach(n => dismissedNotifIdsRef.current.add(n.id));
+      return [];
+    });
   };
 
   return (
@@ -316,12 +403,16 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         register,
         logout,
         refreshData,
+        getScheduleForDate,
+        toggleChecklist,
+        confirmCheckedIntake,
         markTaken,
         postponeSchedule,
         skipSchedule,
         saveMedication,
         deleteMedication,
         addAppointment,
+        updateAppointment,
         deleteAppointment,
         addSideEffect,
         updateProfile,

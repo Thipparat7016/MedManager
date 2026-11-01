@@ -45,6 +45,7 @@ function RootNavigation() {
       <Stack.Screen name="edit-medication" options={{ headerShown: false }} />
       <Stack.Screen name="saved-success" options={{ headerShown: false }} />
       <Stack.Screen name="add-appointment" options={{ headerShown: false }} />
+      <Stack.Screen name="edit-appointment" options={{ headerShown: false }} />
       <Stack.Screen name="edit-profile" options={{ headerShown: false }} />
       <Stack.Screen name="history" options={{ headerShown: false }} />
     </Stack>

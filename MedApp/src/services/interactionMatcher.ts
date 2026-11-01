@@ -181,3 +181,73 @@ export function matchInteractionsForUser(
 
   return results;
 }
+
+/**
+ * Resolve raw image path/URI (Base64 data URIs, http/https URLs, or local server paths)
+ */
+export function resolveRawImageUri(uri?: string | null): string | null {
+  if (!uri || !uri.trim()) return null;
+  const trimmed = uri.trim();
+  if (
+    trimmed.startsWith('data:') ||
+    trimmed.startsWith('http://') ||
+    trimmed.startsWith('https://')
+  ) {
+    return trimmed;
+  }
+  if (trimmed.startsWith('/')) {
+    return `http://10.0.2.2:5173${trimmed}`;
+  }
+  return trimmed;
+}
+
+/**
+ * Resolve real medication image from backend master catalog (AdminMed) or saved medication record
+ */
+export function resolveMedicationImageUri(
+  target: { id?: string; name?: string; imageUrl?: string } | null | undefined,
+  masterMedications: Medication[],
+  userMedications?: Medication[]
+): string | null {
+  if (!target) return null;
+  const rawName = (target.name || '').trim();
+  const cleanTarget = formatCleanDrugName(rawName).toLowerCase();
+  const normTarget = cleanDrugText(rawName);
+
+  // 1. Check live backend master catalog first so backend image updates reflect immediately
+  if (rawName || target.id) {
+    const matchedMaster = masterMedications.find(m => {
+      if (target.id && m.id === target.id) return true;
+      if (!rawName) return false;
+      const mClean = formatCleanDrugName(m.name).toLowerCase();
+      const mNorm = cleanDrugText(m.name);
+      return (
+        m.name.toLowerCase() === rawName.toLowerCase() ||
+        (cleanTarget.length > 0 && mClean === cleanTarget) ||
+        (normTarget.length > 0 && mNorm === normTarget)
+      );
+    });
+    const masterUri = resolveRawImageUri(matchedMaster?.imageUrl);
+    if (masterUri) return masterUri;
+  }
+
+  // 2. Check target's own imageUrl
+  const ownUri = resolveRawImageUri(target.imageUrl);
+  if (ownUri) return ownUri;
+
+  // 3. Check userMedications if provided (e.g. when rendering from ScheduleItem)
+  if (userMedications && (rawName || target.id)) {
+    const matchedUserMed = userMedications.find(m => {
+      if (target.id && m.id === target.id) return true;
+      if (!rawName) return false;
+      return (
+        m.name.toLowerCase() === rawName.toLowerCase() ||
+        formatCleanDrugName(m.name).toLowerCase() === cleanTarget
+      );
+    });
+    const userUri = resolveRawImageUri(matchedUserMed?.imageUrl);
+    if (userUri) return userUri;
+  }
+
+  return null;
+}

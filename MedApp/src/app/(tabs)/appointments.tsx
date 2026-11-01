@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,7 +7,7 @@ import {
   ScrollView,
   Alert,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '@/context/AppContext';
@@ -18,20 +18,67 @@ export default function AppointmentsScreen() {
   const insets = useSafeAreaInsets();
   const { appointments, deleteAppointment } = useApp();
 
-  const now = new Date();
-  const currentYear = now.getFullYear();
-  const currentMonth = now.getMonth();
-  const currentDay = now.getDate();
-  const [selectedDay, setSelectedDay] = useState<number>(currentDay);
+  const now = useMemo(() => new Date(), []);
+  const getYearPageBase = (y: number) => y - ((((y - 2024) % 12) + 12) % 12);
+
+  const [viewYear, setViewYear] = useState<number>(now.getFullYear());
+  const [viewMonth, setViewMonth] = useState<number>(now.getMonth());
+  const [selectedDay, setSelectedDay] = useState<number>(now.getDate());
+  const [pickerMode, setPickerMode] = useState<'day' | 'month' | 'year'>('day');
+  const [yearPageStart, setYearPageStart] = useState<number>(() =>
+    getYearPageBase(now.getFullYear())
+  );
+
+  // รีเซ็ตปฏิทินเป็นวันที่ปัจจุบันแบบ real-time ทุกครั้งที่กลับมาที่หน้านัดหมาย
+  useFocusEffect(
+    useCallback(() => {
+      const today = new Date();
+      setViewYear(today.getFullYear());
+      setViewMonth(today.getMonth());
+      setSelectedDay(today.getDate());
+      setPickerMode('day');
+      setYearPageStart(getYearPageBase(today.getFullYear()));
+    }, [])
+  );
 
   const THAI_MONTHS_FULL = [
     'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
     'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'
   ];
-  const monthTitle = `${THAI_MONTHS_FULL[currentMonth]} ${currentYear + 543}`;
 
-  const upcomingApts = appointments.filter(a => a.status !== 'passed');
-  const pastApts = appointments.filter(a => a.status === 'passed');
+  // Parse appointment date string (DD/MM/YYYY or DD/MM/BE)
+  const parseAptDate = (dateStr: string) => {
+    if (!dateStr) return null;
+    const parts = dateStr.trim().split(/[\/\-.]/);
+    if (parts.length >= 3) {
+      const d = parseInt(parts[0], 10);
+      const m = parseInt(parts[1], 10) - 1;
+      let y = parseInt(parts[2], 10);
+      if (y > 2400) y -= 543; // Buddhist Era to CE
+      if (!isNaN(d) && !isNaN(m) && !isNaN(y)) {
+        return { day: d, month: m, year: y };
+      }
+    }
+    return null;
+  };
+
+  // Filter appointments for the currently selected date (Day / Month / Year)
+  const selectedDateApts = useMemo(() => {
+    return appointments.filter(apt => {
+      if (apt.status === 'passed') return false;
+      const parsed = parseAptDate(apt.date);
+      if (!parsed) return false;
+      return (
+        parsed.day === selectedDay &&
+        parsed.month === viewMonth &&
+        parsed.year === viewYear
+      );
+    });
+  }, [appointments, selectedDay, viewMonth, viewYear]);
+
+  const pastApts = useMemo(() => {
+    return appointments.filter(a => a.status === 'passed');
+  }, [appointments]);
 
   const handleDelete = (id: string, name: string) => {
     Alert.alert('ยืนยันการลบ', `ต้องการลบนัดหมาย "${name}" หรือไม่?`, [
@@ -42,9 +89,9 @@ export default function AppointmentsScreen() {
 
   const daysOfWeek = ['จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส', 'อา'];
 
-  // Dynamically calculate days of the current month
-  const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
-  const firstDayIndex = (new Date(currentYear, currentMonth, 1).getDay() + 6) % 7; // Monday-first
+  // Dynamically calculate days of the viewed month & year
+  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+  const firstDayIndex = (new Date(viewYear, viewMonth, 1).getDay() + 6) % 7; // Monday-first
 
   const calendarDays: (number | null)[][] = [];
   let currentWeek: (number | null)[] = [];
@@ -65,11 +112,47 @@ export default function AppointmentsScreen() {
     calendarDays.push(currentWeek);
   }
 
-  // Extract appointment days from real appointments
-  const appointmentDays = appointments.map(apt => {
-    const match = apt.date.match(/(\d{1,2})/);
-    return match ? parseInt(match[1], 10) : -1;
-  }).filter(d => d > 0);
+  // Filter appointments for the currently viewed month & year
+  const appointmentDays = useMemo(() => {
+    return appointments
+      .map(apt => parseAptDate(apt.date))
+      .filter((parsed): parsed is { day: number; month: number; year: number } => {
+        return !!parsed && parsed.month === viewMonth && parsed.year === viewYear;
+      })
+      .map(p => p.day);
+  }, [appointments, viewMonth, viewYear]);
+
+  const handlePrevMonth = () => {
+    if (viewMonth === 0) {
+      setViewMonth(11);
+      setViewYear(prev => prev - 1);
+    } else {
+      setViewMonth(prev => prev - 1);
+    }
+  };
+
+  const handleNextMonth = () => {
+    if (viewMonth === 11) {
+      setViewMonth(0);
+      setViewYear(prev => prev + 1);
+    } else {
+      setViewMonth(prev => prev + 1);
+    }
+  };
+
+  const handleSelectYear = (yr: number) => {
+    setViewYear(yr);
+    setPickerMode('month');
+  };
+
+  const handleSelectMonth = (mIdx: number) => {
+    setViewMonth(mIdx);
+    const maxDay = new Date(viewYear, mIdx + 1, 0).getDate();
+    if (selectedDay > maxDay) {
+      setSelectedDay(maxDay);
+    }
+    setPickerMode('day');
+  };
 
   const topInsetPadding = Math.max(insets.top, 24) + 14;
 
@@ -93,76 +176,214 @@ export default function AppointmentsScreen() {
 
         {/* Calendar Card */}
         <View style={styles.calendarCard}>
-          {/* Calendar Month Header */}
+          {/* Calendar Month & Year Header */}
           <View style={styles.monthHeader}>
-            <TouchableOpacity style={styles.monthArrow}>
+            <TouchableOpacity
+              style={styles.monthArrow}
+              onPress={
+                pickerMode === 'year'
+                  ? () => setYearPageStart(prev => prev - 12)
+                  : pickerMode === 'month'
+                    ? () => setViewYear(prev => prev - 1)
+                    : handlePrevMonth
+              }
+              activeOpacity={0.7}
+            >
               <Ionicons name="chevron-back" size={16} color="#64748B" />
             </TouchableOpacity>
-            <Text style={styles.monthTitle}>{monthTitle}</Text>
-            <TouchableOpacity style={styles.monthArrow}>
+
+            {pickerMode === 'year' ? (
+              <TouchableOpacity
+                onPress={() => setPickerMode('day')}
+                activeOpacity={0.7}
+                style={styles.headerSelectorPill}
+              >
+                <Text style={styles.monthTitleText}>
+                  {yearPageStart + 543} - {yearPageStart + 11 + 543}
+                </Text>
+              </TouchableOpacity>
+            ) : pickerMode === 'month' ? (
+              <TouchableOpacity
+                onPress={() => setPickerMode('day')}
+                activeOpacity={0.7}
+                style={styles.headerSelectorPill}
+              >
+                <Text style={styles.monthTitleText}>
+                  {THAI_MONTHS_FULL[viewMonth]}
+                </Text>
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.monthYearCenterRow}>
+                {/* ปุ่มเลือกเดือน */}
+                <TouchableOpacity
+                  onPress={() => setPickerMode('month')}
+                  activeOpacity={0.7}
+                  style={styles.headerSelectorPill}
+                >
+                  <Text style={styles.monthTitleText}>
+                    {THAI_MONTHS_FULL[viewMonth]}
+                  </Text>
+                </TouchableOpacity>
+
+                {/* ปุ่มเลือกปี */}
+                <TouchableOpacity
+                  onPress={() => {
+                    setYearPageStart(getYearPageBase(viewYear));
+                    setPickerMode('year');
+                  }}
+                  activeOpacity={0.7}
+                  style={styles.headerSelectorPill}
+                >
+                  <Text style={styles.monthTitleText}>{viewYear + 543}</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            <TouchableOpacity
+              style={styles.monthArrow}
+              onPress={
+                pickerMode === 'year'
+                  ? () => setYearPageStart(prev => prev + 12)
+                  : pickerMode === 'month'
+                    ? () => setViewYear(prev => prev + 1)
+                    : handleNextMonth
+              }
+              activeOpacity={0.7}
+            >
               <Ionicons name="chevron-forward" size={16} color="#64748B" />
             </TouchableOpacity>
           </View>
 
-          {/* Days of Week */}
-          <View style={styles.daysRow}>
-            {daysOfWeek.map((day, idx) => (
-              <Text key={idx} style={styles.dayLabel}>{day}</Text>
-            ))}
-          </View>
-
-          {/* Days Grid */}
-          {calendarDays.map((week, wIdx) => (
-            <View key={wIdx} style={styles.weekRow}>
-              {week.map((d, dIdx) => {
-                if (!d) {
-                  return <View key={dIdx} style={styles.dayCell} />;
-                }
-                const isSelected = d === selectedDay;
-                const hasApt = appointmentDays.includes(d);
-
-                return (
-                  <TouchableOpacity
-                    key={dIdx}
-                    style={[styles.dayCell, isSelected && styles.dayCellSelected]}
-                    onPress={() => setSelectedDay(d)}
-                    activeOpacity={0.7}
-                  >
-                    <Text
-                      style={[
-                        styles.dayNumber,
-                        isSelected && styles.dayNumberSelected,
-                        hasApt && !isSelected && styles.dayNumberBold,
-                      ]}
-                    >
-                      {d}
-                    </Text>
-                    {hasApt && !isSelected && <View style={styles.aptDot} />}
-                  </TouchableOpacity>
-                );
-              })}
+          {pickerMode === 'year' ? (
+            /* Year Grid (3x4 ในกรอบปฏิทินเดิม: เลือกปี >> ไปเลือกเดือน) */
+            <View style={styles.selectorGridContainer}>
+              {[0, 1, 2, 3].map(rowIdx => (
+                <View key={`yr-row-${rowIdx}`} style={styles.selectorRow}>
+                  {[0, 1, 2].map(colIdx => {
+                    const yr = yearPageStart + rowIdx * 3 + colIdx;
+                    const isYearSelected = yr === viewYear;
+                    return (
+                      <TouchableOpacity
+                        key={`yr-${yr}`}
+                        style={[
+                          styles.selectorChip,
+                          isYearSelected && styles.selectorChipSelected,
+                        ]}
+                        onPress={() => handleSelectYear(yr)}
+                        activeOpacity={0.7}
+                      >
+                        <Text
+                          style={[
+                            styles.selectorChipText,
+                            isYearSelected && styles.selectorChipTextSelected,
+                          ]}
+                        >
+                          {yr + 543}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              ))}
             </View>
-          ))}
+          ) : pickerMode === 'month' ? (
+            /* Month Grid (3x4: เลือกเดือน >> ไปเลือกวัน) */
+            <View style={styles.selectorGridContainer}>
+              {[0, 1, 2, 3].map(rowIdx => (
+                <View key={`mo-row-${rowIdx}`} style={styles.selectorRow}>
+                  {[0, 1, 2].map(colIdx => {
+                    const mIdx = rowIdx * 3 + colIdx;
+                    const isMonthSelected = mIdx === viewMonth;
+                    return (
+                      <TouchableOpacity
+                        key={`mo-${mIdx}`}
+                        style={[
+                          styles.selectorChip,
+                          isMonthSelected && styles.selectorChipSelected,
+                        ]}
+                        onPress={() => handleSelectMonth(mIdx)}
+                        activeOpacity={0.7}
+                      >
+                        <Text
+                          style={[
+                            styles.selectorChipText,
+                            isMonthSelected && styles.selectorChipTextSelected,
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {THAI_MONTHS_FULL[mIdx]}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              ))}
+            </View>
+          ) : (
+            <>
+              {/* Days of Week */}
+              <View style={styles.daysRow}>
+                {daysOfWeek.map((day, idx) => (
+                  <Text key={idx} style={styles.dayLabel}>
+                    {day}
+                  </Text>
+                ))}
+              </View>
+
+              {/* Days Grid */}
+              {calendarDays.map((week, wIdx) => (
+                <View key={wIdx} style={styles.weekRow}>
+                  {week.map((d, dIdx) => {
+                    if (!d) {
+                      return <View key={dIdx} style={styles.dayCell} />;
+                    }
+                    const isSelected = d === selectedDay;
+                    const hasApt = appointmentDays.includes(d);
+
+                    return (
+                      <TouchableOpacity
+                        key={dIdx}
+                        style={[
+                          styles.dayCell,
+                          isSelected && styles.dayCellSelected,
+                        ]}
+                        onPress={() => setSelectedDay(d)}
+                        activeOpacity={0.7}
+                      >
+                        <Text
+                          style={[
+                            styles.dayNumber,
+                            isSelected && styles.dayNumberSelected,
+                            hasApt && !isSelected && styles.dayNumberBold,
+                          ]}
+                        >
+                          {d}
+                        </Text>
+                        {hasApt && !isSelected && (
+                          <View style={styles.aptDot} />
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              ))}
+            </>
+          )}
         </View>
 
-        {/* Section: Upcoming */}
+        {/* Section: Appointments for Selected Date */}
         <Text style={styles.sectionTitle}>นัดหมายที่กำลังจะมาถึง</Text>
-        {upcomingApts.length === 0 ? (
+        {selectedDateApts.length === 0 ? (
           <View style={styles.emptyCard}>
             <Feather name="calendar" size={32} color="#CBD5E1" style={{ marginBottom: 8 }} />
-            <Text style={styles.emptyText}>ไม่มีนัดหมายเร็วๆ นี้</Text>
+            <Text style={styles.emptyText}>ไม่มีนัดหมายในวันที่เลือก</Text>
             <Text style={styles.emptySubtext}>กดปุ่ม "+ เพิ่ม" เพื่อบันทึกนัดหมายแพทย์ใหม่</Text>
           </View>
         ) : (
-          upcomingApts.map(apt => (
+          selectedDateApts.map(apt => (
             <View key={apt.id} style={styles.aptCard}>
               <View style={styles.aptCardHeader}>
                 <Text style={styles.doctorName}>{apt.doctorName}</Text>
-                <StatusBadge
-                  label={apt.status === 'confirmed' ? 'ยืนยันแล้ว' : 'รอยืนยัน'}
-                  variant={apt.status === 'confirmed' ? 'confirmed' : 'pending'}
-                  size="sm"
-                />
               </View>
 
               <Text style={styles.doctorDept}>{apt.department} • {apt.hospital}</Text>
@@ -180,7 +401,10 @@ export default function AppointmentsScreen() {
                 <TouchableOpacity
                   style={styles.actionBtnEdit}
                   onPress={() =>
-                    Alert.alert('แก้ไขนัดหมาย', `เปิดแก้ไขข้อมูลนัดหมาย ${apt.doctorName}`)
+                    router.push({
+                      pathname: '/edit-appointment' as any,
+                      params: { id: apt.id },
+                    })
                   }
                   activeOpacity={0.7}
                 >
@@ -274,7 +498,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  monthTitle: {
+  monthYearCenterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  headerSelectorPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  monthTitleText: {
     fontSize: 15,
     fontWeight: '800',
     color: '#0F172A',
@@ -326,6 +560,39 @@ const styles = StyleSheet.create({
     backgroundColor: '#6366F1',
     position: 'absolute',
     bottom: 4,
+  },
+  selectorGridContainer: {
+    paddingVertical: 8,
+    gap: 10,
+  },
+  selectorRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  selectorChip: {
+    flex: 1,
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  selectorChipSelected: {
+    backgroundColor: '#8B95F6',
+    borderColor: '#8B95F6',
+  },
+  selectorChipText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#334155',
+  },
+  selectorChipTextSelected: {
+    color: '#FFFFFF',
+    fontWeight: '800',
   },
   sectionTitle: {
     fontSize: 15,

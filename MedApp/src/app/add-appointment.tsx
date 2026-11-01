@@ -25,9 +25,18 @@ interface FavoriteDoctor {
   hospital: string;
 }
 
+// Helper to normalize Thai doctor names for duplicate detection (removes title prefixes and collapses spaces)
+const normalizeDoctorName = (name: string): string => {
+  return name
+    .trim()
+    .replace(/^(นพ\.|พญ\.|ทพ\.|ทพญ\.|ดร\.|นพ|พญ|ทพ|ทพญ|ดร)\s*/i, '')
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
+};
+
 export default function AddAppointmentScreen() {
   const router = useRouter();
-  const { addAppointment } = useApp();
+  const { appointments, addAppointment } = useApp();
 
   const now = useMemo(() => new Date(), []);
   const pad = (n: number) => n.toString().padStart(2, '0');
@@ -36,6 +45,13 @@ export default function AddAppointmentScreen() {
   const [favoriteDoctors, setFavoriteDoctors] = useState<FavoriteDoctor[]>([]);
   const [selectedDoctorId, setSelectedDoctorId] = useState<string | null>(null);
   const [saveAsFavorite, setSaveAsFavorite] = useState<boolean>(false);
+
+  // Edit Favorite Doctor Modal State
+  const [editingDoc, setEditingDoc] = useState<FavoriteDoctor | null>(null);
+  const [editDocName, setEditDocName] = useState<string>('');
+  const [editDocDept, setEditDocDept] = useState<string>('');
+  const [editDocHosp, setEditDocHosp] = useState<string>('');
+  const [showEditDocModal, setShowEditDocModal] = useState<boolean>(false);
 
   // Form Fields State
   const [doctorName, setDoctorName] = useState<string>('');
@@ -86,20 +102,97 @@ export default function AddAppointmentScreen() {
       setDoctorName('');
       setDepartment('');
       setHospital('');
+      setSaveAsFavorite(false);
     } else {
       setSelectedDoctorId(doc.id);
       setDoctorName(doc.name);
       setDepartment(doc.department);
       setHospital(doc.hospital);
+      setSaveAsFavorite(true); // เวลากดแพทย์ favorite จะขึ้นเป็นดาวสีเหลือง
     }
   };
 
   // Handle clicking "+ เพิ่มแพทย์ใหม่"
   const handleAddNewDoctor = () => {
-    setSelectedDoctorId(null);
+    setSelectedDoctorId('new');
     setDoctorName('');
     setDepartment('');
     setHospital('');
+    setSaveAsFavorite(false);
+  };
+
+  // Handle deleting a favorite doctor
+  const handleDeleteFavoriteDoctor = (doc: FavoriteDoctor) => {
+    Alert.alert(
+      'ลบแพทย์ที่ใช้บ่อย',
+      `ต้องการลบ "${doc.name}" ออกจากรายการแพทย์ที่ใช้บ่อยหรือไม่?`,
+      [
+        { text: 'ยกเลิก', style: 'cancel' },
+        {
+          text: 'ลบ',
+          style: 'destructive',
+          onPress: async () => {
+            const updated = favoriteDoctors.filter(d => d.id !== doc.id);
+            setFavoriteDoctors(updated);
+            try {
+              await AsyncStorage.setItem('favorite_doctors', JSON.stringify(updated));
+            } catch (e) {
+              console.warn('Failed to delete favorite doctor:', e);
+            }
+            if (selectedDoctorId === doc.id) {
+              setSelectedDoctorId(null);
+              setDoctorName('');
+              setDepartment('');
+              setHospital('');
+              setSaveAsFavorite(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // Handle opening edit modal for favorite doctor
+  const handleOpenEditDoc = (doc: FavoriteDoctor) => {
+    setEditingDoc(doc);
+    setEditDocName(doc.name);
+    setEditDocDept(doc.department);
+    setEditDocHosp(doc.hospital);
+    setShowEditDocModal(true);
+  };
+
+  // Handle saving edited favorite doctor
+  const handleSaveEditDoc = async () => {
+    if (!editingDoc || !editDocName.trim()) {
+      Alert.alert('กรุณากรอกข้อมูล', 'กรุณาระบุชื่อแพทย์');
+      return;
+    }
+
+    const updated = favoriteDoctors.map(d =>
+      d.id === editingDoc.id
+        ? {
+            ...d,
+            name: editDocName.trim(),
+            department: editDocDept.trim() || 'ตรวจสุขภาพทั่วไป',
+            hospital: editDocHosp.trim() || 'โรงพยาบาล',
+          }
+        : d
+    );
+    setFavoriteDoctors(updated);
+    try {
+      await AsyncStorage.setItem('favorite_doctors', JSON.stringify(updated));
+    } catch (e) {
+      console.warn('Failed to update favorite doctor:', e);
+    }
+
+    if (selectedDoctorId === editingDoc.id) {
+      setDoctorName(editDocName.trim());
+      setDepartment(editDocDept.trim() || 'ตรวจสุขภาพทั่วไป');
+      setHospital(editDocHosp.trim() || 'โรงพยาบาล');
+    }
+
+    setShowEditDocModal(false);
+    setEditingDoc(null);
   };
 
   const handleSaveTime = () => {
@@ -108,14 +201,55 @@ export default function AddAppointmentScreen() {
     setShowTimeModal(false);
   };
 
+  // แจ้งเตือนชื่อซ้ำเฉพาะเมื่อ user กดเพิ่มแพทย์ใหม่ (หรือกรอกชื่อแพทย์ใหม่) ไม่ขึ้นตอนกดเลือกแพทย์ favorite
+  const isDuplicateDoctor = useMemo(() => {
+    // ถ้าเลือกแพทย์จาก favorite อยู่ ไม่ใช่การเพิ่มแพทย์ใหม่ ไม่ต้องขึ้นแจ้งเตือนซ้ำ
+    if (selectedDoctorId && selectedDoctorId !== 'new') return false;
+
+    const trimmed = doctorName.trim();
+    if (!trimmed) return false;
+    const normalized = normalizeDoctorName(trimmed);
+    if (!normalized) return false;
+
+    // ตรวจสอบกับรายชื่อแพทย์ในระบบ (ทั้งจาก favorite และนัดหมาย)
+    const inFavorites = favoriteDoctors.some(d => normalizeDoctorName(d.name) === normalized);
+    const inAppointments = appointments.some(apt => normalizeDoctorName(apt.doctorName || '') === normalized);
+
+    return inFavorites || inAppointments;
+  }, [doctorName, selectedDoctorId, favoriteDoctors, appointments]);
+
   const handleSubmit = async () => {
     if (!doctorName.trim()) {
       Alert.alert('กรุณากรอกข้อมูล', 'กรุณาระบุชื่อแพทย์');
       return;
     }
 
+    if (isDuplicateDoctor) {
+      Alert.alert(
+        'ชื่อแพทย์ซ้ำ',
+        `มีแพทย์ชื่อ "${doctorName.trim()}" ในระบบแล้ว ไม่สามารถเพิ่มเป็นแพทย์ใหม่ซ้ำได้ กรุณาเลือกจากรายการแพทย์ที่ใช้บ่อยด้านบน`
+      );
+      return;
+    }
+
     const finalDate = date || `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear() + 543}`;
     const finalTime = time.trim() || '14:00 น.';
+
+    // ตรวจสอบว่ามีนัดหมายของแพทย์ท่านนี้ในวันและเวลาเดียวกันแล้วหรือไม่
+    const isSameSlot = appointments.some(
+      apt =>
+        apt.status !== 'passed' &&
+        apt.date === finalDate &&
+        apt.time === finalTime &&
+        normalizeDoctorName(apt.doctorName || '') === normalizeDoctorName(doctorName)
+    );
+    if (isSameSlot) {
+      Alert.alert(
+        'เวลานัดหมายซ้ำ',
+        `มีนัดหมายของ "${doctorName.trim()}" ในวันที่ ${finalDate} เวลา ${finalTime} แล้ว`
+      );
+      return;
+    }
 
     setIsSubmitting(true);
 
@@ -179,33 +313,71 @@ export default function AddAppointmentScreen() {
             {favoriteDoctors.map(doc => {
               const isSelected = selectedDoctorId === doc.id;
               return (
-                <TouchableOpacity
+                <View
                   key={doc.id}
                   style={[
                     styles.doctorCard,
                     isSelected && styles.doctorCardActive,
                   ]}
-                  onPress={() => handleSelectDoctor(doc)}
-                  activeOpacity={0.7}
                 >
-                  <Text style={styles.doctorCardName} numberOfLines={1}>
-                    {doc.name}
-                  </Text>
-                  <Text style={styles.doctorCardMeta} numberOfLines={1}>
-                    {doc.department} • {doc.hospital}
-                  </Text>
-                </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.doctorCardContent}
+                    onPress={() => handleSelectDoctor(doc)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.doctorCardName} numberOfLines={1}>
+                      {doc.name}
+                    </Text>
+                    <Text style={styles.doctorCardMeta} numberOfLines={1}>
+                      {doc.department} • {doc.hospital}
+                    </Text>
+                  </TouchableOpacity>
+
+                  <View style={styles.doctorCardActions}>
+                    <TouchableOpacity
+                      style={styles.doctorActionBtn}
+                      onPress={() => handleOpenEditDoc(doc)}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      activeOpacity={0.7}
+                    >
+                      <Feather name="edit-2" size={14} color="#64748B" />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={styles.doctorActionBtn}
+                      onPress={() => handleDeleteFavoriteDoctor(doc)}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      activeOpacity={0.7}
+                    >
+                      <Feather name="trash-2" size={14} color="#EF4444" />
+                    </TouchableOpacity>
+                  </View>
+                </View>
               );
             })}
 
             {/* + เพิ่มแพทย์ใหม่ (Dashed Card) */}
             <TouchableOpacity
-              style={styles.addDoctorDashedCard}
+              style={[
+                styles.addDoctorDashedCard,
+                selectedDoctorId === 'new' && styles.addDoctorDashedCardActive,
+              ]}
               onPress={handleAddNewDoctor}
               activeOpacity={0.7}
             >
-              <Feather name="plus" size={16} color="#3D7B54" />
-              <Text style={styles.addDoctorDashedText}>เพิ่มแพทย์ใหม่</Text>
+              <Feather
+                name="plus"
+                size={16}
+                color={selectedDoctorId === 'new' ? '#3D7B54' : '#64748B'}
+              />
+              <Text
+                style={[
+                  styles.addDoctorDashedText,
+                  selectedDoctorId === 'new' && styles.addDoctorDashedTextActive,
+                ]}
+              >
+                เพิ่มแพทย์ใหม่
+              </Text>
             </TouchableOpacity>
           </View>
         )}
@@ -216,15 +388,26 @@ export default function AddAppointmentScreen() {
         <View style={styles.inputGroup}>
           <Text style={styles.inputLabel}>ชื่อแพทย์</Text>
           <TextInput
-            style={styles.input}
+            style={[styles.input, isDuplicateDoctor && styles.inputError]}
             placeholder="เช่น นพ. สมศักดิ์ วิทยากรณ์"
             placeholderTextColor="#94A3B8"
             value={doctorName}
             onChangeText={txt => {
               setDoctorName(txt);
-              if (selectedDoctorId) setSelectedDoctorId(null);
+              if (selectedDoctorId && selectedDoctorId !== 'new') {
+                const cur = favoriteDoctors.find(d => d.id === selectedDoctorId);
+                if (cur && cur.name !== txt) {
+                  setSelectedDoctorId(null);
+                  setSaveAsFavorite(false);
+                }
+              }
             }}
           />
+          {isDuplicateDoctor && (
+            <Text style={styles.duplicateWarningText}>
+              * มีแพทย์ท่านนี้ในระบบแล้ว ไม่สามารถเพิ่มแพทย์ชื่อซ้ำได้
+            </Text>
+          )}
         </View>
 
         {/* แผนก & โรงพยาบาล */}
@@ -307,6 +490,7 @@ export default function AddAppointmentScreen() {
                   setModalHour(14);
                   setModalMinute(0);
                 }
+                setSelectedQuickTime(null);
                 setShowTimeModal(true);
               }}
               activeOpacity={0.7}
@@ -451,9 +635,7 @@ export default function AddAppointmentScreen() {
             <Text style={styles.quickTimeHeader}>เวลาแนะนำ:</Text>
             <View style={styles.quickTimesGrid}>
               {quickTimePresets.map(preset => {
-                const isSelected =
-                  selectedQuickTime === preset.label ||
-                  (modalHour === preset.hour && modalMinute === preset.minute);
+                const isSelected = selectedQuickTime === preset.label;
                 return (
                   <TouchableOpacity
                     key={preset.label}
@@ -499,6 +681,83 @@ export default function AddAppointmentScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      {/* ========================================================================= */}
+      {/* 3. EDIT FAVORITE DOCTOR MODAL                                             */}
+      {/* ========================================================================= */}
+      <Modal
+        visible={showEditDocModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowEditDocModal(false)}
+      >
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={() => setShowEditDocModal(false)}
+        >
+          <Pressable style={styles.editDocModalCard} onPress={e => e.stopPropagation()}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>แก้ไขข้อมูลแพทย์ที่ใช้บ่อย</Text>
+              <TouchableOpacity
+                onPress={() => setShowEditDocModal(false)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Feather name="x" size={20} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>ชื่อแพทย์</Text>
+              <TextInput
+                style={styles.input}
+                value={editDocName}
+                onChangeText={setEditDocName}
+                placeholder="ชื่อแพทย์"
+                placeholderTextColor="#94A3B8"
+              />
+            </View>
+
+            <View style={styles.rowInputs}>
+              <View style={[styles.inputGroup, { flex: 1 }]}>
+                <Text style={styles.inputLabel}>แผนก</Text>
+                <TextInput
+                  style={styles.input}
+                  value={editDocDept}
+                  onChangeText={setEditDocDept}
+                  placeholder="แผนก"
+                  placeholderTextColor="#94A3B8"
+                />
+              </View>
+
+              <View style={[styles.inputGroup, { flex: 1 }]}>
+                <Text style={styles.inputLabel}>โรงพยาบาล</Text>
+                <TextInput
+                  style={styles.input}
+                  value={editDocHosp}
+                  onChangeText={setEditDocHosp}
+                  placeholder="โรงพยาบาล"
+                  placeholderTextColor="#94A3B8"
+                />
+              </View>
+            </View>
+
+            <View style={styles.modalActionsRow}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => setShowEditDocModal(false)}
+              >
+                <Text style={styles.modalCancelText}>ยกเลิก</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.modalConfirmBtn}
+                onPress={handleSaveEditDoc}
+              >
+                <Text style={styles.modalConfirmText}>บันทึก</Text>
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -534,10 +793,17 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     padding: 12,
     marginBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   doctorCardActive: {
     borderColor: '#6FA07E',
     backgroundColor: '#F0FDF4',
+  },
+  doctorCardContent: {
+    flex: 1,
+    marginRight: 8,
   },
   doctorCardName: {
     fontSize: 14,
@@ -549,12 +815,27 @@ const styles = StyleSheet.create({
     color: '#64748B',
     marginTop: 3,
   },
+  doctorCardActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  doctorActionBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 
   // Add New Doctor Dashed Card
   addDoctorDashedCard: {
-    backgroundColor: '#F0FDF4',
+    backgroundColor: '#FFFFFF',
     borderWidth: 1.5,
-    borderColor: '#6FA07E',
+    borderColor: '#D1E7DD',
     borderStyle: 'dashed',
     borderRadius: 14,
     padding: 12,
@@ -563,11 +844,30 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     marginBottom: 16,
   },
+  addDoctorDashedCardActive: {
+    backgroundColor: '#F0FDF4',
+    borderColor: '#6FA07E',
+  },
   addDoctorDashedText: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#3D7B54',
+    color: '#64748B',
     marginLeft: 6,
+  },
+  addDoctorDashedTextActive: {
+    color: '#3D7B54',
+  },
+  editDocModalCard: {
+    width: '100%',
+    maxWidth: 340,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 20,
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
   },
 
   // Form Inputs
@@ -589,6 +889,15 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#0F172A',
     backgroundColor: '#FAFCFA',
+  },
+  inputError: {
+    borderColor: '#EF4444',
+  },
+  duplicateWarningText: {
+    fontSize: 12,
+    color: '#EF4444',
+    marginTop: 6,
+    fontWeight: '600',
   },
   rowInputs: {
     flexDirection: 'row',

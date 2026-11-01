@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,21 +7,37 @@ import {
   StyleSheet,
   ScrollView,
   Alert,
+  Image,
+  Modal,
+  Pressable,
 } from 'react-native';
-import { useRouter } from 'expo-router';
-import { Feather, Ionicons } from '@expo/vector-icons';
+import { useRouter, useFocusEffect } from 'expo-router';
+import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '@/context/AppContext';
-import { PillIcon } from '@/components/ui/PillIcon';
 import { StatusBadge } from '@/components/ui/StatusBadge';
-import { formatCleanDrugName } from '@/services/interactionMatcher';
+import { getMedicationStockStatus } from '@/services/medService';
+import {
+  formatCleanDrugName,
+  resolveMedicationImageUri,
+} from '@/services/interactionMatcher';
 
 export default function MedicationsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { medications, deleteMedication } = useApp();
+  const { medications, masterMedications, deleteMedication, refreshData } = useApp();
   const [search, setSearch] = useState('');
   const [activeCategory, setActiveCategory] = useState<'ทั้งหมด' | 'ยา' | 'อาหารเสริม'>('ทั้งหมด');
+  const [previewMedImage, setPreviewMedImage] = useState<{
+    uri: string;
+    name: string;
+  } | null>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshData();
+    }, [refreshData])
+  );
 
   const activeMeds = medications.filter(m => m.status === 'active');
   const inactiveMeds = medications.filter(m => m.status === 'inactive');
@@ -135,6 +151,7 @@ export default function MedicationsScreen() {
             </Text>
           </TouchableOpacity>
         </View>
+
         {/* Empty State */}
         {medications.length === 0 ? (
           <View style={styles.emptyContainer}>
@@ -153,24 +170,52 @@ export default function MedicationsScreen() {
         ) : (
           <>
             {filteredActive.map(item => {
-              const isLowStock =
-                item.remaining !== undefined && item.remaining !== null &&
-                item.lowStockThreshold !== undefined && item.lowStockThreshold !== null && item.lowStockThreshold > 0 &&
-                item.remaining <= item.lowStockThreshold;
+              const stockStatus = getMedicationStockStatus(item);
+              const imgUri = resolveMedicationImageUri(item, masterMedications);
+              const cleanName = formatCleanDrugName(item.name);
 
               return (
                 <View key={item.id} style={styles.medCard}>
                   <View style={styles.medCardTop}>
-                    <PillIcon type={item.type || item.name} />
-                    <View style={styles.medCardDetails}>
+                    {imgUri ? (
+                      <TouchableOpacity
+                        onPress={() =>
+                          setPreviewMedImage({
+                            uri: imgUri,
+                            name: cleanName,
+                          })
+                        }
+                        activeOpacity={0.75}
+                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                      >
+                        <Image
+                          source={{ uri: imgUri }}
+                          style={styles.medThumbImage}
+                          resizeMode="cover"
+                        />
+                      </TouchableOpacity>
+                    ) : null}
+
+                    <View style={[styles.medCardDetails, !imgUri && { marginLeft: 0 }]}>
                       <View style={styles.nameRow}>
-                        <Text style={styles.medCardName} numberOfLines={1}>{formatCleanDrugName(item.name)}</Text>
-                        {isLowStock && <StatusBadge label="ใกล้หมด" variant="low_stock" size="sm" />}
+                        <Text
+                          style={[styles.medCardName, { flex: 1, marginRight: 8 }]}
+                          numberOfLines={1}
+                        >
+                          {cleanName}
+                        </Text>
+                        {stockStatus.isLowStock && (
+                          <StatusBadge label="ใกล้หมด" variant="low_stock" size="sm" />
+                        )}
                       </View>
                       <Text style={styles.medCardMeta}>
                         {item.dosage}{item.unit} • {item.type} • {item.frequency} ครั้ง/วัน
                       </Text>
-                      {item.remaining !== undefined && item.remaining !== null && <Text style={styles.medCardStock}>คงเหลือ: {item.remaining} เม็ด</Text>}
+                      {stockStatus.hasStock && (
+                        <Text style={styles.medCardStock}>
+                          คงเหลือ: {stockStatus.remaining} เม็ด
+                        </Text>
+                      )}
                     </View>
                   </View>
 
@@ -199,7 +244,7 @@ export default function MedicationsScreen() {
 
                     <TouchableOpacity
                       style={styles.actionBtnDelete}
-                      onPress={() => handleDelete(item.id, formatCleanDrugName(item.name))}
+                      onPress={() => handleDelete(item.id, cleanName)}
                       activeOpacity={0.7}
                     >
                       <Feather name="x" size={16} color="#EF4444" />
@@ -213,22 +258,103 @@ export default function MedicationsScreen() {
             {filteredInactive.length > 0 && (
               <>
                 <Text style={[styles.sectionTitle, { marginTop: 24 }]}>หยุดใช้งาน</Text>
-                {filteredInactive.map(item => (
-                  <View key={item.id} style={styles.inactiveCard}>
-                    <PillIcon type={item.name} disabled />
-                    <View style={styles.inactiveDetails}>
-                      <Text style={styles.inactiveName} numberOfLines={1}>{formatCleanDrugName(item.name)}</Text>
-                      <Text style={styles.inactiveMeta}>
-                        {item.dosage}{item.unit} • {item.type}{item.endDate ? ` • หยุด ${item.endDate}` : ''}
-                      </Text>
+                {filteredInactive.map(item => {
+                  const stockStatus = getMedicationStockStatus(item);
+                  const imgUri = resolveMedicationImageUri(item, masterMedications);
+                  const cleanName = formatCleanDrugName(item.name);
+
+                  return (
+                    <View key={item.id} style={styles.inactiveCard}>
+                      {imgUri ? (
+                        <TouchableOpacity
+                          onPress={() =>
+                            setPreviewMedImage({
+                              uri: imgUri,
+                              name: cleanName,
+                            })
+                          }
+                          activeOpacity={0.75}
+                          hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                        >
+                          <Image
+                            source={{ uri: imgUri }}
+                            style={[styles.medThumbImage, { opacity: 0.8 }]}
+                            resizeMode="cover"
+                          />
+                        </TouchableOpacity>
+                      ) : null}
+
+                      <View style={[styles.inactiveDetails, !imgUri && { marginLeft: 0 }]}>
+                        <View style={styles.nameRow}>
+                          <Text
+                            style={[styles.inactiveName, { flex: 1, marginRight: 8 }]}
+                            numberOfLines={1}
+                          >
+                            {cleanName}
+                          </Text>
+                          {stockStatus.isLowStock && (
+                            <StatusBadge label="ใกล้หมด" variant="low_stock" size="sm" />
+                          )}
+                        </View>
+                        <Text style={styles.inactiveMeta}>
+                          {item.dosage}{item.unit} • {item.type}
+                          {item.endDate ? ` • หยุด ${item.endDate}` : ''}
+                        </Text>
+                        {stockStatus.hasStock && (
+                          <Text style={[styles.inactiveMeta, { fontWeight: '700', color: '#475569' }]}>
+                            คงเหลือ: {stockStatus.remaining} เม็ด
+                          </Text>
+                        )}
+                      </View>
                     </View>
-                  </View>
-                ))}
+                  );
+                })}
               </>
             )}
           </>
         )}
       </ScrollView>
+
+      {/* Medication Image Enlarge Popup Modal */}
+      <Modal
+        visible={Boolean(previewMedImage)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPreviewMedImage(null)}
+      >
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={() => setPreviewMedImage(null)}
+        >
+          <Pressable
+            style={styles.imagePreviewModalContainer}
+            onPress={e => e.stopPropagation()}
+          >
+            <View style={styles.imagePreviewHeader}>
+              <Text style={[styles.modalTitle, { flex: 1, marginRight: 10 }]} numberOfLines={2}>
+                {previewMedImage?.name || 'รูปภาพยา'}
+              </Text>
+              <TouchableOpacity
+                onPress={() => setPreviewMedImage(null)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                style={styles.imagePreviewCloseBtn}
+              >
+                <Feather name="x" size={20} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            {previewMedImage?.uri ? (
+              <View style={styles.imagePreviewFrame}>
+                <Image
+                  source={{ uri: previewMedImage.uri }}
+                  style={styles.imagePreviewLarge}
+                  resizeMode="contain"
+                />
+              </View>
+            ) : null}
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -334,6 +460,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     marginBottom: 14,
   },
+  medThumbImage: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#F8FAFC',
+  },
   medCardDetails: {
     flex: 1,
     marginLeft: 14,
@@ -434,15 +568,6 @@ const styles = StyleSheet.create({
     paddingVertical: 60,
     paddingHorizontal: 20,
   },
-  emptyIconCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: '#EEF0FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
-  },
   emptyTitle: {
     fontSize: 17,
     fontWeight: '800',
@@ -467,5 +592,59 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '700',
     fontSize: 13,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  imagePreviewModalContainer: {
+    width: '100%',
+    maxWidth: 380,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 22,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  imagePreviewHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  imagePreviewCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  imagePreviewFrame: {
+    width: '100%',
+    height: 280,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 10,
+    overflow: 'hidden',
+  },
+  imagePreviewLarge: {
+    width: '100%',
+    height: '100%',
   },
 });

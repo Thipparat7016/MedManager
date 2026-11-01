@@ -14,10 +14,9 @@ import {
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import { AppHeader } from '@/components/ui/AppHeader';
-import { PillIcon } from '@/components/ui/PillIcon';
 import { useApp } from '@/context/AppContext';
 import { Medication } from '@/services/medService';
-import { formatCleanDrugName, extractDrugDetails } from '@/services/interactionMatcher';
+import { formatCleanDrugName, extractDrugDetails, cleanDrugText } from '@/services/interactionMatcher';
 import { CalendarModal } from '@/components/ui/CalendarModal';
 
 const THAI_MONTHS = [
@@ -35,7 +34,8 @@ const MEAL_TIMES = [
 export default function AddMedicationScreen() {
   const router = useRouter();
   const scrollViewRef = useRef<ScrollView>(null);
-  const { masterMedications, saveMedication, refreshData } = useApp();
+  const stockSectionYRef = useRef<number>(0);
+  const { medications, masterMedications, saveMedication, refreshData } = useApp();
 
   // Re-sync master medications from AdminMed whenever this screen is opened/focused
   useFocusEffect(
@@ -82,6 +82,9 @@ export default function AddMedicationScreen() {
   // 3. Times & Meal Timing State (Default empty, no pre-selected action)
   const [timesList, setTimesList] = useState<string[]>([]);
   const [mealTiming, setMealTiming] = useState<'ก่อนอาหาร' | 'หลังอาหาร' | null>(null);
+  const [timeMealTimings, setTimeMealTimings] = useState<
+    Record<string, 'ก่อนอาหาร' | 'หลังอาหาร'>
+  >({});
 
   // Time Picker Modal State (Default clean, no pre-selected quick times or meal timing)
   const [showTimeModal, setShowTimeModal] = useState<boolean>(false);
@@ -90,10 +93,10 @@ export default function AddMedicationScreen() {
   const [modalMinute, setModalMinute] = useState<number>(0);
   const [selectedQuickTimeId, setSelectedQuickTimeId] = useState<string | null>(null);
   const [modalMealTiming, setModalMealTiming] = useState<'ก่อนอาหาร' | 'หลังอาหาร' | null>(null);
+  const [modalMealTimingError, setModalMealTimingError] = useState<string | undefined>(undefined);
 
   // 4. Stock Tracking & Precautions State
   const [currentStock, setCurrentStock] = useState<string>('');
-  const [lowStockAlert, setLowStockAlert] = useState<string>('');
   const [expiryDate, setExpiryDate] = useState<string>('');
   const [showExpiryDatePicker, setShowExpiryDatePicker] = useState<boolean>(false);
   const [precautions, setPrecautions] = useState<string>('');
@@ -103,6 +106,8 @@ export default function AddMedicationScreen() {
     frequency?: string;
     duration?: string;
     times?: string;
+    currentStock?: string;
+    expiryDate?: string;
   }>({});
   const [previewMedImage, setPreviewMedImage] = useState<{
     uri: string;
@@ -133,9 +138,30 @@ export default function AddMedicationScreen() {
     });
   }, [name, masterMedications]);
 
+  // Check if a medication is already added in user's medications
+  const isMedAlreadyAdded = useCallback((drugName?: string) => {
+    if (!drugName) return false;
+    const target = cleanDrugText(formatCleanDrugName(drugName));
+    if (!target) return false;
+    return medications.some(m => cleanDrugText(formatCleanDrugName(m.name)) === target);
+  }, [medications]);
+
   // Handle selecting a master medication from the backend
   const handleSelectMasterMed = (item: Medication) => {
     const cleanName = formatCleanDrugName(item.name);
+
+    if (isMedAlreadyAdded(item.name)) {
+      setShowDropdown(false);
+      setFormErrors(prev => ({
+        ...prev,
+        name: `คุณมียา "${cleanName}" ใน "ยาของฉัน" แล้ว หากต้องการเพิ่มจำนวนหรือแก้ไขข้อมูล กรุณาไปที่ปุ่มแก้ไข`,
+      }));
+      Alert.alert(
+        'มียานี้ในระบบแล้ว',
+        `คุณได้เพิ่มยา "${cleanName}" ในรายการ "ยาของฉัน" แล้ว\nหากต้องการเพิ่มจำนวนยาหรือแก้ไขข้อมูล กรุณาไปที่ปุ่ม "แก้ไข" ในหน้ารายการยา`
+      );
+      return;
+    }
 
     setName(cleanName);
     setCategory((item.category as 'ยา' | 'อาหารเสริม') || 'ยา');
@@ -164,11 +190,13 @@ export default function AddMedicationScreen() {
     setModalMinute(0);
     setSelectedQuickTimeId(null);
     setModalMealTiming(null);
+    setModalMealTimingError(undefined);
     setShowTimeModal(true);
   };
 
   const handleOpenEditTime = (index: number) => {
     const target = timesList[index];
+    let savedSlotMeal: 'ก่อนอาหาร' | 'หลังอาหาร' | null = null;
     if (target) {
       const clean = target.replace(' น.', '').trim();
       const parts = clean.split(':');
@@ -180,24 +208,44 @@ export default function AddMedicationScreen() {
       setModalMinute(validM);
       const matched = MEAL_TIMES.find(meal => meal.h === validH && meal.m === validM);
       setSelectedQuickTimeId(matched ? matched.id : null);
+      savedSlotMeal = timeMealTimings[clean] || mealTiming || null;
     }
-    setModalMealTiming(mealTiming);
+    setModalMealTiming(savedSlotMeal);
+    setModalMealTimingError(undefined);
     setEditingTimeIndex(index);
     setShowTimeModal(true);
   };
 
   const handleSaveTime = () => {
+    if (!modalMealTiming) {
+      setModalMealTimingError('กรุณาเลือกวิธีรับประทาน');
+      return;
+    }
+    setModalMealTimingError(undefined);
+
     const formatted = `${pad(modalHour)}:${pad(modalMinute)}`;
+    let nextTimes: string[];
     if (editingTimeIndex !== null) {
       const updated = [...timesList];
+      const prevTime = updated[editingTimeIndex]?.replace(' น.', '').trim();
       updated[editingTimeIndex] = formatted;
-      setTimesList(updated);
+      nextTimes = updated;
+      setTimesList(nextTimes);
+      setTimeMealTimings(prev => {
+        const nextMap = { ...prev, [formatted]: modalMealTiming };
+        if (prevTime && prevTime !== formatted && !nextTimes.includes(prevTime)) {
+          delete nextMap[prevTime];
+        }
+        return nextMap;
+      });
     } else {
       if (!timesList.includes(formatted)) {
-        setTimesList([...timesList, formatted].sort());
+        nextTimes = [...timesList, formatted].sort();
       } else {
-        setTimesList([...timesList, formatted]);
+        nextTimes = [...timesList, formatted];
       }
+      setTimesList(nextTimes);
+      setTimeMealTimings(prev => ({ ...prev, [formatted]: modalMealTiming }));
     }
     setMealTiming(modalMealTiming);
     setShowTimeModal(false);
@@ -205,7 +253,16 @@ export default function AddMedicationScreen() {
   };
 
   const handleDeleteTime = (index: number) => {
-    setTimesList(timesList.filter((_, i) => i !== index));
+    const removed = timesList[index]?.replace(' น.', '').trim();
+    const nextTimes = timesList.filter((_, i) => i !== index);
+    setTimesList(nextTimes);
+    if (removed && !nextTimes.includes(removed)) {
+      setTimeMealTimings(prev => {
+        const nextMap = { ...prev };
+        delete nextMap[removed];
+        return nextMap;
+      });
+    }
   };
 
   // Custom Days Modal Handlers
@@ -277,10 +334,23 @@ export default function AddMedicationScreen() {
       frequency?: string;
       duration?: string;
       times?: string;
+      currentStock?: string;
+      expiryDate?: string;
     } = {};
+
+    const cleanMedName = formatCleanDrugName(name.trim());
 
     if (!name.trim()) {
       newErrors.name = 'กรุณากรอกหรือเลือกชื่อยา / อาหารเสริม';
+    } else if (isMedAlreadyAdded(cleanMedName)) {
+      newErrors.name = 'คุณมียานี้ใน "ยาของฉัน" แล้ว หากต้องการเพิ่มจำนวนหรือแก้ไขข้อมูล กรุณาไปที่ปุ่มแก้ไข';
+      setFormErrors(newErrors);
+      scrollViewRef.current?.scrollTo({ y: 0, animated: true });
+      Alert.alert(
+        'ไม่สามารถเพิ่มยาซ้ำได้',
+        `คุณมียา "${cleanMedName}" ในรายการ "ยาของฉัน" แล้ว\nหากต้องการเพิ่มจำนวนยาหรือแก้ไขข้อมูล กรุณาไปทำที่ปุ่ม "แก้ไข" ในหน้ารายการยา`
+      );
+      return;
     }
     if (!frequencyCount || frequencyCount < 1) {
       newErrors.frequency = 'กรุณาเลือกจำนวนต่อครั้ง';
@@ -292,11 +362,36 @@ export default function AddMedicationScreen() {
     }
     if (timesList.length === 0) {
       newErrors.times = 'กรุณาเลือกเวลารับประทานอย่างน้อย 1 เวลา';
+    } else {
+      const missingMeal = timesList.some(t => {
+        const clean = t.replace(' น.', '').trim();
+        return !timeMealTimings[clean] && !mealTiming;
+      });
+      if (missingMeal) {
+        newErrors.times = 'กรุณาเลือกวิธีรับประทาน (ก่อนอาหาร / หลังอาหาร)';
+      }
+    }
+
+    const trimmedStock = currentStock.trim();
+    const parsedRemaining = trimmedStock !== '' ? parseInt(trimmedStock, 10) : NaN;
+    if (trimmedStock === '' || isNaN(parsedRemaining) || parsedRemaining < 0) {
+      newErrors.currentStock = 'กรุณากรอกจำนวนปัจจุบัน';
+    }
+
+    if (!expiryDate.trim()) {
+      newErrors.expiryDate = 'กรุณาเลือกวันหมดอายุ';
     }
 
     if (Object.keys(newErrors).length > 0) {
       setFormErrors(newErrors);
-      scrollViewRef.current?.scrollTo({ y: 0, animated: true });
+      if (newErrors.name || newErrors.frequency || newErrors.duration || newErrors.times) {
+        scrollViewRef.current?.scrollTo({ y: 0, animated: true });
+      } else {
+        scrollViewRef.current?.scrollTo({
+          y: Math.max(0, stockSectionYRef.current - 20),
+          animated: true,
+        });
+      }
       return;
     }
     setFormErrors({});
@@ -313,16 +408,11 @@ export default function AddMedicationScreen() {
 
       const effectiveTimes = [...timesList];
       const cleanMedName = formatCleanDrugName(name.trim());
-
-      const trimmedStock = currentStock.trim();
-      const parsedRemaining = trimmedStock !== '' ? parseInt(trimmedStock, 10) : undefined;
-      const validRemaining =
-        parsedRemaining !== undefined && !isNaN(parsedRemaining) ? parsedRemaining : undefined;
-
-      const trimmedLowStock = lowStockAlert.trim();
-      const parsedLowStock = trimmedLowStock !== '' ? parseInt(trimmedLowStock, 10) : undefined;
-      const validLowStock =
-        parsedLowStock !== undefined && !isNaN(parsedLowStock) ? parsedLowStock : undefined;
+      const validRemaining = parsedRemaining;
+      const primaryMealTiming =
+        (effectiveTimes.length > 0 && timeMealTimings[effectiveTimes[0]]) ||
+        mealTiming ||
+        undefined;
 
       await saveMedication({
         id: `med-${Date.now()}`,
@@ -333,11 +423,13 @@ export default function AddMedicationScreen() {
         unit: unit,
         frequency: frequencyCount,
         remaining: validRemaining,
-        lowStockThreshold: validLowStock,
-        expiryDate: expiryDate.trim() || undefined,
+        expiryDate: expiryDate.trim(),
+        durationMode: durationMode || undefined,
+        customDays: durationMode === 'กำหนดเอง' ? selectedMonthDates : undefined,
         status: createSchedule ? 'active' : 'inactive',
         times: effectiveTimes,
-        mealTiming: mealTiming || undefined,
+        mealTiming: primaryMealTiming,
+        timeMealTimings: Object.keys(timeMealTimings).length > 0 ? timeMealTimings : undefined,
         startDate: formattedStartDate,
         instructions: durationNote,
         precautions: precautions.trim() || undefined,
@@ -355,7 +447,7 @@ export default function AddMedicationScreen() {
             ? effectiveTimes.map(t => `${t} น.`).join(' • ')
             : 'บันทึกเฉพาะข้อมูลยา (ไม่สร้างตาราง)',
           remaining: validRemaining !== undefined ? String(validRemaining) : '',
-          lowStock: validLowStock !== undefined ? String(validLowStock) : '',
+          lowStock: '',
           startDate: formattedStartDate,
           duration: durationNote,
         },
@@ -392,6 +484,15 @@ export default function AddMedicationScreen() {
               setName(text);
               setShowDropdown(true);
               if (text.trim()) {
+                if (isMedAlreadyAdded(text)) {
+                  setFormErrors(prev => ({
+                    ...prev,
+                    name: 'คุณมียานี้ใน "ยาของฉัน" แล้ว หากต้องการเพิ่มจำนวนหรือแก้ไขข้อมูล กรุณาไปที่ปุ่มแก้ไข',
+                  }));
+                } else {
+                  setFormErrors(prev => (prev.name ? { ...prev, name: undefined } : prev));
+                }
+              } else {
                 setFormErrors(prev => (prev.name ? { ...prev, name: undefined } : prev));
               }
             }}
@@ -416,10 +517,14 @@ export default function AddMedicationScreen() {
               {filteredCatalog.map((item, idx) => {
                 const itemUri = resolveImageUri(item.imageUrl);
                 const cleanItemName = formatCleanDrugName(item.name);
+                const isAdded = isMedAlreadyAdded(item.name);
                 return (
                   <View
                     key={item.id || item.name + idx}
-                    style={styles.masterItemCard}
+                    style={[
+                      styles.masterItemCard,
+                      isAdded && styles.masterItemCardAdded,
+                    ]}
                   >
                     {itemUri ? (
                       <TouchableOpacity
@@ -438,24 +543,24 @@ export default function AddMedicationScreen() {
                           resizeMode="cover"
                         />
                       </TouchableOpacity>
-                    ) : (
-                      <TouchableOpacity
-                        onPress={() => handleSelectMasterMed(item)}
-                        activeOpacity={0.7}
-                      >
-                        <PillIcon type={item.type || 'เม็ด'} size={18} containerSize={36} />
-                      </TouchableOpacity>
-                    )}
+                    ) : null}
 
                     <TouchableOpacity
                       style={styles.masterItemSelectArea}
                       onPress={() => handleSelectMasterMed(item)}
                       activeOpacity={0.7}
                     >
-                      <View style={{ marginLeft: 10, flex: 1 }}>
-                        <Text style={styles.masterItemName} numberOfLines={1}>
-                          {cleanItemName}
-                        </Text>
+                      <View style={{ marginLeft: itemUri ? 10 : 0, flex: 1 }}>
+                        <View style={styles.masterItemNameRow}>
+                          <Text style={styles.masterItemName} numberOfLines={1}>
+                            {cleanItemName}
+                          </Text>
+                          {isAdded ? (
+                            <View style={styles.masterItemAddedBadge}>
+                              <Text style={styles.masterItemAddedText}>เพิ่มแล้ว</Text>
+                            </View>
+                          ) : null}
+                        </View>
                         <Text style={styles.masterItemMeta} numberOfLines={1}>
                           {item.category || 'ยา'} • {item.type || 'เม็ด'} • {item.dosage || ''} {item.unit || ''}
                         </Text>
@@ -567,65 +672,78 @@ export default function AddMedicationScreen() {
         ) : null}
 
         {timesList.length > 0 &&
-          timesList.map((time, idx) => (
-            <View key={idx} style={styles.timeItemCard}>
-              <View>
-                <Text style={styles.timeItemTime}>{time} น.</Text>
-                <Text style={styles.timeItemDose}>
-                  {frequencyCount} {type || 'เม็ด'} {dosage ? `(${dosage} ${unit})` : ''}
-                </Text>
+          timesList.map((time, idx) => {
+            const slotMeal = timeMealTimings[time.replace(' น.', '').trim()] || mealTiming;
+            return (
+              <View key={idx} style={styles.timeItemCard}>
+                <View>
+                  <Text style={styles.timeItemTime}>{time} น.</Text>
+                  <Text style={styles.timeItemDose}>
+                    {frequencyCount} {type || 'เม็ด'} {dosage ? `(${dosage} ${unit})` : ''}
+                    {slotMeal ? ` • ${slotMeal}` : ''}
+                  </Text>
+                </View>
+                <View style={styles.timeItemActions}>
+                  <TouchableOpacity
+                    style={styles.timeItemActionIcon}
+                    onPress={() => handleOpenEditTime(idx)}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <Feather name="edit-2" size={17} color="#8B95F6" />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.timeItemActionIcon}
+                    onPress={() => handleDeleteTime(idx)}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <Feather name="x" size={20} color="#EF4444" />
+                  </TouchableOpacity>
+                </View>
               </View>
-              <View style={styles.timeItemActions}>
-                <TouchableOpacity
-                  style={styles.timeItemActionIcon}
-                  onPress={() => handleOpenEditTime(idx)}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                >
-                  <Feather name="edit-2" size={17} color="#8B95F6" />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.timeItemActionIcon}
-                  onPress={() => handleDeleteTime(idx)}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                >
-                  <Feather name="x" size={20} color="#EF4444" />
-                </TouchableOpacity>
-              </View>
-            </View>
-          ))}
+            );
+          })}
 
         {/* ========================================================================= */}
-        {/* ติดตามจำนวนยาคงเหลือ (from previous medication-settings.tsx) */}
+        {/* ติดตามจำนวนยาคงเหลือ * (จำนวนปัจจุบัน และ วันหมดอายุ) */}
         {/* ========================================================================= */}
-        <View style={styles.stockTrackingCard}>
-          <Text style={styles.stockTrackingTitle}>ติดตามจำนวนยาคงเหลือ</Text>
+        <View
+          style={styles.stockTrackingCard}
+          onLayout={e => {
+            stockSectionYRef.current = e.nativeEvent.layout.y;
+          }}
+        >
+          <Text style={styles.stockTrackingTitle}>
+            ติดตามจำนวนยาคงเหลือ <Text style={styles.requiredAsterisk}>*</Text>
+          </Text>
 
           <View style={styles.stockInputGroup}>
-            <Text style={styles.stockInputLabel}>จำนวนปัจจุบัน</Text>
+            <Text style={styles.stockInputLabel}>
+              จำนวนปัจจุบัน <Text style={styles.requiredAsterisk}>*</Text>
+            </Text>
             <TextInput
               style={styles.stockInput}
               placeholder="เช่น 30 เม็ด"
               placeholderTextColor="#94A3B8"
               value={currentStock}
-              onChangeText={setCurrentStock}
+              onChangeText={val => {
+                setCurrentStock(val);
+                if (val.trim()) {
+                  setFormErrors(prev =>
+                    prev.currentStock ? { ...prev, currentStock: undefined } : prev
+                  );
+                }
+              }}
               keyboardType="numeric"
             />
+            {formErrors.currentStock ? (
+              <Text style={styles.fieldErrorText}>{formErrors.currentStock}</Text>
+            ) : null}
           </View>
 
           <View style={styles.stockInputGroup}>
-            <Text style={styles.stockInputLabel}>แจ้งเตือนเมื่อเหลือ</Text>
-            <TextInput
-              style={styles.stockInput}
-              placeholder="เช่น 7 เม็ด"
-              placeholderTextColor="#94A3B8"
-              value={lowStockAlert}
-              onChangeText={setLowStockAlert}
-              keyboardType="numeric"
-            />
-          </View>
-
-          <View style={styles.stockInputGroup}>
-            <Text style={styles.stockInputLabel}>วันหมดอายุ</Text>
+            <Text style={styles.stockInputLabel}>
+              วันหมดอายุ <Text style={styles.requiredAsterisk}>*</Text>
+            </Text>
             <TouchableOpacity
               style={[styles.stockInput, { justifyContent: 'center' }]}
               onPress={() => setShowExpiryDatePicker(true)}
@@ -641,6 +759,9 @@ export default function AddMedicationScreen() {
                 {expiryDate || 'วัน/เดือน/ปี เช่น 31/12/2026'}
               </Text>
             </TouchableOpacity>
+            {formErrors.expiryDate ? (
+              <Text style={styles.fieldErrorText}>{formErrors.expiryDate}</Text>
+            ) : null}
           </View>
         </View>
 
@@ -801,7 +922,9 @@ export default function AddMedicationScreen() {
             </View>
 
             {/* วิธีรับประทาน: ดีไซน์เดียวกับปุ่มเวลาแนะนำ จัด Layout ให้สมดุล ไม่ใหญ่เต็มหน้า */}
-            <Text style={[styles.modalSubLabel, { marginTop: 10 }]}>วิธีรับประทาน</Text>
+            <Text style={[styles.modalSubLabel, { marginTop: 10 }]}>
+              วิธีรับประทาน <Text style={styles.requiredAsterisk}>*</Text>
+            </Text>
             <View style={styles.modalMealTimingRow}>
               {(['ก่อนอาหาร', 'หลังอาหาร'] as const).map((m) => {
                 const isSelected = modalMealTiming === m;
@@ -812,7 +935,13 @@ export default function AddMedicationScreen() {
                       styles.modalMealTimingChip,
                       isSelected && styles.modalMealTimingChipActive,
                     ]}
-                    onPress={() => setModalMealTiming(modalMealTiming === m ? null : m)}
+                    onPress={() => {
+                      const nextVal = modalMealTiming === m ? null : m;
+                      setModalMealTiming(nextVal);
+                      if (nextVal) {
+                        setModalMealTimingError(undefined);
+                      }
+                    }}
                     activeOpacity={0.7}
                   >
                     <Text
@@ -827,6 +956,11 @@ export default function AddMedicationScreen() {
                 );
               })}
             </View>
+            {modalMealTimingError ? (
+              <Text style={[styles.fieldErrorText, { marginTop: -8, marginBottom: 4 }]}>
+                {modalMealTimingError}
+              </Text>
+            ) : null}
 
             {/* Modal Actions */}
             <View style={styles.modalBtnRow}>
@@ -988,7 +1122,12 @@ export default function AddMedicationScreen() {
       <CalendarModal
         visible={showExpiryDatePicker}
         onClose={() => setShowExpiryDatePicker(false)}
-        onSelectDate={setExpiryDate}
+        onSelectDate={dateVal => {
+          setExpiryDate(dateVal);
+          if (dateVal && dateVal.trim()) {
+            setFormErrors(prev => (prev.expiryDate ? { ...prev, expiryDate: undefined } : prev));
+          }
+        }}
         initialDate={expiryDate}
         title="เลือกวันหมดอายุ"
       />
@@ -1211,6 +1350,26 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: '#0F172A',
+  },
+  masterItemCardAdded: {
+    backgroundColor: '#F8FAFC',
+    borderColor: '#CBD5E1',
+  },
+  masterItemNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  masterItemAddedBadge: {
+    backgroundColor: '#EEF0FF',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  masterItemAddedText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#8B95F6',
   },
   masterItemMeta: {
     fontSize: 12,

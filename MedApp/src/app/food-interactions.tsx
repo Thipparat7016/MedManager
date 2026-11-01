@@ -147,6 +147,7 @@ export default function FoodInteractionsScreen() {
                 <ScrollView
                   horizontal
                   showsHorizontalScrollIndicator={false}
+                  style={styles.filterScrollView}
                   contentContainerStyle={styles.filterScroll}
                 >
                   {drugFilters.map(drug => {
@@ -421,12 +422,19 @@ const styles = StyleSheet.create({
     color: '#0F172A',
     marginBottom: 8,
   },
+  filterScrollView: {
+    flexGrow: 0,
+    marginBottom: 20,
+  },
   filterScroll: {
     flexDirection: 'row',
-    marginBottom: 20,
+    alignItems: 'center',
     paddingRight: 20,
   },
   filterChip: {
+    alignSelf: 'flex-start',
+    alignItems: 'center',
+    justifyContent: 'center',
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,

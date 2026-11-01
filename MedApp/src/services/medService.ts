@@ -9,10 +9,12 @@ export interface Medication {
   category: 'ยา' | 'อาหารเสริม';
   dosage: string;
   unit: string;
-  frequency: number; // times per day
+  frequency: number; // จำนวนต่อครั้ง (dose per intake)
   remaining?: number;
   lowStockThreshold?: number;
   expiryDate?: string;
+  durationMode?: 'ทุกวัน' | 'กำหนดเอง';
+  customDays?: number[];
   instructions?: string;
   precautions?: string;
   imageUrl?: string;
@@ -21,6 +23,7 @@ export interface Medication {
   endDate?: string;
   times?: string[]; // e.g. ["08:00", "14:00", "20:00"]
   mealTiming?: 'ก่อนอาหาร' | 'หลังอาหาร' | 'พร้อมอาหาร' | 'ก่อนนอน';
+  timeMealTimings?: Record<string, 'ก่อนอาหาร' | 'หลังอาหาร'>;
 }
 
 export interface DrugFoodInteraction {
@@ -42,9 +45,13 @@ export interface ScheduleItem {
   dosage: string;
   unit: string;
   type: string;
+  doseCount?: number;
   mealTiming: string;
   time: string; // "08:00 น."
+  originalTime?: string; // "08:00"
+  postponedTime?: string; // "08:30 น."
   date: string; // "2026-07-12"
+  isChecked?: boolean; // กดติ๊กที่หน้าหลักแล้ว (รอยืนยัน หาก isTaken === false)
   isTaken: boolean;
   takenAt?: string;
   isSkipped?: boolean;
@@ -74,6 +81,7 @@ export interface DoctorAppointment {
 
 export interface AppNotification {
   id: string;
+  scheduleId?: string;
   type: 'med_reminder' | 'food_warning' | 'appointment' | 'med_taken' | 'low_stock';
   title: string;
   message: string;
@@ -100,6 +108,105 @@ export interface UserProfile {
 function isValidUUID(str?: string | null): boolean {
   if (!str) return false;
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str);
+}
+
+function normalizeMedName(name?: string): string {
+  if (!name) return '';
+  return name
+    .toLowerCase()
+    .replace(/[()（）[\]{}.,\/#!$%\^&\*;:{}=\-_`~?+]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export function getLocalDateString(d: Date = new Date()): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+export function parseLocalDateString(dateStr: string): Date {
+  const parts = (dateStr || '').split('-').map(p => parseInt(p, 10));
+  if (parts.length === 3 && !parts.some(isNaN)) {
+    return new Date(parts[0], parts[1] - 1, parts[2]);
+  }
+  return new Date();
+}
+
+export function getMedicationDurationMode(med: Medication): 'ทุกวัน' | 'กำหนดเอง' | null {
+  if (med.durationMode) return med.durationMode;
+  if (med.instructions) {
+    if (med.instructions.startsWith('วันที่ ') || med.instructions === 'กำหนดวันเอง') {
+      return 'กำหนดเอง';
+    }
+    if (med.instructions === 'ทุกวัน') {
+      return 'ทุกวัน';
+    }
+  }
+  return null;
+}
+
+export function extractCustomDaysFromMedication(med: Medication): number[] {
+  if (med.customDays && Array.isArray(med.customDays) && med.customDays.length > 0) {
+    return med.customDays;
+  }
+  if (med.instructions && med.instructions.startsWith('วันที่ ')) {
+    const matches = med.instructions.match(/\d+/g) || [];
+    return matches
+      .map(n => parseInt(n, 10))
+      .filter(n => !isNaN(n) && n >= 1 && n <= 31);
+  }
+  return [];
+}
+
+export function isMedicationScheduledForDate(med: Medication, targetDate: Date): boolean {
+  if (med.status !== 'active') return false;
+  const mode = getMedicationDurationMode(med);
+  if (mode === 'กำหนดเอง') {
+    const days = extractCustomDaysFromMedication(med);
+    return days.length > 0 ? days.includes(targetDate.getDate()) : false;
+  }
+  return true;
+}
+
+export function getMedicationStockStatus(med: Medication): {
+  hasStock: boolean;
+  remaining: number;
+  dailyUsage: number;
+  effectiveThreshold: number;
+  isLowStock: boolean;
+} {
+  const hasStock = med.remaining !== undefined && med.remaining !== null;
+  if (!hasStock) {
+    return {
+      hasStock: false,
+      remaining: 0,
+      dailyUsage: 0,
+      effectiveThreshold: 0,
+      isLowStock: false,
+    };
+  }
+  const remaining = med.remaining as number;
+  const dosePerTime = Math.max(1, med.frequency || 1);
+  const timesPerDay = med.times && med.times.length > 0 ? med.times.length : 1;
+  // ปริมาณยาที่ต้องรับประทานเผื่อไว้อย่างน้อย 1 วัน
+  const dailyUsage = dosePerTime * timesPerDay;
+  const customThreshold =
+    med.lowStockThreshold !== undefined &&
+    med.lowStockThreshold !== null &&
+    med.lowStockThreshold > 0
+      ? med.lowStockThreshold
+      : 0;
+  const effectiveThreshold = Math.max(dailyUsage, customThreshold);
+
+  return {
+    hasStock: true,
+    remaining,
+    dailyUsage,
+    effectiveThreshold,
+    isLowStock: remaining <= effectiveThreshold,
+  };
 }
 
 export const medService = {
@@ -467,6 +574,20 @@ export const medService = {
       if (stored) {
         const parsed = JSON.parse(stored);
         if (Array.isArray(parsed)) {
+          // Deduplicate if there are any historical duplicates with identical normalized names
+          const seen = new Map<string, Medication>();
+          for (const item of parsed) {
+            const key = normalizeMedName(item.name);
+            if (!key) continue;
+            if (!seen.has(key)) {
+              seen.set(key, item);
+            }
+          }
+          if (seen.size < parsed.length) {
+            const deduplicated = Array.from(seen.values());
+            await safeStorage.setItem('med_user_medications_list', JSON.stringify(deduplicated));
+            return deduplicated;
+          }
           return parsed;
         }
       }
@@ -496,25 +617,46 @@ export const medService = {
       // Determine effective times if active
       let effectiveTimes = med.times || [];
       if (med.status === 'active' && effectiveTimes.length === 0) {
-        effectiveTimes = this.getDefaultTimesForFrequency(med.frequency || 1);
+        effectiveTimes = this.getDefaultTimesForFrequency(1);
         med.times = effectiveTimes;
       }
 
       const current = await this.getMedications();
-      const existingIdx = current.findIndex(m => m.id === med.id || (m.name === med.name && m.dosage === med.dosage));
+      const existingIdx = current.findIndex(m => m.id === med.id);
+      const previousMed = existingIdx >= 0 ? current[existingIdx] : undefined;
       let updated: Medication[];
 
       if (existingIdx >= 0) {
         updated = [...current];
-        updated[existingIdx] = { ...current[existingIdx], ...med };
+        updated[existingIdx] = {
+          ...current[existingIdx],
+          ...med,
+          remaining: med.remaining,
+          lowStockThreshold: med.lowStockThreshold,
+          expiryDate: med.expiryDate,
+          durationMode: med.durationMode,
+          customDays: med.customDays,
+          mealTiming: med.mealTiming,
+          timeMealTimings: med.timeMealTimings,
+          precautions: med.precautions,
+          imageUrl: med.imageUrl,
+        };
       } else {
+        const normNew = normalizeMedName(med.name);
+        const dupIdx = current.findIndex(m => normalizeMedName(m.name) === normNew);
+        if (dupIdx >= 0) {
+          throw new Error(
+            `คุณมียา "${med.name}" ในรายการยาแล้ว หากต้องการแก้ไขข้อมูลหรือเพิ่มจำนวนยา กรุณาไปทำที่ปุ่มแก้ไข`
+          );
+        }
         updated = [med, ...current];
       }
 
       await safeStorage.setItem('med_user_medications_list', JSON.stringify(updated));
 
       // Manage today's schedule in local storage
-      const today = new Date().toISOString().split('T')[0];
+      const todayDate = new Date();
+      const today = getLocalDateString(todayDate);
       const scheduleKey = `med_schedule_${today}`;
 
       let currentSchedule: ScheduleItem[] = [];
@@ -528,30 +670,58 @@ export const medService = {
         } catch {}
       }
 
-      // Remove previous schedule entries for this medication on today
-      currentSchedule = currentSchedule.filter(
-        s => s.medicationName !== med.name && s.medicationId !== med.id
+      const previousEntriesForMed = currentSchedule.filter(
+        s =>
+          s.medicationId === med.id ||
+          s.medicationName === med.name ||
+          (previousMed && s.medicationName === previousMed.name)
       );
 
-      // If active, generate today's schedule entries
+      // Remove previous schedule entries for this medication on today
+      currentSchedule = currentSchedule.filter(
+        s =>
+          s.medicationId !== med.id &&
+          s.medicationName !== med.name &&
+          (!previousMed || s.medicationName !== previousMed.name)
+      );
+
+      // If scheduled for today, generate today's schedule entries (preserving isTaken for unchanged times)
+      const shouldScheduleToday = isMedicationScheduledForDate(med, todayDate);
       let newScheduleItems: ScheduleItem[] = [];
-      if (med.status === 'active' && effectiveTimes.length > 0) {
-        newScheduleItems = effectiveTimes.map((t, idx) => ({
-          id: `sch-${Date.now()}-${idx}`,
-          medicationId: med.id,
-          medicationName: med.name,
-          dosage: med.dosage,
-          unit: med.unit,
-          type: med.type,
-          mealTiming: med.mealTiming || 'หลังอาหาร',
-          time: t.includes('น.') ? t.trim() : `${t.trim()} น.`,
-          date: today,
-          isTaken: false,
-          isSkipped: false,
-        }));
+      if (shouldScheduleToday && effectiveTimes.length > 0) {
+        const usedPrevIds = new Set<string>();
+        newScheduleItems = effectiveTimes.map((t, idx) => {
+          const normT = t.replace(' น.', '').trim();
+          const formattedTime = `${normT} น.`;
+          const matchedPrev = previousEntriesForMed.find(
+            p =>
+              !usedPrevIds.has(p.id) &&
+              (p.originalTime || p.time.replace(' น.', '').trim()) === normT
+          );
+          if (matchedPrev) {
+            usedPrevIds.add(matchedPrev.id);
+          }
+          return {
+            id: matchedPrev?.id || `sch-${today}-${med.id}-${idx}`,
+            medicationId: med.id,
+            medicationName: med.name,
+            dosage: med.dosage,
+            unit: med.unit,
+            type: med.type,
+            doseCount: Math.max(1, med.frequency || 1),
+            mealTiming: med.timeMealTimings?.[normT] || med.mealTiming || '',
+            originalTime: normT,
+            time: formattedTime,
+            date: today,
+            isChecked: matchedPrev ? Boolean(matchedPrev.isChecked || matchedPrev.isTaken) : false,
+            isTaken: matchedPrev ? Boolean(matchedPrev.isTaken) : false,
+            takenAt: matchedPrev?.takenAt,
+            isSkipped: matchedPrev ? Boolean(matchedPrev.isSkipped) : false,
+          };
+        });
 
         currentSchedule = [...currentSchedule, ...newScheduleItems].sort((a, b) =>
-          a.time.localeCompare(b.time)
+          a.time.replace(' น.', '').trim().localeCompare(b.time.replace(' น.', '').trim())
         );
       }
 
@@ -561,13 +731,20 @@ export const medService = {
       // Sync to Supabase user_schedules
       if (supabase) {
         try {
+          if (previousMed && previousMed.name !== med.name) {
+            await supabase
+              .from('user_schedules')
+              .delete()
+              .eq('date', today)
+              .eq('medication_name', previousMed.name);
+          }
           await supabase
             .from('user_schedules')
             .delete()
             .eq('date', today)
             .eq('medication_name', med.name);
 
-          if (med.status === 'active' && newScheduleItems.length > 0) {
+          if (shouldScheduleToday && newScheduleItems.length > 0) {
             const user = await this.getUserProfile();
             const userUUID = user?.id && isValidUUID(user.id) ? user.id : null;
             const medUUID = isValidUUID(med.id) ? med.id : null;
@@ -582,8 +759,9 @@ export const medService = {
               meal_timing: item.mealTiming,
               time: item.time,
               date: item.date,
-              is_taken: false,
-              is_skipped: false,
+              is_taken: item.isTaken,
+              taken_at: item.takenAt || null,
+              is_skipped: Boolean(item.isSkipped),
             }));
 
             await supabase.from('user_schedules').insert(supabaseRows);
@@ -613,14 +791,14 @@ export const medService = {
       await safeStorage.setItem('med_user_medications_list', JSON.stringify(updated));
 
       // Remove from today's schedule
-      const today = new Date().toISOString().split('T')[0];
+      const today = getLocalDateString();
       const scheduleKey = `med_schedule_${today}`;
       const localStr = await safeStorage.getItem(scheduleKey);
-      if (localStr && medToDelete) {
+      if (localStr) {
         try {
           const parsed: ScheduleItem[] = JSON.parse(localStr);
           const filtered = parsed.filter(
-            s => s.medicationName !== medToDelete.name && s.medicationId !== id
+            s => s.medicationId !== id && (!medToDelete || s.medicationName !== medToDelete.name)
           );
           await safeStorage.setItem(scheduleKey, JSON.stringify(filtered));
         } catch {}
@@ -675,122 +853,349 @@ export const medService = {
   // --------------------------------------------------------------------------
   // Schedules & History
   // --------------------------------------------------------------------------
-  async getTodaySchedule(): Promise<ScheduleItem[]> {
+  async getScheduleForDate(dateStr?: string): Promise<ScheduleItem[]> {
     await this.purgeMockCacheIfNeeded();
-    const today = new Date().toISOString().split('T')[0];
-    const key = `med_schedule_${today}`;
+    const targetDateStr = dateStr || getLocalDateString();
+    const targetDate = parseLocalDateString(targetDateStr);
+    const key = `med_schedule_${targetDateStr}`;
 
-    // 1. Try Supabase user_schedules table
+    // 1. Read local storage for this date (freshest isTaken state on this device)
+    let localItems: ScheduleItem[] = [];
+    const local = await safeStorage.getItem(key);
+    if (local) {
+      try {
+        const parsed = JSON.parse(local);
+        if (Array.isArray(parsed)) {
+          localItems = parsed.filter(item => !String(item.id).startsWith('mock-'));
+        }
+      } catch {}
+    }
+
+    // 2. Read Supabase user_schedules for this date (to pick up remote UUIDs / records)
+    let remoteItems: ScheduleItem[] = [];
     if (supabase) {
       try {
         const { data, error } = await supabase
           .from('user_schedules')
           .select('*')
-          .eq('date', today)
+          .eq('date', targetDateStr)
           .order('time', { ascending: true });
 
         if (!error && data && data.length > 0) {
-          const items: ScheduleItem[] = data.map((d: any) => ({
+          remoteItems = data.map((d: any) => ({
             id: d.id,
             medicationId: d.medication_id,
             medicationName: d.medication_name,
             dosage: d.dosage,
             unit: d.unit,
             type: d.type,
-            mealTiming: d.meal_timing,
-            time: d.time.includes('น.') ? d.time.trim() : `${d.time.trim()} น.`,
+            mealTiming: d.meal_timing || '',
+            time: d.time && d.time.includes('น.') ? d.time.trim() : `${(d.time || '').trim()} น.`,
             date: d.date,
-            isTaken: d.is_taken,
-            takenAt: d.taken_at,
-            isSkipped: d.is_skipped,
+            isChecked: Boolean(d.is_taken),
+            isTaken: Boolean(d.is_taken),
+            takenAt: d.taken_at || undefined,
+            isSkipped: Boolean(d.is_skipped),
           }));
-          await safeStorage.setItem(key, JSON.stringify(items));
-          return items;
         }
       } catch (e) {
         console.warn('Error reading from Supabase user_schedules:', e);
       }
     }
 
-    // 2. Try local storage for today, then reconcile with active medications
-    let scheduleItems: ScheduleItem[] = [];
-    const local = await safeStorage.getItem(key);
-    if (local) {
-      try {
-        const parsed = JSON.parse(local);
-        if (Array.isArray(parsed)) {
-          scheduleItems = parsed.filter(item => !String(item.id).startsWith('mock-'));
-        }
-      } catch {}
+    // Merge stored items: keep local items first, supplement with remote items
+    const storedItems: ScheduleItem[] = [...localItems];
+    for (const rItem of remoteItems) {
+      const rTime = rItem.time.replace(' น.', '').trim();
+      const existingIdx = storedItems.findIndex(
+        lItem =>
+          ((rItem.medicationId && lItem.medicationId === rItem.medicationId) ||
+            lItem.medicationName === rItem.medicationName) &&
+          (lItem.time.replace(' น.', '').trim() === rTime || lItem.originalTime === rTime)
+      );
+      if (existingIdx >= 0) {
+        const cur = storedItems[existingIdx];
+        const mergedTaken = Boolean(cur.isTaken || rItem.isTaken);
+        storedItems[existingIdx] = {
+          ...cur,
+          id: isValidUUID(rItem.id) && !isValidUUID(cur.id) ? rItem.id : cur.id,
+          isTaken: mergedTaken,
+          isChecked: Boolean(cur.isChecked || mergedTaken),
+          takenAt: cur.takenAt || rItem.takenAt,
+        };
+      } else {
+        storedItems.push(rItem);
+      }
     }
 
-    // 3. Reconcile with active medications in real-time
+    // 3. Always reconcile with ALL user medications scheduled for targetDate
     try {
-      const activeMeds = (await this.getMedications()).filter(m => m.status === 'active');
-      if (activeMeds.length > 0) {
-        // Keep existing schedule items that belong to active meds (preserving isTaken status)
-        let valid = scheduleItems.filter(s =>
-          activeMeds.some(m => m.id === s.medicationId || m.name === s.medicationName)
-        );
+      const allMeds = await this.getMedications();
+      const scheduledMeds = allMeds.filter(m => isMedicationScheduledForDate(m, targetDate));
 
-        // Find any active medication missing from today's schedule
-        const missingMeds = activeMeds.filter(
-          m => !valid.some(s => s.medicationId === m.id || s.medicationName === m.name)
-        );
-
-        if (missingMeds.length > 0) {
-          for (const med of missingMeds) {
-            const times =
-              med.times && med.times.length > 0
-                ? med.times
-                : this.getDefaultTimesForFrequency(med.frequency || 1);
-
-            times.forEach((t, idx) => {
-              valid.push({
-                id: `sch-${med.id}-${idx}`,
-                medicationId: med.id,
-                medicationName: med.name,
-                dosage: med.dosage,
-                unit: med.unit,
-                type: med.type,
-                mealTiming: med.mealTiming || 'หลังอาหาร',
-                time: t.includes('น.') ? t.trim() : `${t.trim()} น.`,
-                date: today,
-                isTaken: false,
-                isSkipped: false,
-              });
-            });
-          }
-        }
-
-        valid.sort((a, b) => a.time.localeCompare(b.time));
-        await safeStorage.setItem(key, JSON.stringify(valid));
-        return valid;
-      } else {
-        if (scheduleItems.length > 0) {
+      if (scheduledMeds.length === 0) {
+        if (localItems.length > 0) {
           await safeStorage.setItem(key, JSON.stringify([]));
         }
         return [];
       }
+
+      const reconciled: ScheduleItem[] = [];
+      const consumedIndices = new Set<number>();
+
+      for (const med of scheduledMeds) {
+        const times =
+          med.times && med.times.length > 0
+            ? med.times
+            : this.getDefaultTimesForFrequency(1);
+
+        times.forEach((rawTime, idx) => {
+          const normTime = rawTime.replace(' น.', '').trim();
+          const displayTime = `${normTime} น.`;
+          const syntheticId = `sch-${targetDateStr}-${med.id}-${idx}`;
+
+          const matchIdx = storedItems.findIndex(
+            (s, sIdx) =>
+              !consumedIndices.has(sIdx) &&
+              (s.medicationId === med.id || s.medicationName === med.name) &&
+              ((s.originalTime || s.time.replace(' น.', '').trim()) === normTime ||
+                s.id === syntheticId)
+          );
+
+          const matched = matchIdx >= 0 ? storedItems[matchIdx] : undefined;
+          if (matchIdx >= 0) {
+            consumedIndices.add(matchIdx);
+          }
+
+          reconciled.push({
+            id: matched?.id || syntheticId,
+            medicationId: med.id,
+            medicationName: med.name,
+            dosage: med.dosage,
+            unit: med.unit,
+            type: med.type,
+            doseCount: Math.max(1, med.frequency || 1),
+            mealTiming:
+              med.timeMealTimings?.[normTime] || med.mealTiming || matched?.mealTiming || '',
+            originalTime: normTime,
+            postponedTime: matched?.postponedTime,
+            time: matched?.postponedTime || displayTime,
+            date: targetDateStr,
+            isChecked: matched ? Boolean(matched.isChecked || matched.isTaken) : false,
+            isTaken: matched ? Boolean(matched.isTaken) : false,
+            takenAt: matched?.takenAt,
+            isSkipped: matched ? Boolean(matched.isSkipped) : false,
+          });
+        });
+      }
+
+      reconciled.sort((a, b) =>
+        a.time.replace(' น.', '').trim().localeCompare(b.time.replace(' น.', '').trim())
+      );
+      await safeStorage.setItem(key, JSON.stringify(reconciled));
+      return reconciled;
     } catch (e) {
       console.warn('Error syncing schedule with active medications:', e);
     }
 
-    return scheduleItems;
+    return storedItems;
   },
 
-  async markScheduleTaken(scheduleId: string, isTaken: boolean): Promise<ScheduleItem[]> {
-    const today = new Date().toISOString().split('T')[0];
-    const key = `med_schedule_${today}`;
-    const schedule = await this.getTodaySchedule();
-    const timeNow = `${new Date().getHours().toString().padStart(2, '0')}:${new Date().getMinutes().toString().padStart(2, '0')} น.`;
+  async getTodaySchedule(): Promise<ScheduleItem[]> {
+    return this.getScheduleForDate(getLocalDateString());
+  },
+
+  async toggleScheduleChecked(
+    scheduleId: string,
+    isChecked: boolean,
+    dateStr?: string
+  ): Promise<ScheduleItem[]> {
+    const targetDate = dateStr || getLocalDateString();
+    const key = `med_schedule_${targetDate}`;
+    const schedule = await this.getScheduleForDate(targetDate);
+    const targetItem = schedule.find(i => i.id === scheduleId);
+
+    // ถ้ายืนยันการรับประทานยาแล้ว (isTaken === true) ล็อกไว้ ไม่ให้กดติ๊กออกได้
+    if (!targetItem || targetItem.isTaken) {
+      return schedule;
+    }
+
+    const updated = schedule.map(item => {
+      if (item.id === scheduleId) {
+        if (isChecked) {
+          // ติ๊กแล้ว แต่ยังไม่ได้กดปุ่มยืนยัน = รอยืนยัน (ยังไม่หักยา)
+          return {
+            ...item,
+            isChecked: true,
+          };
+        }
+        // ยกเลิกการติ๊ก (เฉพาะรายการที่ยังไม่ยืนยัน) = กลับเป็น ยังไม่ได้กินยา
+        return {
+          ...item,
+          isChecked: false,
+          isTaken: false,
+          takenAt: undefined,
+        };
+      }
+      return item;
+    });
+
+    await safeStorage.setItem(key, JSON.stringify(updated));
+    return updated;
+  },
+
+  async confirmCheckedSchedules(
+    scheduleIds: string[],
+    dateStr?: string
+  ): Promise<ScheduleItem[]> {
+    const targetDate = dateStr || getLocalDateString();
+    if (!scheduleIds || scheduleIds.length === 0) {
+      return this.getScheduleForDate(targetDate);
+    }
+
+    const key = `med_schedule_${targetDate}`;
+    const schedule = await this.getScheduleForDate(targetDate);
+    const idSet = new Set(scheduleIds);
+
+    const now = new Date();
+    const timeNow = `${now.getHours().toString().padStart(2, '0')}:${now
+      .getMinutes()
+      .toString()
+      .padStart(2, '0')} น.`;
+
+    const newlyConfirmed: ScheduleItem[] = [];
+    const updated = schedule.map(item => {
+      if (idSet.has(item.id) && !item.isTaken) {
+        const confirmedItem: ScheduleItem = {
+          ...item,
+          isChecked: true,
+          isTaken: true,
+          takenAt: timeNow,
+        };
+        newlyConfirmed.push(confirmedItem);
+        return confirmedItem;
+      }
+      return item;
+    });
+
+    await safeStorage.setItem(key, JSON.stringify(updated));
+
+    // หักจำนวนยาคงเหลือเฉพาะรายการที่พึ่งกดยืนยันรับประทาน
+    if (newlyConfirmed.length > 0) {
+      try {
+        const meds = await this.getMedications();
+        const updatedMeds = [...meds];
+        let medChanged = false;
+
+        for (const confirmedItem of newlyConfirmed) {
+          const medIdx = updatedMeds.findIndex(
+            m => m.id === confirmedItem.medicationId || m.name === confirmedItem.medicationName
+          );
+          if (medIdx >= 0) {
+            const med = updatedMeds[medIdx];
+            if (med.remaining !== undefined && med.remaining !== null) {
+              const doseAmount = Math.max(1, med.frequency || confirmedItem.doseCount || 1);
+              updatedMeds[medIdx] = {
+                ...med,
+                remaining: Math.max(0, med.remaining - doseAmount),
+              };
+              medChanged = true;
+            }
+          }
+        }
+
+        if (medChanged) {
+          await safeStorage.setItem('med_user_medications_list', JSON.stringify(updatedMeds));
+        }
+      } catch (stockErr) {
+        console.warn('Failed to deduct medication stock on confirm:', stockErr);
+      }
+
+      if (supabase) {
+        for (const confirmedItem of newlyConfirmed) {
+          try {
+            if (isValidUUID(confirmedItem.id)) {
+              await supabase
+                .from('user_schedules')
+                .update({ is_taken: true, taken_at: timeNow })
+                .eq('id', confirmedItem.id);
+            } else {
+              const { data: existingRows } = await supabase
+                .from('user_schedules')
+                .select('id')
+                .eq('date', targetDate)
+                .eq('medication_name', confirmedItem.medicationName)
+                .eq('time', confirmedItem.time);
+
+              if (existingRows && existingRows.length > 0) {
+                await supabase
+                  .from('user_schedules')
+                  .update({ is_taken: true, taken_at: timeNow })
+                  .eq('id', existingRows[0].id);
+              } else {
+                const user = await this.getUserProfile();
+                const userUUID = user?.id && isValidUUID(user.id) ? user.id : null;
+                const medUUID = isValidUUID(confirmedItem.medicationId)
+                  ? confirmedItem.medicationId
+                  : null;
+                await supabase.from('user_schedules').insert([
+                  {
+                    user_id: userUUID,
+                    medication_id: medUUID,
+                    medication_name: confirmedItem.medicationName,
+                    dosage: confirmedItem.dosage,
+                    unit: confirmedItem.unit,
+                    type: confirmedItem.type,
+                    meal_timing: confirmedItem.mealTiming,
+                    time: confirmedItem.time,
+                    date: targetDate,
+                    is_taken: true,
+                    taken_at: timeNow,
+                    is_skipped: false,
+                  },
+                ]);
+              }
+            }
+          } catch {}
+        }
+      }
+
+      for (const confirmedItem of newlyConfirmed) {
+        await this.logActivity(
+          `รับประทานยา: ${confirmedItem.medicationName}`,
+          `เวลา ${confirmedItem.time} (${confirmedItem.dosage} ${confirmedItem.unit})`
+        );
+      }
+    }
+
+    return updated;
+  },
+
+  async markScheduleTaken(
+    scheduleId: string,
+    isTaken: boolean,
+    dateStr?: string
+  ): Promise<ScheduleItem[]> {
+    const targetDate = dateStr || getLocalDateString();
+    const key = `med_schedule_${targetDate}`;
+    const schedule = await this.getScheduleForDate(targetDate);
+    const targetItem = schedule.find(i => i.id === scheduleId);
+    const wasTaken = Boolean(targetItem?.isTaken);
+
+    const now = new Date();
+    const timeNow = `${now.getHours().toString().padStart(2, '0')}:${now
+      .getMinutes()
+      .toString()
+      .padStart(2, '0')} น.`;
 
     const updated = schedule.map(item => {
       if (item.id === scheduleId) {
         return {
           ...item,
+          isChecked: isTaken,
           isTaken,
-          takenAt: isTaken ? timeNow : undefined,
+          isSkipped: isTaken ? false : item.isSkipped,
+          takenAt: isTaken ? (wasTaken && item.takenAt ? item.takenAt : timeNow) : undefined,
         };
       }
       return item;
@@ -798,19 +1203,160 @@ export const medService = {
 
     await safeStorage.setItem(key, JSON.stringify(updated));
 
-    // Sync to Supabase user_schedules if exists and valid UUID
-    if (supabase && isValidUUID(scheduleId)) {
+    // Real-time stock update for this medication if intake status changed
+    if (targetItem && wasTaken !== isTaken) {
       try {
-        await supabase
-          .from('user_schedules')
-          .update({ is_taken: isTaken, taken_at: isTaken ? timeNow : null })
-          .eq('id', scheduleId);
+        const meds = await this.getMedications();
+        const medIdx = meds.findIndex(
+          m => m.id === targetItem.medicationId || m.name === targetItem.medicationName
+        );
+        if (medIdx >= 0) {
+          const med = meds[medIdx];
+          if (med.remaining !== undefined && med.remaining !== null) {
+            const doseAmount = Math.max(1, med.frequency || targetItem.doseCount || 1);
+            const nextRemaining = isTaken
+              ? Math.max(0, med.remaining - doseAmount)
+              : med.remaining + doseAmount;
+            const updatedMeds = [...meds];
+            updatedMeds[medIdx] = {
+              ...med,
+              remaining: nextRemaining,
+            };
+            await safeStorage.setItem('med_user_medications_list', JSON.stringify(updatedMeds));
+          }
+        }
+      } catch (stockErr) {
+        console.warn('Failed to update medication stock in real-time:', stockErr);
+      }
+    }
+
+    // Sync to Supabase user_schedules
+    if (supabase) {
+      try {
+        if (isValidUUID(scheduleId)) {
+          await supabase
+            .from('user_schedules')
+            .update({ is_taken: isTaken, taken_at: isTaken ? timeNow : null })
+            .eq('id', scheduleId);
+        } else if (targetItem) {
+          const { data: existingRows } = await supabase
+            .from('user_schedules')
+            .select('id')
+            .eq('date', targetDate)
+            .eq('medication_name', targetItem.medicationName)
+            .eq('time', targetItem.time);
+
+          if (existingRows && existingRows.length > 0) {
+            await supabase
+              .from('user_schedules')
+              .update({ is_taken: isTaken, taken_at: isTaken ? timeNow : null })
+              .eq('id', existingRows[0].id);
+          } else if (isTaken) {
+            const user = await this.getUserProfile();
+            const userUUID = user?.id && isValidUUID(user.id) ? user.id : null;
+            const medUUID = isValidUUID(targetItem.medicationId) ? targetItem.medicationId : null;
+            await supabase.from('user_schedules').insert([
+              {
+                user_id: userUUID,
+                medication_id: medUUID,
+                medication_name: targetItem.medicationName,
+                dosage: targetItem.dosage,
+                unit: targetItem.unit,
+                type: targetItem.type,
+                meal_timing: targetItem.mealTiming,
+                time: targetItem.time,
+                date: targetDate,
+                is_taken: true,
+                taken_at: timeNow,
+                is_skipped: false,
+              },
+            ]);
+          }
+        }
       } catch {}
     }
 
     const item = updated.find(i => i.id === scheduleId);
-    if (item && isTaken) {
-      await this.logActivity(`รับประทานยา: ${item.medicationName}`, `เวลา ${item.time} (${item.dosage} ${item.unit})`);
+    if (item && isTaken && !wasTaken) {
+      await this.logActivity(
+        `รับประทานยา: ${item.medicationName}`,
+        `เวลา ${item.time} (${item.dosage} ${item.unit})`
+      );
+    }
+
+    return updated;
+  },
+
+  async postponeSchedule(
+    scheduleId: string,
+    minutes: number = 30,
+    dateStr?: string
+  ): Promise<ScheduleItem[]> {
+    const targetDate = dateStr || getLocalDateString();
+    const key = `med_schedule_${targetDate}`;
+    const schedule = await this.getScheduleForDate(targetDate);
+    const targetItem = schedule.find(i => i.id === scheduleId);
+
+    if (!targetItem || targetItem.isTaken) {
+      return schedule;
+    }
+
+    const oldNorm = targetItem.time.replace(' น.', '').trim();
+    const [hStr, mStr] = oldNorm.split(':');
+    const h = parseInt(hStr, 10);
+    const m = parseInt(mStr, 10);
+    const baseTotal = (!isNaN(h) ? h : 8) * 60 + (!isNaN(m) ? m : 0);
+    const nextTotal = (((baseTotal + minutes) % 1440) + 1440) % 1440;
+    const nextH = String(Math.floor(nextTotal / 60)).padStart(2, '0');
+    const nextM = String(nextTotal % 60).padStart(2, '0');
+    const newTimeStr = `${nextH}:${nextM} น.`;
+
+    const updated = schedule
+      .map(s =>
+        s.id === scheduleId
+          ? {
+              ...s,
+              originalTime: s.originalTime || oldNorm,
+              postponedTime: newTimeStr,
+              time: newTimeStr,
+            }
+          : s
+      )
+      .sort((a, b) =>
+        a.time.replace(' น.', '').trim().localeCompare(b.time.replace(' น.', '').trim())
+      );
+
+    await safeStorage.setItem(key, JSON.stringify(updated));
+
+    if (supabase && isValidUUID(scheduleId)) {
+      try {
+        await supabase.from('user_schedules').update({ time: newTimeStr }).eq('id', scheduleId);
+      } catch {}
+    }
+
+    return updated;
+  },
+
+  async skipSchedule(scheduleId: string, dateStr?: string): Promise<ScheduleItem[]> {
+    const targetDate = dateStr || getLocalDateString();
+    const key = `med_schedule_${targetDate}`;
+    const schedule = await this.getScheduleForDate(targetDate);
+    const targetItem = schedule.find(i => i.id === scheduleId);
+
+    if (!targetItem || targetItem.isTaken) {
+      return schedule;
+    }
+
+    const updated = schedule.map(s =>
+      s.id === scheduleId ? { ...s, isSkipped: true, isChecked: false } : s
+    );
+
+    await safeStorage.setItem(key, JSON.stringify(updated));
+
+    if (supabase && isValidUUID(scheduleId)) {
+      try {
+        await supabase.from('user_schedules').update({ is_skipped: true }).eq('id', scheduleId);
+      } catch {}
     }
 
     return updated;
@@ -847,7 +1393,7 @@ export const medService = {
     if (local) {
       const parsed = JSON.parse(local);
       if (Array.isArray(parsed)) {
-        return parsed.filter(a => !a.id.startsWith('apt-'));
+        return parsed.filter(a => !['apt-1', 'apt-2', 'apt-3'].includes(a.id));
       }
     }
 
@@ -889,6 +1435,34 @@ export const medService = {
 
     await this.logActivity(`เพิ่มนัดหมายแพทย์: ${appointment.doctorName}`, `${appointment.hospital} (${appointment.date} ${appointment.time})`);
     return newApt;
+  },
+
+  async updateAppointment(appointment: DoctorAppointment): Promise<DoctorAppointment> {
+    if (supabase && !appointment.id.startsWith('apt-')) {
+      try {
+        await supabase
+          .from('appointments')
+          .update({
+            doctor_name: appointment.doctorName,
+            department: appointment.department,
+            hospital: appointment.hospital,
+            appointment_date: appointment.date,
+            appointment_time: appointment.time,
+            details: appointment.details,
+            status: appointment.status,
+          })
+          .eq('id', appointment.id);
+      } catch (e) {
+        console.warn('Supabase update appointment error:', e);
+      }
+    }
+
+    const appointments = await this.getAppointments();
+    const updated = appointments.map(a => (a.id === appointment.id ? appointment : a));
+    await safeStorage.setItem('med_appointments', JSON.stringify(updated));
+
+    await this.logActivity(`แก้ไขนัดหมายแพทย์: ${appointment.doctorName}`, `${appointment.hospital} (${appointment.date} ${appointment.time})`);
+    return appointment;
   },
 
   async deleteAppointment(id: string): Promise<boolean> {

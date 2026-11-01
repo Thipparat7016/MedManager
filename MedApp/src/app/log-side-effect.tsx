@@ -238,36 +238,19 @@ export default function LogSideEffectScreen() {
                 </Text>
               )}
 
-              {/* Quick symptom suggestions for this drug */}
+              {/* Potential side effects list for this drug */}
               <View style={styles.suggestionBox}>
                 <Text style={styles.suggestionTitle}>
-                  แตะเพื่อเลือกอาการที่พบบ่อยของยานี้:
+                  ผลข้างเคียงที่อาจเกิดขึ้น:
                 </Text>
                 <View style={styles.suggestionChipsWrap}>
-                  {suggestedSymptomsForDrug.map(sym => {
-                    const isSelected = selectedSymptoms.includes(sym);
-                    return (
-                      <TouchableOpacity
-                        key={sym}
-                        style={[
-                          styles.suggestChip,
-                          isSelected && styles.suggestChipActive,
-                        ]}
-                        onPress={() => toggleSymptom(sym)}
-                        activeOpacity={0.7}
-                      >
-                        <Text
-                          style={[
-                            styles.suggestChipText,
-                            isSelected && styles.suggestChipTextActive,
-                          ]}
-                        >
-                          {isSelected ? '✓ ' : '+ '}
-                          {sym}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
+                  {suggestedSymptomsForDrug.map(sym => (
+                    <View key={sym} style={styles.suggestBadge}>
+                      <Text style={styles.suggestBadgeText}>
+                        • {sym}
+                      </Text>
+                    </View>
+                  ))}
                 </View>
               </View>
             </View>
@@ -915,6 +898,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 6,
+  },
+  suggestBadge: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#FED7AA',
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  suggestBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#C2410C',
   },
   suggestChip: {
     backgroundColor: '#FFFFFF',

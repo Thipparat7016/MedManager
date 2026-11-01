@@ -6,6 +6,7 @@ import {
   StyleSheet,
   ScrollView,
   Alert,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -42,32 +43,49 @@ export default function ConfirmIntakeScreen() {
   );
 
   const handleConfirm = async () => {
-    if (targetItem) {
+    if (targetItem && !targetItem.isTaken) {
       await markTaken(targetItem.id, true);
+    }
+    if (Platform.OS === 'web') {
+      router.replace('/(tabs)' as any);
+      return;
     }
     Alert.alert('บันทึกสำเร็จ', 'บันทึกการรับประทานยาเรียบร้อยแล้ว', [
       { text: 'ตกลง', onPress: () => router.replace('/(tabs)' as any) },
     ]);
   };
 
-  const handlePostpone = () => {
-    if (targetItem) {
-      postponeSchedule(targetItem.id, 30);
+  const handlePostpone = async () => {
+    if (targetItem && !targetItem.isTaken) {
+      await postponeSchedule(targetItem.id, 30);
+    }
+    if (Platform.OS === 'web') {
+      router.replace('/(tabs)' as any);
+      return;
     }
     Alert.alert('เลื่อนเวลา', 'เลื่อนการรับประทานยาออกไป 30 นาทีแล้ว', [
       { text: 'ตกลง', onPress: () => router.replace('/(tabs)' as any) },
     ]);
   };
 
-  const handleSkip = () => {
+  const handleSkip = async () => {
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined' && window.confirm('ต้องการข้ามการรับประทานยาครั้งนี้หรือไม่?')) {
+        if (targetItem) {
+          await skipSchedule(targetItem.id);
+        }
+        router.replace('/(tabs)' as any);
+      }
+      return;
+    }
     Alert.alert('ยืนยันการข้าม', 'ต้องการข้ามการรับประทานยาครั้งนี้หรือไม่?', [
       { text: 'ยกเลิก', style: 'cancel' },
       {
         text: 'ข้ามครั้งนี้',
         style: 'destructive',
-        onPress: () => {
+        onPress: async () => {
           if (targetItem) {
-            skipSchedule(targetItem.id);
+            await skipSchedule(targetItem.id);
           }
           router.replace('/(tabs)' as any);
         },

@@ -7,17 +7,19 @@ import {
   TouchableOpacity,
   Image,
   RefreshControl,
+  Modal,
+  Pressable,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons, Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '@/context/AppContext';
-import { PillIcon } from '@/components/ui/PillIcon';
 import {
   isMedicationMatch,
   formatCleanDrugName,
   formatCleanFoodName,
   formatConciseText,
+  resolveMedicationImageUri,
 } from '@/services/interactionMatcher';
 
 export default function HomeScreen() {
@@ -26,7 +28,8 @@ export default function HomeScreen() {
   const {
     user,
     todaySchedule,
-    markTaken,
+    toggleChecklist,
+    confirmCheckedIntake,
     notifications,
     interactions,
     medications,
@@ -37,6 +40,10 @@ export default function HomeScreen() {
   const [isExpandedAllMeals, setIsExpandedAllMeals] = useState<boolean>(false);
   const [currentPage, setCurrentPage] = useState<number>(0);
   const [refreshing, setRefreshing] = useState<boolean>(false);
+  const [previewMedImage, setPreviewMedImage] = useState<{
+    uri: string;
+    name: string;
+  } | null>(null);
 
   // Auto-refresh when navigating back to HomeScreen
   useFocusEffect(
@@ -104,17 +111,11 @@ export default function HomeScreen() {
 
   // Resolve medication image from user medications or master medications catalog (AdminMed backend)
   const getMedImage = (medName: string, medId?: string): string | null => {
-    const userMed = medications.find(
-      m => (medId && m.id === medId) || m.name === medName || isMedicationMatch(m.name, medName)
+    return resolveMedicationImageUri(
+      { id: medId, name: medName },
+      masterMedications,
+      medications
     );
-    if (userMed?.imageUrl) return userMed.imageUrl;
-
-    const masterMed = masterMedications.find(
-      m => m.name === medName || isMedicationMatch(medName, m.name)
-    );
-    if (masterMed?.imageUrl) return masterMed.imageUrl;
-
-    return null;
   };
 
   // Helper to find food avoidances for a medicine
@@ -156,16 +157,9 @@ export default function HomeScreen() {
   };
 
   const handleConfirmCurrentPage = async () => {
-    const untaken = pageItems.filter(i => !i.isTaken);
-    if (untaken.length > 0) {
-      for (const item of untaken) {
-        await markTaken(item.id, true);
-      }
-    } else {
-      const nextUntaken = todaySchedule.find(i => !i.isTaken);
-      if (nextUntaken) {
-        await markTaken(nextUntaken.id, true);
-      }
+    const pendingChecked = todaySchedule.filter(i => i.isChecked && !i.isTaken);
+    if (pendingChecked.length > 0) {
+      await confirmCheckedIntake(pendingChecked.map(i => i.id));
     }
   };
 
@@ -175,6 +169,10 @@ export default function HomeScreen() {
     name: mealName,
     items: todaySchedule.filter(s => getMealCategory(s.time, s.mealTiming) === mealName),
   })).filter(g => g.items.length > 0);
+
+  const unreadNotifCount = notifications.filter(
+    n => !n.isRead && n.type !== 'med_taken'
+  ).length;
 
   const topInsetPadding = Math.max(insets.top, 24) + 14;
 
@@ -201,10 +199,10 @@ export default function HomeScreen() {
             activeOpacity={0.7}
           >
             <Ionicons name="notifications-outline" size={24} color="#8B95F6" />
-            {notifications.length > 0 && (
+            {unreadNotifCount > 0 && (
               <View style={styles.notificationBadge}>
                 <Text style={styles.notificationBadgeText}>
-                  {notifications.length > 9 ? '9+' : notifications.length}
+                  {unreadNotifCount > 9 ? '9+' : unreadNotifCount}
                 </Text>
               </View>
             )}
@@ -252,23 +250,36 @@ export default function HomeScreen() {
                 <>
                   {/* Medicine Row */}
                   <View style={styles.nextMedRow}>
-                    <View style={styles.medIconBox}>
-                      {nextMedImage ? (
+                    {nextMedImage ? (
+                      <TouchableOpacity
+                        style={styles.medIconBox}
+                        onPress={() =>
+                          setPreviewMedImage({
+                            uri: nextMedImage,
+                            name: formatCleanDrugName(nextMed.medicationName),
+                          })
+                        }
+                        activeOpacity={0.75}
+                      >
                         <Image
                           source={{ uri: nextMedImage }}
                           style={styles.medThumbImage}
                           resizeMode="cover"
                         />
-                      ) : (
-                        <PillIcon type={nextMed.type || 'เม็ด'} size={20} containerSize={42} />
-                      )}
-                    </View>
-                    <View style={styles.nextMedInfo}>
+                      </TouchableOpacity>
+                    ) : null}
+                    <View style={[styles.nextMedInfo, !nextMedImage && { marginLeft: 0 }]}>
                       <Text style={styles.nextMedName} numberOfLines={1}>
                         {formatCleanDrugName(nextMed.medicationName)}
                       </Text>
                       <Text style={styles.nextMedMeta} numberOfLines={1}>
-                        {nextMed.dosage}{nextMed.unit} • 1 {nextMed.type} • {nextMed.mealTiming}
+                        {[
+                          `${nextMed.dosage}${nextMed.unit}`,
+                          `${nextMed.doseCount || 1} ${nextMed.type}`,
+                          nextMed.mealTiming,
+                        ]
+                          .filter(Boolean)
+                          .join(' • ')}
                       </Text>
                     </View>
                   </View>
@@ -344,35 +355,49 @@ export default function HomeScreen() {
               {/* Medication Checklist for Current Page */}
               <View style={styles.checklistContainer}>
                 {pageItems.length > 0 ? (
-                  pageItems.map(item => (
-                    <TouchableOpacity
-                      key={item.id}
-                      style={styles.checkItemRow}
-                      onPress={() => markTaken(item.id, !item.isTaken)}
-                      activeOpacity={0.7}
-                    >
-                      <View
-                        style={[
-                          styles.checkCircle,
-                          item.isTaken && styles.checkCircleActive,
-                        ]}
+                  pageItems.map(item => {
+                    const isChecked = Boolean(item.isChecked || item.isTaken);
+                    return (
+                      <TouchableOpacity
+                        key={item.id}
+                        style={styles.checkItemRow}
+                        disabled={item.isTaken}
+                        onPress={() => {
+                          if (!item.isTaken) {
+                            toggleChecklist(item.id, !isChecked);
+                          }
+                        }}
+                        activeOpacity={item.isTaken ? 1 : 0.7}
                       >
-                        {item.isTaken && (
-                          <Ionicons name="checkmark" size={11} color="#FFFFFF" />
-                        )}
-                      </View>
-                      <Text
-                        style={[
-                          styles.checkItemText,
-                          item.isTaken && styles.checkItemTextTaken,
-                        ]}
-                        numberOfLines={1}
-                      >
-                        {formatCleanDrugName(item.medicationName)} • 1 {item.type} •{' '}
-                        {item.mealTiming}
-                      </Text>
-                    </TouchableOpacity>
-                  ))
+                        <View
+                          style={[
+                            styles.checkCircle,
+                            isChecked && !item.isTaken && styles.checkCirclePending,
+                            item.isTaken && styles.checkCircleActive,
+                          ]}
+                        >
+                          {isChecked && (
+                            <Ionicons name="checkmark" size={11} color="#FFFFFF" />
+                          )}
+                        </View>
+                        <Text
+                          style={[
+                            styles.checkItemText,
+                            item.isTaken && styles.checkItemTextTaken,
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {[
+                            formatCleanDrugName(item.medicationName),
+                            `${item.doseCount || 1} ${item.type}`,
+                            item.mealTiming,
+                          ]
+                            .filter(Boolean)
+                            .join(' • ')}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })
                 ) : (
                   <Text style={styles.emptyListText}>ไม่มีรายการยา</Text>
                 )}
@@ -403,52 +428,67 @@ export default function HomeScreen() {
                       <View key={item.id} style={styles.expandedItemCard}>
                         {/* Top row: Image, Name/Details, Status Badge */}
                         <View style={styles.expandedCardTopRow}>
-                          <View style={styles.medIconBox}>
-                            {itemImage ? (
+                          {itemImage ? (
+                            <TouchableOpacity
+                              style={styles.medIconBox}
+                              onPress={() =>
+                                setPreviewMedImage({
+                                  uri: itemImage,
+                                  name: formatCleanDrugName(item.medicationName),
+                                })
+                              }
+                              activeOpacity={0.75}
+                            >
                               <Image
                                 source={{ uri: itemImage }}
                                 style={styles.medThumbImage}
                                 resizeMode="cover"
                               />
-                            ) : (
-                              <PillIcon
-                                type={item.type || 'เม็ด'}
-                                size={20}
-                                containerSize={42}
-                              />
-                            )}
-                          </View>
+                            </TouchableOpacity>
+                          ) : null}
 
-                          <View style={styles.expandedCardInfo}>
+                          <View style={[styles.expandedCardInfo, !itemImage && { marginLeft: 0 }]}>
                             <Text style={styles.expandedMedName} numberOfLines={1}>
                               {formatCleanDrugName(item.medicationName)}
                             </Text>
                             <Text style={styles.expandedMedMeta} numberOfLines={1}>
-                              {item.dosage}{item.unit} • 1 {item.type} • {item.mealTiming}
+                              {[
+                                `${item.dosage}${item.unit}`,
+                                `${item.doseCount || 1} ${item.type}`,
+                                item.mealTiming,
+                              ]
+                                .filter(Boolean)
+                                .join(' • ')}
                             </Text>
                           </View>
 
-                          <TouchableOpacity
+                          <View
                             style={[
                               styles.statusBadge,
                               item.isTaken
                                 ? styles.statusBadgeTaken
-                                : styles.statusBadgePending,
+                                : item.isChecked
+                                ? styles.statusBadgePending
+                                : styles.statusBadgeUntaken,
                             ]}
-                            onPress={() => markTaken(item.id, !item.isTaken)}
-                            activeOpacity={0.7}
                           >
                             <Text
                               style={[
                                 styles.statusBadgeText,
                                 item.isTaken
                                   ? styles.statusBadgeTextTaken
-                                  : styles.statusBadgeTextPending,
+                                  : item.isChecked
+                                  ? styles.statusBadgeTextPending
+                                  : styles.statusBadgeTextUntaken,
                               ]}
                             >
-                              {item.isTaken ? 'ยืนยันแล้ว' : 'รอยืนยัน'}
+                              {item.isTaken
+                                ? 'กินยาแล้ว'
+                                : item.isChecked
+                                ? 'รอยืนยัน'
+                                : 'ยังไม่ได้กินยา'}
                             </Text>
-                          </TouchableOpacity>
+                          </View>
                         </View>
 
                         {/* Food Avoidance details for this item */}
@@ -541,6 +581,47 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      {/* Enlarged Medication Photo Popup Modal */}
+      <Modal
+        visible={Boolean(previewMedImage)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPreviewMedImage(null)}
+      >
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={() => setPreviewMedImage(null)}
+        >
+          <Pressable
+            style={styles.imagePreviewModalContainer}
+            onPress={e => e.stopPropagation()}
+          >
+            <View style={styles.imagePreviewHeader}>
+              <Text style={[styles.modalTitle, { flex: 1, marginRight: 10 }]} numberOfLines={2}>
+                {previewMedImage?.name || 'รูปภาพยา'}
+              </Text>
+              <TouchableOpacity
+                onPress={() => setPreviewMedImage(null)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                style={styles.imagePreviewCloseBtn}
+              >
+                <Feather name="x" size={20} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            {previewMedImage?.uri ? (
+              <View style={styles.imagePreviewFrame}>
+                <Image
+                  source={{ uri: previewMedImage.uri }}
+                  style={styles.imagePreviewLarge}
+                  resizeMode="contain"
+                />
+              </View>
+            ) : null}
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -798,6 +879,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#FFFFFF',
   },
+  checkCirclePending: {
+    backgroundColor: '#8B95F6',
+    borderColor: '#8B95F6',
+  },
   checkCircleActive: {
     backgroundColor: '#10B981',
     borderColor: '#10B981',
@@ -907,6 +992,10 @@ const styles = StyleSheet.create({
     borderColor: '#FDE047',
     backgroundColor: '#FEFCE8',
   },
+  statusBadgeUntaken: {
+    borderColor: '#E2E8F0',
+    backgroundColor: '#F1F5F9',
+  },
   statusBadgeText: {
     fontSize: 10.5,
     fontWeight: '700',
@@ -916,6 +1005,9 @@ const styles = StyleSheet.create({
   },
   statusBadgeTextPending: {
     color: '#CA8A04',
+  },
+  statusBadgeTextUntaken: {
+    color: '#64748B',
   },
   expandedAvoidSection: {
     marginTop: 8,
@@ -947,5 +1039,59 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: '#DC2626',
     lineHeight: 28,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  imagePreviewModalContainer: {
+    width: '100%',
+    maxWidth: 380,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 22,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  imagePreviewHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  imagePreviewCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  imagePreviewFrame: {
+    width: '100%',
+    height: 280,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 10,
+    overflow: 'hidden',
+  },
+  imagePreviewLarge: {
+    width: '100%',
+    height: '100%',
   },
 });
