@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -19,6 +19,9 @@ import {
   formatCleanDrugName,
   formatCleanFoodName,
   formatConciseText,
+  formatShortFoodReason,
+  formatHoursNote,
+  formatFoodAvoidanceHeader,
   resolveMedicationImageUri,
 } from '@/services/interactionMatcher';
 
@@ -95,6 +98,14 @@ export default function HomeScreen() {
   const progressPercent = totalCount > 0 ? Math.round((takenCount / totalCount) * 100) : 0;
   const remainingCount = Math.max(0, totalCount - takenCount);
 
+  // Meal time ranges and description
+  const MEAL_TIME_RANGES: Record<string, { range: string; defaultTime: string }> = {
+    'มื้อเช้า': { range: '05:00 - 10:59 น.', defaultTime: '08:00 น.' },
+    'มื้อกลางวัน': { range: '11:00 - 14:59 น.', defaultTime: '12:00 น.' },
+    'มื้อเย็น': { range: '15:00 - 19:59 น.', defaultTime: '18:00 น.' },
+    'ก่อนนอน': { range: '20:00 - 04:59 น.', defaultTime: '21:00 น.' },
+  };
+
   // Helper to map time/timing to standard Thai meal categories
   const getMealCategory = (timeStr?: string, mealTiming?: string): string => {
     if (mealTiming === 'ก่อนนอน') return 'ก่อนนอน';
@@ -119,56 +130,101 @@ export default function HomeScreen() {
   };
 
   // Helper to find food avoidances for a medicine
-  const getMedAvoidance = (medName: string) => {
-    return interactions.find(
+  const getMedAvoidances = (medName: string) => {
+    const list = interactions.filter(
       i =>
         (i.interactionType === 'หลีกเลี่ยง' || i.interactionType?.includes('หลีกเลี่ยง')) &&
         isMedicationMatch(medName, i.medicationName)
     );
+    const seen = new Set<string>();
+    return list.filter(item => {
+      const clean = formatCleanFoodName(item.foodName).toLowerCase();
+      if (seen.has(clean)) return false;
+      seen.add(clean);
+      return true;
+    });
   };
 
-  // Next pending medication
-  const nextPending = todaySchedule.find(s => !s.isTaken && !s.isSkipped);
-  const nextMed = nextPending || todaySchedule[0] || null;
-  const nextMealName = nextPending
-    ? getMealCategory(nextPending.time, nextPending.mealTiming)
+  // Next pending medication items (prioritizes upcoming meals >= current time, not past times)
+  const now = new Date();
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+  const pendingItemsToday = todaySchedule.filter(s => !s.isTaken && !s.isSkipped);
+  const upcomingPending = pendingItemsToday.find(s => {
+    const match = s.time.match(/(\d+):(\d+)/);
+    if (!match) return true;
+    const itemMinutes = parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
+    return itemMinutes >= currentMinutes - 60;
+  });
+  const firstPending = upcomingPending || pendingItemsToday[0] || null;
+  const nextMealName = firstPending
+    ? getMealCategory(firstPending.time, firstPending.mealTiming)
     : todaySchedule.length > 0
     ? 'ทานครบแล้ว'
     : 'ยังไม่มีมื้อยา';
 
-  const nextMedWarning = nextMed ? getMedAvoidance(nextMed.medicationName) : null;
-  const nextMedImage = nextMed ? getMedImage(nextMed.medicationName, nextMed.medicationId) : null;
+  // All medication items belonging to this upcoming meal
+  const nextMealItems = firstPending
+    ? todaySchedule.filter(
+        s => getMealCategory(s.time, s.mealTiming) === nextMealName
+      )
+    : [];
 
-  // Pagination for Right Box: "ยาที่ต้องรับประทานวันนี้"
-  const PAGE_SIZE = 3;
-  const totalPages = Math.max(1, Math.ceil(todaySchedule.length / PAGE_SIZE));
+  // Grouped schedule by Meal (1 page = 1 meal in Checklist)
+  const MEAL_ORDER = ['มื้อเช้า', 'มื้อกลางวัน', 'มื้อเย็น', 'ก่อนนอน'];
+  const mealsGrouped = useMemo(() => {
+    return MEAL_ORDER.map(mealName => ({
+      name: mealName,
+      items: todaySchedule.filter(s => getMealCategory(s.time, s.mealTiming) === mealName),
+    })).filter(g => g.items.length > 0);
+  }, [todaySchedule]);
+
+  const checklistMeals = useMemo(() => {
+    return mealsGrouped.length > 0
+      ? mealsGrouped
+      : MEAL_ORDER.map(mealName => ({
+          name: mealName,
+          items: [],
+        }));
+  }, [mealsGrouped]);
+
+  const totalPages = Math.max(1, checklistMeals.length);
   const safeCurrentPage = Math.min(currentPage, totalPages - 1);
-  const pageItems = todaySchedule.slice(
-    safeCurrentPage * PAGE_SIZE,
-    (safeCurrentPage + 1) * PAGE_SIZE
-  );
+  const currentMeal = checklistMeals[safeCurrentPage] || checklistMeals[0];
+  const pageItems = currentMeal ? currentMeal.items : [];
+
+  // Auto-sync initial page to next upcoming meal (if user hasn't manually paged)
+  const [hasUserPagedMeal, setHasUserPagedMeal] = useState<boolean>(false);
+  useEffect(() => {
+    if (!hasUserPagedMeal && checklistMeals.length > 0 && nextMealName) {
+      const idx = checklistMeals.findIndex(m => m.name === nextMealName);
+      if (idx >= 0) {
+        setCurrentPage(idx);
+      }
+    }
+  }, [nextMealName, checklistMeals, hasUserPagedMeal]);
 
   const handlePrevPage = () => {
+    setHasUserPagedMeal(true);
     setCurrentPage(p => Math.max(0, p - 1));
   };
 
   const handleNextPage = () => {
+    setHasUserPagedMeal(true);
     setCurrentPage(p => Math.min(totalPages - 1, p + 1));
   };
 
   const handleConfirmCurrentPage = async () => {
-    const pendingChecked = todaySchedule.filter(i => i.isChecked && !i.isTaken);
+    if (!currentMeal || currentMeal.items.length === 0) return;
+    const pendingChecked = currentMeal.items.filter(i => i.isChecked && !i.isTaken);
     if (pendingChecked.length > 0) {
       await confirmCheckedIntake(pendingChecked.map(i => i.id));
+    } else {
+      const untaken = currentMeal.items.filter(i => !i.isTaken);
+      if (untaken.length > 0) {
+        await confirmCheckedIntake(untaken.map(i => i.id));
+      }
     }
   };
-
-  // Grouped schedule for Expanded View
-  const MEAL_ORDER = ['มื้อเช้า', 'มื้อกลางวัน', 'มื้อเย็น', 'ก่อนนอน'];
-  const mealsGrouped = MEAL_ORDER.map(mealName => ({
-    name: mealName,
-    items: todaySchedule.filter(s => getMealCategory(s.time, s.mealTiming) === mealName),
-  })).filter(g => g.items.length > 0);
 
   const unreadNotifCount = notifications.filter(
     n => !n.isRead && n.type !== 'med_taken'
@@ -246,69 +302,101 @@ export default function HomeScreen() {
               <Text style={styles.nextMealTag}>มื้อถัดไป</Text>
               <Text style={styles.nextMealTitle}>{nextMealName}</Text>
 
-              {nextMed ? (
-                <>
-                  {/* Medicine Row */}
-                  <View style={styles.nextMedRow}>
-                    {nextMedImage ? (
-                      <TouchableOpacity
-                        style={styles.medIconBox}
-                        onPress={() =>
-                          setPreviewMedImage({
-                            uri: nextMedImage,
-                            name: formatCleanDrugName(nextMed.medicationName),
-                          })
-                        }
-                        activeOpacity={0.75}
-                      >
-                        <Image
-                          source={{ uri: nextMedImage }}
-                          style={styles.medThumbImage}
-                          resizeMode="cover"
-                        />
-                      </TouchableOpacity>
-                    ) : null}
-                    <View style={[styles.nextMedInfo, !nextMedImage && { marginLeft: 0 }]}>
-                      <Text style={styles.nextMedName} numberOfLines={1}>
-                        {formatCleanDrugName(nextMed.medicationName)}
-                      </Text>
-                      <Text style={styles.nextMedMeta} numberOfLines={1}>
-                        {[
-                          `${nextMed.dosage}${nextMed.unit}`,
-                          `${nextMed.doseCount || 1} ${nextMed.type}`,
-                          nextMed.mealTiming,
-                        ]
-                          .filter(Boolean)
-                          .join(' • ')}
-                      </Text>
-                    </View>
-                  </View>
+              {nextMealItems.length > 0 ? (
+                /* Medicine Rows: Display ALL medications in this meal completely */
+                <View style={styles.nextMealList}>
+                  {nextMealItems.map(item => {
+                    const itemImage = getMedImage(item.medicationName, item.medicationId);
+                    const itemAvoidances = getMedAvoidances(item.medicationName);
 
-                  {/* Food Avoidance Tag & Bullet Points */}
-                  {nextMedWarning && (
-                    <View style={styles.avoidanceSection}>
-                      <View style={styles.avoidBadge}>
-                        <Text style={styles.avoidBadgeText}>อาหารที่ควรเลี่ยง</Text>
+                    return (
+                      <View key={item.id} style={styles.nextMedItemWrapper}>
+                        {/* Medicine Row */}
+                        <View
+                          style={[styles.nextMedRow, item.isTaken && styles.nextMedRowTaken]}
+                        >
+                          {itemImage ? (
+                            <TouchableOpacity
+                              style={styles.medIconBox}
+                              onPress={() =>
+                                setPreviewMedImage({
+                                  uri: itemImage,
+                                  name: formatCleanDrugName(item.medicationName),
+                                })
+                              }
+                              activeOpacity={0.75}
+                            >
+                              <Image
+                                source={{ uri: itemImage }}
+                                style={styles.medThumbImage}
+                                resizeMode="cover"
+                              />
+                            </TouchableOpacity>
+                          ) : (
+                            <View style={styles.medIconBox}>
+                              <MaterialCommunityIcons name="pill" size={20} color="#8B95F6" />
+                            </View>
+                          )}
+                          <View style={styles.nextMedInfo}>
+                            <View style={styles.nextMedHeaderLine}>
+                              <Text style={styles.nextMedName} numberOfLines={2}>
+                                {formatCleanDrugName(item.medicationName)}
+                              </Text>
+                              {item.isTaken ? (
+                                <View style={styles.takenInlineBadge}>
+                                  <Ionicons name="checkmark-circle" size={11} color="#16A34A" />
+                                  <Text style={styles.takenInlineText}>ทานแล้ว</Text>
+                                </View>
+                              ) : null}
+                            </View>
+                            <Text style={styles.nextMedMeta} numberOfLines={1}>
+                              {[
+                                `${item.doseCount || 1} ${item.type}`,
+                                item.mealTiming,
+                              ]
+                                .filter(Boolean)
+                                .join(' • ')}
+                            </Text>
+                          </View>
+                        </View>
+
+                        {/* Food Avoidance directly under this medicine (matching design in image) */}
+                        {itemAvoidances.length > 0 && (
+                          <View style={styles.avoidanceSection}>
+                            <View style={styles.avoidBadge}>
+                              <Ionicons name="restaurant-outline" size={11} color="#EF4444" style={{ marginRight: 4 }} />
+                              <Text style={styles.avoidBadgeText}>อาหารที่ควรเลี่ยง</Text>
+                            </View>
+                            {itemAvoidances.map((avoid, aIdx) => {
+                              const headerText = formatFoodAvoidanceHeader(avoid.foodName, avoid.hoursNote);
+                              const reasonText = formatShortFoodReason(avoid.impactDetails);
+
+                              return (
+                                <View key={aIdx} style={styles.avoidItemBlock}>
+                                  <View style={styles.avoidBulletRow}>
+                                    <Text style={styles.avoidBulletDot}>•</Text>
+                                    <Text style={styles.avoidBulletText}>{headerText}</Text>
+                                  </View>
+                                  {reasonText ? (
+                                    <View style={styles.avoidBulletRow}>
+                                      <Text style={styles.avoidBulletDot}>•</Text>
+                                      <Text style={styles.avoidBulletText}>{reasonText}</Text>
+                                    </View>
+                                  ) : null}
+                                </View>
+                              );
+                            })}
+                          </View>
+                        )}
                       </View>
-                      <Text style={styles.avoidBulletText} numberOfLines={1}>
-                        • {formatCleanFoodName(nextMedWarning.foodName)}
-                      </Text>
-                      {nextMedWarning.hoursNote ? (
-                        <Text style={styles.avoidBulletText} numberOfLines={1}>
-                          • {nextMedWarning.hoursNote}
-                        </Text>
-                      ) : null}
-                      {nextMedWarning.impactDetails ? (
-                        <Text style={styles.avoidBulletText} numberOfLines={1}>
-                          • {formatConciseText(nextMedWarning.impactDetails, 35)}
-                        </Text>
-                      ) : null}
-                    </View>
-                  )}
-                </>
+                    );
+                  })}
+                </View>
               ) : (
                 <View style={styles.emptyNextMedBox}>
-                  <Text style={styles.emptyNextMedText}>ยังไม่มีรายการยาในมื้อนี้</Text>
+                  <Text style={styles.emptyNextMedText}>
+                    {todaySchedule.length > 0 ? 'ทานครบทุกมื้อแล้ว' : 'ยังไม่มีรายการยาในมื้อนี้'}
+                  </Text>
                 </View>
               )}
             </View>
@@ -316,7 +404,14 @@ export default function HomeScreen() {
             {/* Right Column: White Card Box (Checklist & Confirmation) */}
             <View style={styles.reminderRightBox}>
               <View style={styles.rightBoxHeaderRow}>
-                <Text style={styles.rightBoxTitle}>Checklist</Text>
+                <Text
+                  style={styles.rightBoxTitle}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.8}
+                >
+                  Checklist ({currentMeal?.name || 'มื้อยา'})
+                </Text>
                 <View style={styles.paginationRow}>
                   <TouchableOpacity
                     onPress={handlePrevPage}
@@ -372,34 +467,27 @@ export default function HomeScreen() {
                         <View
                           style={[
                             styles.checkCircle,
-                            isChecked && !item.isTaken && styles.checkCirclePending,
-                            item.isTaken && styles.checkCircleActive,
+                            isChecked && styles.checkCircleActive,
                           ]}
                         >
                           {isChecked && (
-                            <Ionicons name="checkmark" size={11} color="#FFFFFF" />
+                            <Ionicons name="checkmark" size={10} color="#FFFFFF" />
                           )}
                         </View>
                         <Text
                           style={[
-                            styles.checkItemText,
+                            styles.checkItemName,
                             item.isTaken && styles.checkItemTextTaken,
                           ]}
                           numberOfLines={1}
                         >
-                          {[
-                            formatCleanDrugName(item.medicationName),
-                            `${item.doseCount || 1} ${item.type}`,
-                            item.mealTiming,
-                          ]
-                            .filter(Boolean)
-                            .join(' • ')}
+                          {formatCleanDrugName(item.medicationName)}
                         </Text>
                       </TouchableOpacity>
                     );
                   })
                 ) : (
-                  <Text style={styles.emptyListText}>ไม่มีรายการยา</Text>
+                  <Text style={styles.emptyListText}>ไม่มีรายการยาในมื้อนี้</Text>
                 )}
               </View>
 
@@ -409,7 +497,7 @@ export default function HomeScreen() {
                 onPress={handleConfirmCurrentPage}
                 activeOpacity={0.8}
               >
-                <Text style={styles.confirmButtonText}>กดเพื่อยืนยันการรับประทาน</Text>
+                <Text style={styles.confirmButtonText}>ยืนยันการรับประทานยา</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -419,9 +507,16 @@ export default function HomeScreen() {
             <View style={styles.expandedContainer}>
               {mealsGrouped.map(meal => (
                 <View key={meal.name} style={styles.mealGroupSection}>
-                  <Text style={styles.mealGroupTitle}>{meal.name}</Text>
+                  <View style={styles.mealGroupTitleRow}>
+                    <Text style={styles.mealGroupTitle}>{meal.name}</Text>
+                    {MEAL_TIME_RANGES[meal.name] ? (
+                      <Text style={styles.mealGroupRangeText}>
+                        ({MEAL_TIME_RANGES[meal.name].range})
+                      </Text>
+                    ) : null}
+                  </View>
                   {meal.items.map(item => {
-                    const itemWarning = getMedAvoidance(item.medicationName);
+                    const itemAvoidances = getMedAvoidances(item.medicationName);
                     const itemImage = getMedImage(item.medicationName, item.medicationId);
 
                     return (
@@ -445,7 +540,11 @@ export default function HomeScreen() {
                                 resizeMode="cover"
                               />
                             </TouchableOpacity>
-                          ) : null}
+                          ) : (
+                            <View style={styles.medIconBox}>
+                              <MaterialCommunityIcons name="pill" size={20} color="#8B95F6" />
+                            </View>
+                          )}
 
                           <View style={[styles.expandedCardInfo, !itemImage && { marginLeft: 0 }]}>
                             <Text style={styles.expandedMedName} numberOfLines={1}>
@@ -453,7 +552,6 @@ export default function HomeScreen() {
                             </Text>
                             <Text style={styles.expandedMedMeta} numberOfLines={1}>
                               {[
-                                `${item.dosage}${item.unit}`,
                                 `${item.doseCount || 1} ${item.type}`,
                                 item.mealTiming,
                               ]
@@ -467,9 +565,7 @@ export default function HomeScreen() {
                               styles.statusBadge,
                               item.isTaken
                                 ? styles.statusBadgeTaken
-                                : item.isChecked
-                                ? styles.statusBadgePending
-                                : styles.statusBadgeUntaken,
+                                : styles.statusBadgePending,
                             ]}
                           >
                             <Text
@@ -477,39 +573,40 @@ export default function HomeScreen() {
                                 styles.statusBadgeText,
                                 item.isTaken
                                   ? styles.statusBadgeTextTaken
-                                  : item.isChecked
-                                  ? styles.statusBadgeTextPending
-                                  : styles.statusBadgeTextUntaken,
+                                  : styles.statusBadgeTextPending,
                               ]}
                             >
-                              {item.isTaken
-                                ? 'กินยาแล้ว'
-                                : item.isChecked
-                                ? 'รอยืนยัน'
-                                : 'ยังไม่ได้กินยา'}
+                              {item.isTaken ? 'ยืนยันแล้ว' : 'รอยืนยัน'}
                             </Text>
                           </View>
                         </View>
 
                         {/* Food Avoidance details for this item */}
-                        {itemWarning && (
+                        {itemAvoidances.length > 0 && (
                           <View style={styles.expandedAvoidSection}>
                             <View style={styles.avoidBadge}>
+                              <Ionicons name="restaurant-outline" size={11} color="#EF4444" style={{ marginRight: 4 }} />
                               <Text style={styles.avoidBadgeText}>อาหารที่ควรเลี่ยง</Text>
                             </View>
-                            <Text style={styles.avoidBulletText} numberOfLines={1}>
-                              • {formatCleanFoodName(itemWarning.foodName)}
-                            </Text>
-                            {itemWarning.hoursNote ? (
-                              <Text style={styles.avoidBulletText} numberOfLines={1}>
-                                • {itemWarning.hoursNote}
-                              </Text>
-                            ) : null}
-                            {itemWarning.impactDetails ? (
-                              <Text style={styles.avoidBulletText} numberOfLines={1}>
-                                • {formatConciseText(itemWarning.impactDetails, 40)}
-                              </Text>
-                            ) : null}
+                            {itemAvoidances.map((avoid, aIdx) => {
+                              const headerText = formatFoodAvoidanceHeader(avoid.foodName, avoid.hoursNote);
+                              const reasonText = formatShortFoodReason(avoid.impactDetails);
+
+                              return (
+                                <View key={aIdx} style={styles.avoidItemBlock}>
+                                  <View style={styles.avoidBulletRow}>
+                                    <Text style={styles.avoidBulletDot}>•</Text>
+                                    <Text style={styles.avoidBulletText}>{headerText}</Text>
+                                  </View>
+                                  {reasonText ? (
+                                    <View style={styles.avoidBulletRow}>
+                                      <Text style={styles.avoidBulletDot}>•</Text>
+                                      <Text style={styles.avoidBulletText}>{reasonText}</Text>
+                                    </View>
+                                  ) : null}
+                                </View>
+                              );
+                            })}
                           </View>
                         )}
                       </View>
@@ -527,7 +624,7 @@ export default function HomeScreen() {
             activeOpacity={0.7}
           >
             <Text style={styles.pillToggleText}>
-              {isExpandedAllMeals ? 'ซ่อนรายการทั้งหมด' : 'รายการรับประทานยาทั้งหมด'}
+              {isExpandedAllMeals ? 'ปิดรายการทั้งหมด' : 'รายการรับประทานยาทั้งหมด'}
             </Text>
             <Feather
               name={isExpandedAllMeals ? 'chevron-up' : 'chevron-down'}
@@ -743,14 +840,33 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   reminderLeftCol: {
-    flex: 1.05,
-    paddingRight: 10,
+    flex: 1.08,
+    paddingRight: 8,
+  },
+  nextMealHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 2,
   },
   nextMealTag: {
     fontSize: 12,
     fontWeight: '700',
     color: '#8B95F6',
-    marginBottom: 2,
+    marginBottom: 1,
+  },
+  nextMealTimeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EEF0FF',
+    paddingHorizontal: 8,
+    paddingVertical: 2.5,
+    borderRadius: 8,
+  },
+  nextMealTimeText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#4338CA',
   },
   nextMealTitle: {
     fontSize: 22,
@@ -758,59 +874,116 @@ const styles = StyleSheet.create({
     color: '#1E1B4B',
     marginBottom: 10,
   },
+  nextMealTimeRangeText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#475569',
+    marginBottom: 12,
+  },
+  nextMealList: {
+    marginBottom: 4,
+  },
   nextMedRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 4,
+  },
+  nextMedRowTaken: {
+    opacity: 0.55,
   },
   medIconBox: {
-    width: 42,
-    height: 42,
-    borderRadius: 12,
+    width: 40,
+    height: 40,
+    borderRadius: 10,
     backgroundColor: '#EEF0FF',
     overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
   },
   medThumbImage: {
-    width: 42,
-    height: 42,
-    borderRadius: 12,
+    width: 40,
+    height: 40,
+    borderRadius: 10,
   },
   nextMedInfo: {
     marginLeft: 8,
     flex: 1,
   },
+  nextMedHeaderLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   nextMedName: {
-    fontSize: 14,
-    fontWeight: '800',
+    fontSize: 13.5,
+    fontWeight: '700',
     color: '#1E293B',
+    flex: 1,
+  },
+  takenInlineBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 5,
+    paddingVertical: 1.5,
+    borderRadius: 5,
+    marginLeft: 4,
+  },
+  takenInlineText: {
+    fontSize: 9.5,
+    fontWeight: '700',
+    color: '#15803D',
+    marginLeft: 2,
   },
   nextMedMeta: {
     fontSize: 11,
     color: '#64748B',
-    marginTop: 2,
+    marginTop: 1,
+    lineHeight: 15,
+  },
+  nextMedItemWrapper: {
+    marginBottom: 10,
   },
   avoidanceSection: {
-    marginTop: 4,
+    marginTop: 3,
+    marginBottom: 2,
   },
   avoidBadge: {
     backgroundColor: '#FEE2E2',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 10,
+    paddingHorizontal: 7,
+    paddingVertical: 2.5,
+    borderRadius: 8,
     alignSelf: 'flex-start',
-    marginBottom: 4,
+    marginBottom: 3,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   avoidBadgeText: {
     fontSize: 10,
     fontWeight: '700',
     color: '#EF4444',
   },
+  avoidItemBlock: {
+    marginBottom: 0,
+  },
+  avoidBulletRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 2.5,
+  },
+  avoidBulletDot: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#334155',
+    lineHeight: 16,
+    marginRight: 5,
+  },
   avoidBulletText: {
-    fontSize: 10,
-    color: '#475569',
-    lineHeight: 15,
+    flex: 1,
+    fontSize: 10.5,
+    fontWeight: '500',
+    color: '#334155',
+    lineHeight: 16,
   },
   emptyNextMedBox: {
     paddingVertical: 12,
@@ -823,10 +996,11 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#FFFFFF',
     borderRadius: 14,
-    padding: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 9,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.04,
     shadowRadius: 4,
     elevation: 2,
   },
@@ -834,13 +1008,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   rightBoxTitle: {
-    fontSize: 10.5,
-    fontWeight: '800',
+    fontSize: 10,
+    fontWeight: '700',
     color: '#1E293B',
     flex: 1,
+    marginRight: 2,
   },
   paginationRow: {
     flexDirection: 'row',
@@ -867,7 +1042,7 @@ const styles = StyleSheet.create({
   checkItemRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 3.5,
+    paddingVertical: 4.5,
   },
   checkCircle: {
     width: 15,
@@ -878,21 +1053,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#FFFFFF',
+    marginRight: 6,
   },
   checkCirclePending: {
-    backgroundColor: '#8B95F6',
-    borderColor: '#8B95F6',
+    backgroundColor: '#10B981',
+    borderColor: '#10B981',
   },
   checkCircleActive: {
     backgroundColor: '#10B981',
     borderColor: '#10B981',
   },
-  checkItemText: {
-    marginLeft: 6,
-    fontSize: 9.5,
-    color: '#334155',
-    fontWeight: '500',
+  checkItemTextCol: {
+    marginLeft: 8,
     flex: 1,
+  },
+  checkItemName: {
+    fontSize: 11.5,
+    fontWeight: '600',
+    color: '#1E293B',
+    flex: 1,
+  },
+  checkItemMeta: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 1,
   },
   checkItemTextTaken: {
     color: '#94A3B8',
@@ -905,11 +1089,11 @@ const styles = StyleSheet.create({
     marginVertical: 10,
   },
   confirmButton: {
-    backgroundColor: '#8B95F6',
+    backgroundColor: '#6366F1',
     borderRadius: 8,
     paddingVertical: 7,
     alignItems: 'center',
-    marginTop: 8,
+    marginTop: 7,
   },
   confirmButtonText: {
     fontSize: 10.5,
@@ -943,11 +1127,21 @@ const styles = StyleSheet.create({
   mealGroupSection: {
     marginBottom: 10,
   },
+  mealGroupTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    marginBottom: 8,
+    gap: 8,
+  },
   mealGroupTitle: {
     fontSize: 15,
     fontWeight: '800',
     color: '#1E1B4B',
-    marginBottom: 8,
+  },
+  mealGroupRangeText: {
+    fontSize: 12,
+    color: '#64748B',
+    fontWeight: '500',
   },
   expandedItemCard: {
     backgroundColor: '#FFFFFF',

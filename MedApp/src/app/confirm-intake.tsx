@@ -14,7 +14,7 @@ import { Ionicons, MaterialCommunityIcons, Feather } from '@expo/vector-icons';
 import { AppHeader } from '@/components/ui/AppHeader';
 import { PillIcon } from '@/components/ui/PillIcon';
 import { useApp } from '@/context/AppContext';
-import { isMedicationMatch, formatCleanDrugName, formatCleanFoodName, formatConciseText } from '@/services/interactionMatcher';
+import { isMedicationMatch, formatCleanDrugName, formatCleanFoodName, formatConciseText, formatShortFoodReason, formatHoursNote } from '@/services/interactionMatcher';
 
 export default function ConfirmIntakeScreen() {
   const router = useRouter();
@@ -147,17 +147,17 @@ export default function ConfirmIntakeScreen() {
               <Ionicons name="warning" size={16} color="#DC2626" style={styles.cautionIcon} />
               <Text style={styles.cautionTitle}>ข้อควรระวังด้านอาหาร</Text>
             </View>
-            <Text style={styles.avoidLabel} numberOfLines={1}>หลีกเลี่ยง: {formatCleanFoodName(foodWarning.foodName)}</Text>
+            <Text style={styles.avoidLabel}>หลีกเลี่ยง: {formatCleanFoodName(foodWarning.foodName)}</Text>
             {foodWarning.impactDetails ? (
-              <Text style={styles.avoidItem} numberOfLines={2}>
-                • {formatConciseText(foodWarning.impactDetails, 80)}
+              <Text style={styles.avoidItem}>
+                • {formatShortFoodReason(foodWarning.impactDetails)}
               </Text>
             ) : null}
 
             {foodWarning.hoursNote ? (
               <View style={styles.hoursBox}>
                 <Ionicons name="time-outline" size={15} color="#DC2626" style={{ marginRight: 6 }} />
-                <Text style={styles.hoursText} numberOfLines={1}>{foodWarning.hoursNote}</Text>
+                <Text style={styles.hoursText}>{formatHoursNote(foodWarning.hoursNote)}</Text>
               </View>
             ) : null}
           </View>

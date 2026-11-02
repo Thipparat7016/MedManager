@@ -17,6 +17,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppHeader } from '@/components/ui/AppHeader';
 import { CalendarModal } from '@/components/ui/CalendarModal';
 import { useApp } from '@/context/AppContext';
+import { formatHospitalName, formatDepartmentName } from '@/services/medService';
 
 interface FavoriteDoctor {
   id: string;
@@ -203,7 +204,8 @@ export default function AddAppointmentScreen() {
 
   // แจ้งเตือนชื่อซ้ำเฉพาะเมื่อ user กดเพิ่มแพทย์ใหม่ (หรือกรอกชื่อแพทย์ใหม่) ไม่ขึ้นตอนกดเลือกแพทย์ favorite
   const isDuplicateDoctor = useMemo(() => {
-    // ถ้าเลือกแพทย์จาก favorite อยู่ ไม่ใช่การเพิ่มแพทย์ใหม่ ไม่ต้องขึ้นแจ้งเตือนซ้ำ
+    // ถ้ากำลังบันทึก หรือเลือกแพทย์จาก favorite อยู่ ไม่ใช่การเพิ่มแพทย์ใหม่ ไม่ต้องขึ้นแจ้งเตือนซ้ำ
+    if (isSubmitting) return false;
     if (selectedDoctorId && selectedDoctorId !== 'new') return false;
 
     const trimmed = doctorName.trim();
@@ -212,11 +214,15 @@ export default function AddAppointmentScreen() {
     if (!normalized) return false;
 
     // ตรวจสอบกับรายชื่อแพทย์ในระบบ (ทั้งจาก favorite และนัดหมาย)
-    const inFavorites = favoriteDoctors.some(d => normalizeDoctorName(d.name) === normalized);
-    const inAppointments = appointments.some(apt => normalizeDoctorName(apt.doctorName || '') === normalized);
+    const inFavorites = favoriteDoctors.some(
+      d => selectedDoctorId !== d.id && normalizeDoctorName(d.name) === normalized
+    );
+    const inAppointments = appointments.some(
+      apt => normalizeDoctorName(apt.doctorName || '') === normalized
+    );
 
     return inFavorites || inAppointments;
-  }, [doctorName, selectedDoctorId, favoriteDoctors, appointments]);
+  }, [doctorName, selectedDoctorId, favoriteDoctors, appointments, isSubmitting]);
 
   const handleSubmit = async () => {
     if (!doctorName.trim()) {
@@ -253,42 +259,58 @@ export default function AddAppointmentScreen() {
 
     setIsSubmitting(true);
 
-    // Save doctor into favorites if star is active and not already saved
-    if (saveAsFavorite && doctorName.trim()) {
-      const exists = favoriteDoctors.some(
-        d => d.name.trim().toLowerCase() === doctorName.trim().toLowerCase()
-      );
-      if (!exists) {
-        const newDoc: FavoriteDoctor = {
-          id: `fav-${Date.now()}`,
-          name: doctorName.trim(),
-          department: department.trim() || 'ตรวจสุขภาพทั่วไป',
-          hospital: hospital.trim() || 'โรงพยาบาล',
-        };
-        const updated = [...favoriteDoctors, newDoc];
-        setFavoriteDoctors(updated);
-        try {
-          await AsyncStorage.setItem('favorite_doctors', JSON.stringify(updated));
-        } catch (e) {
-          console.warn('Failed to save favorite doctor:', e);
+    try {
+      // Save doctor into favorites if star is active and not already saved
+      if (saveAsFavorite && doctorName.trim()) {
+        const exists = favoriteDoctors.some(
+          d => normalizeDoctorName(d.name) === normalizeDoctorName(doctorName)
+        );
+        if (!exists) {
+          const newDoc: FavoriteDoctor = {
+            id: `fav-${Date.now()}`,
+            name: doctorName.trim(),
+            department: formatDepartmentName(department.trim() || 'ตรวจสุขภาพทั่วไป'),
+            hospital: formatHospitalName(hospital.trim() || 'โรงพยาบาล'),
+          };
+          const updated = [...favoriteDoctors, newDoc];
+          setFavoriteDoctors(updated);
+          await AsyncStorage.setItem('favorite_doctors', JSON.stringify(updated)).catch(e => {
+            console.warn('Failed to save favorite doctor:', e);
+          });
         }
       }
+
+      await addAppointment({
+        doctorName: doctorName.trim(),
+        department: formatDepartmentName(department.trim() || 'ตรวจสุขภาพ'),
+        hospital: formatHospitalName(hospital.trim() || 'โรงพยาบาล'),
+        date: finalDate,
+        time: finalTime,
+        details: details.trim(),
+        status: 'confirmed',
+      });
+
+      // ล้างข้อมูลฟอร์มทันทีที่บันทึกสำเร็จ เพื่อไม่ให้ค้างสถานะหรือขึ้นเตือนแดง
+      setSelectedDoctorId(null);
+      setDoctorName('');
+      setDepartment('');
+      setHospital('');
+      setSaveAsFavorite(false);
+
+      Alert.alert('สำเร็จ', 'บันทึกนัดหมายแพทย์เรียบร้อยแล้ว', [
+        {
+          text: 'ตกลง',
+          onPress: () => {
+            router.replace('/(tabs)/appointments' as any);
+          },
+        },
+      ]);
+    } catch (err) {
+      console.warn('Error saving appointment:', err);
+      Alert.alert('เกิดข้อผิดพลาด', 'ไม่สามารถบันทึกนัดหมายได้ กรุณาลองใหม่อีกครั้ง');
+    } finally {
+      setIsSubmitting(false);
     }
-
-    await addAppointment({
-      doctorName: doctorName.trim(),
-      department: department.trim() || 'ตรวจสุขภาพ',
-      hospital: hospital.trim() || 'โรงพยาบาล',
-      date: finalDate,
-      time: finalTime,
-      details: details.trim(),
-      status: 'confirmed',
-    });
-    setIsSubmitting(false);
-
-    Alert.alert('สำเร็จ', 'บันทึกนัดหมายแพทย์เรียบร้อยแล้ว', [
-      { text: 'ตกลง', onPress: () => router.replace('/(tabs)/appointments' as any) },
-    ]);
   };
 
   return (

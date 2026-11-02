@@ -47,7 +47,7 @@ export const CustomTabBar: React.FC<any> = ({ state, descriptors, navigation }: 
       case 'appointments':
         return {
           label: 'นัดหมาย',
-          renderIcon: (color: string) => <Ionicons name="clipboard-outline" size={22} color={color} />,
+          renderIcon: (color: string) => <Ionicons name="calendar-outline" size={22} color={color} />,
         };
       case 'profile':
         return {

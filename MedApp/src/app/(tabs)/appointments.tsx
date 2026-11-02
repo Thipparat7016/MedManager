@@ -12,6 +12,7 @@ import { Feather, Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '@/context/AppContext';
 import { StatusBadge } from '@/components/ui/StatusBadge';
+import { formatHospitalName, formatDepartmentName } from '@/services/medService';
 
 export default function AppointmentsScreen() {
   const router = useRouter();
@@ -386,7 +387,9 @@ export default function AppointmentsScreen() {
                 <Text style={styles.doctorName}>{apt.doctorName}</Text>
               </View>
 
-              <Text style={styles.doctorDept}>{apt.department} • {apt.hospital}</Text>
+              <Text style={styles.doctorDept}>
+                {[formatDepartmentName(apt.department), formatHospitalName(apt.hospital)].filter(Boolean).join(' • ')}
+              </Text>
               <Text style={styles.aptTimeText}>
                 {apt.date} • {apt.time}
               </Text>
@@ -433,7 +436,7 @@ export default function AppointmentsScreen() {
                   <Text style={styles.pastDoctorName}>{apt.doctorName}</Text>
                   <StatusBadge label="ผ่านแล้ว" variant="passed" size="sm" />
                 </View>
-                <Text style={styles.pastMeta}>{apt.details || apt.department}</Text>
+                <Text style={styles.pastMeta}>{apt.details || formatDepartmentName(apt.department)}</Text>
               </View>
             ))}
           </>

@@ -24,6 +24,7 @@ export interface Medication {
   times?: string[]; // e.g. ["08:00", "14:00", "20:00"]
   mealTiming?: 'ก่อนอาหาร' | 'หลังอาหาร' | 'พร้อมอาหาร' | 'ก่อนนอน';
   timeMealTimings?: Record<string, 'ก่อนอาหาร' | 'หลังอาหาร'>;
+  createdAt?: string;
 }
 
 export interface DrugFoodInteraction {
@@ -90,6 +91,7 @@ export interface AppNotification {
   isActionable?: boolean;
   medicationName?: string;
   dosage?: string;
+  imageUrl?: string;
   isRead?: boolean;
 }
 
@@ -117,6 +119,40 @@ function normalizeMedName(name?: string): string {
     .replace(/[()（）[\]{}.,\/#!$%\^&\*;:{}=\-_`~?+]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+/**
+ * Format hospital name to always be prefixed with "โรงพยาบาล"
+ * e.g., "บางมด" -> "โรงพยาบาลบางมด"
+ * e.g., "รพ.ธนบุรี" -> "โรงพยาบาลธนบุรี"
+ * e.g., "โรงพยาบาลศิริราช" -> "โรงพยาบาลศิริราช"
+ */
+export function formatHospitalName(raw?: string | null): string {
+  if (!raw) return '';
+  const trimmed = raw.trim();
+  if (!trimmed) return '';
+  if (trimmed.startsWith('โรงพยาบาล')) {
+    return trimmed;
+  }
+  if (trimmed.startsWith('รพ.') || trimmed.startsWith('รพ ')) {
+    return `โรงพยาบาล${trimmed.replace(/^รพ\.?\s*/, '')}`;
+  }
+  return `โรงพยาบาล${trimmed}`;
+}
+
+/**
+ * Format department name to always be prefixed with "แผนก"
+ * e.g., "อายุรกรรม" -> "แผนกอายุรกรรม"
+ * e.g., "แผนกทันตกรรม" -> "แผนกทันตกรรม"
+ */
+export function formatDepartmentName(raw?: string | null): string {
+  if (!raw) return '';
+  const trimmed = raw.trim();
+  if (!trimmed) return '';
+  if (trimmed.startsWith('แผนก')) {
+    return trimmed;
+  }
+  return `แผนก${trimmed}`;
 }
 
 export function getLocalDateString(d: Date = new Date()): string {
@@ -160,13 +196,144 @@ export function extractCustomDaysFromMedication(med: Medication): number[] {
   return [];
 }
 
+const THAI_MONTH_NAMES_MAP: Record<string, number> = {
+  'มกราคม': 0, 'ม.ค.': 0, 'ม.ค': 0,
+  'กุมภาพันธ์': 1, 'ก.พ.': 1, 'ก.พ': 1,
+  'มีนาคม': 2, 'มี.ค.': 2, 'มี.ค': 2,
+  'เมษายน': 3, 'เม.ย.': 3, 'เม.ย': 3,
+  'พฤษภาคม': 4, 'พ.ค.': 4, 'พ.ค': 4,
+  'มิถุนายน': 5, 'มิ.ย.': 5, 'มิ.ย': 5,
+  'กรกฎาคม': 6, 'ก.ค.': 6, 'ก.ค': 6,
+  'สิงหาคม': 7, 'ส.ค.': 7, 'ส.ค': 7,
+  'กันยายน': 8, 'ก.ย.': 8, 'ก.ย': 8,
+  'ตุลาคม': 9, 'ต.ค.': 9, 'ต.ค': 9,
+  'พฤศจิกายน': 10, 'พ.ย.': 10, 'พ.ย': 10,
+  'ธันวาคม': 11, 'ธ.ค.': 11, 'ธ.ค': 11,
+};
+
+export function parseFlexibleDate(raw?: string | null): Date | null {
+  if (!raw || typeof raw !== 'string') return null;
+  let str = raw.trim();
+  if (!str) return null;
+
+  // Remove common prefix text
+  str = str.replace(/^(เริ่มต้น|ตั้งแต่วันที่|เริ่ม|วันที่)\s*/, '');
+
+  // 1. ISO or YYYY-MM-DD
+  const isoMatch = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoMatch) {
+    const y = parseInt(isoMatch[1], 10);
+    const m = parseInt(isoMatch[2], 10) - 1;
+    const d = parseInt(isoMatch[3], 10);
+    if (!isNaN(y) && !isNaN(m) && !isNaN(d)) {
+      return new Date(y, m, d);
+    }
+  }
+
+  // 2. Thai text like '2 พฤศจิกายน 2569' or '2 พ.ย. 2569'
+  const thaiMatch = str.match(/^(\d{1,2})\s+([^\s\d]+)\s+(\d{2,4})$/);
+  if (thaiMatch) {
+    const d = parseInt(thaiMatch[1], 10);
+    const mStr = thaiMatch[2];
+    const m = THAI_MONTH_NAMES_MAP[mStr];
+    let y = parseInt(thaiMatch[3], 10);
+    if (y > 2400) y -= 543;
+    else if (y < 100) y = y > 50 ? 2500 + y - 543 : 2000 + y;
+    if (m !== undefined && !isNaN(d) && !isNaN(y)) {
+      return new Date(y, m, d);
+    }
+  }
+
+  // 3. DD/MM/YYYY or DD-MM-YYYY (or BE year)
+  const slashMatch = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+  if (slashMatch) {
+    const d = parseInt(slashMatch[1], 10);
+    const m = parseInt(slashMatch[2], 10) - 1;
+    let y = parseInt(slashMatch[3], 10);
+    if (y > 2400) y -= 543;
+    else if (y < 100) y = y > 50 ? 2500 + y - 543 : 2000 + y;
+    if (!isNaN(d) && !isNaN(m) && !isNaN(y)) {
+      return new Date(y, m, d);
+    }
+  }
+
+  const parsed = new Date(str);
+  if (!isNaN(parsed.getTime())) {
+    return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+  }
+
+  return null;
+}
+
+export function getMedicationStartDate(med: Medication): Date | null {
+  if (med.startDate) {
+    const parsed = parseFlexibleDate(med.startDate);
+    if (parsed) return parsed;
+  }
+  if (med.createdAt) {
+    const parsed = parseFlexibleDate(med.createdAt);
+    if (parsed) return parsed;
+  }
+  if (med.id && med.id.startsWith('med-')) {
+    const ts = parseInt(med.id.replace('med-', ''), 10);
+    if (!isNaN(ts) && ts > 1000000000) {
+      const d = new Date(ts);
+      return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    }
+  }
+  return null;
+}
+
+export function getMedicationEndDate(med: Medication): Date | null {
+  if (med.endDate) {
+    const parsed = parseFlexibleDate(med.endDate);
+    if (parsed) return parsed;
+  }
+  return null;
+}
+
 export function isMedicationScheduledForDate(med: Medication, targetDate: Date): boolean {
   if (med.status !== 'active') return false;
+
+  const targetDateStr = getLocalDateString(targetDate);
+
+  // Check start date boundary: Cannot be scheduled before medication starts
+  const startDate = getMedicationStartDate(med);
+  if (startDate) {
+    const startDateStr = getLocalDateString(startDate);
+    if (targetDateStr < startDateStr) {
+      return false;
+    }
+  }
+
+  // Check end date boundary: Cannot be scheduled after medication ends
+  const endDate = getMedicationEndDate(med);
+  if (endDate) {
+    const endDateStr = getLocalDateString(endDate);
+    if (targetDateStr > endDateStr) {
+      return false;
+    }
+  }
+
   const mode = getMedicationDurationMode(med);
   if (mode === 'กำหนดเอง') {
     const days = extractCustomDaysFromMedication(med);
-    return days.length > 0 ? days.includes(targetDate.getDate()) : false;
+    if (days.length === 0) return false;
+    if (!days.includes(targetDate.getDate())) return false;
+
+    if (med.instructions && med.instructions.includes('ในเดือน')) {
+      for (const [mName, mIdx] of Object.entries(THAI_MONTH_NAMES_MAP)) {
+        if (mName.length > 3 && med.instructions.includes(mName)) {
+          if (targetDate.getMonth() !== mIdx) {
+            return false;
+          }
+          break;
+        }
+      }
+    }
+    return true;
   }
+
   return true;
 }
 
@@ -188,10 +355,10 @@ export function getMedicationStockStatus(med: Medication): {
     };
   }
   const remaining = med.remaining as number;
-  const dosePerTime = Math.max(1, med.frequency || 1);
-  const timesPerDay = med.times && med.times.length > 0 ? med.times.length : 1;
-  // ปริมาณยาที่ต้องรับประทานเผื่อไว้อย่างน้อย 1 วัน
-  const dailyUsage = dosePerTime * timesPerDay;
+  // จำนวนครั้งที่รับประทานต่อวัน (เช่น 4 ครั้ง/วัน หรือตามจำนวนเวลาที่ระบุในตาราง)
+  const timesPerDay = med.times && med.times.length > 0 ? med.times.length : Math.max(1, med.frequency || 1);
+  // ปริมาณยาที่ต้องรับประทานเผื่อไว้อย่างน้อย 1 วัน (ทานครั้งละ 1 เม็ด/แคปซูล)
+  const dailyUsage = timesPerDay;
   const customThreshold =
     med.lowStockThreshold !== undefined &&
     med.lowStockThreshold !== null &&
@@ -613,6 +780,18 @@ export const medService = {
   },
 
   async saveMedication(med: Medication): Promise<Medication> {
+    if (!med.createdAt) {
+      if (med.id && med.id.startsWith('med-')) {
+        const ts = parseInt(med.id.replace('med-', ''), 10);
+        if (!isNaN(ts) && ts > 1000000000) {
+          med.createdAt = new Date(ts).toISOString();
+        } else {
+          med.createdAt = new Date().toISOString();
+        }
+      } else {
+        med.createdAt = new Date().toISOString();
+      }
+    }
     try {
       // Determine effective times if active
       let effectiveTimes = med.times || [];
@@ -689,8 +868,22 @@ export const medService = {
       const shouldScheduleToday = isMedicationScheduledForDate(med, todayDate);
       let newScheduleItems: ScheduleItem[] = [];
       if (shouldScheduleToday && effectiveTimes.length > 0) {
+        const now = new Date();
+        const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+        // If medication was created today, omit times before current time for today (start from now)
+        const timesForToday = effectiveTimes.filter(t => {
+          const normT = t.replace(' น.', '').trim();
+          const [h, m] = normT.split(':').map(v => parseInt(v, 10));
+          const timeMinutes = (isNaN(h) ? 0 : h) * 60 + (isNaN(m) ? 0 : m);
+          const wasTaken = previousEntriesForMed.some(
+            p => (p.originalTime || p.time.replace(' น.', '').trim()) === normT && (p.isTaken || p.isChecked)
+          );
+          return wasTaken || timeMinutes >= currentMinutes;
+        });
+
         const usedPrevIds = new Set<string>();
-        newScheduleItems = effectiveTimes.map((t, idx) => {
+        newScheduleItems = timesForToday.map((t, idx) => {
           const normT = t.replace(' น.', '').trim();
           const formattedTime = `${normT} น.`;
           const matchedPrev = previousEntriesForMed.find(
@@ -708,7 +901,7 @@ export const medService = {
             dosage: med.dosage,
             unit: med.unit,
             type: med.type,
-            doseCount: Math.max(1, med.frequency || 1),
+            doseCount: 1,
             mealTiming: med.timeMealTimings?.[normT] || med.mealTiming || '',
             originalTime: normT,
             time: formattedTime,
@@ -944,6 +1137,33 @@ export const medService = {
       const consumedIndices = new Set<number>();
 
       for (const med of scheduledMeds) {
+        let createdDate: Date | null = null;
+        if (med.createdAt) {
+          createdDate = new Date(med.createdAt);
+        } else if (med.id && med.id.startsWith('med-')) {
+          const ts = parseInt(med.id.replace('med-', ''), 10);
+          if (!isNaN(ts) && ts > 1000000000) {
+            createdDate = new Date(ts);
+          }
+        }
+        if (!createdDate) {
+          createdDate = getMedicationStartDate(med);
+        }
+
+        let isCreationDay = false;
+        let createdMinutes = 0;
+        if (createdDate && !isNaN(createdDate.getTime())) {
+          const createdDateStr = getLocalDateString(createdDate);
+          if (targetDateStr < createdDateStr) {
+            // Target date is before medication was created! Skip!
+            continue;
+          }
+          if (targetDateStr === createdDateStr) {
+            isCreationDay = true;
+            createdMinutes = createdDate.getHours() * 60 + createdDate.getMinutes();
+          }
+        }
+
         const times =
           med.times && med.times.length > 0
             ? med.times
@@ -967,6 +1187,15 @@ export const medService = {
             consumedIndices.add(matchIdx);
           }
 
+          // If medication was created on targetDateStr, omit times that had already passed before creation
+          if (isCreationDay) {
+            const [h, m] = normTime.split(':').map(val => parseInt(val, 10));
+            const timeMinutes = (isNaN(h) ? 0 : h) * 60 + (isNaN(m) ? 0 : m);
+            if (timeMinutes < createdMinutes && !matched?.isTaken && !matched?.isChecked) {
+              return; // Skip past times on creation day
+            }
+          }
+
           reconciled.push({
             id: matched?.id || syntheticId,
             medicationId: med.id,
@@ -974,7 +1203,7 @@ export const medService = {
             dosage: med.dosage,
             unit: med.unit,
             type: med.type,
-            doseCount: Math.max(1, med.frequency || 1),
+            doseCount: 1,
             mealTiming:
               med.timeMealTimings?.[normTime] || med.mealTiming || matched?.mealTiming || '',
             originalTime: normTime,
@@ -1094,7 +1323,7 @@ export const medService = {
           if (medIdx >= 0) {
             const med = updatedMeds[medIdx];
             if (med.remaining !== undefined && med.remaining !== null) {
-              const doseAmount = Math.max(1, med.frequency || confirmedItem.doseCount || 1);
+              const doseAmount = Math.max(1, confirmedItem.doseCount || 1);
               updatedMeds[medIdx] = {
                 ...med,
                 remaining: Math.max(0, med.remaining - doseAmount),
@@ -1213,7 +1442,7 @@ export const medService = {
         if (medIdx >= 0) {
           const med = meds[medIdx];
           if (med.remaining !== undefined && med.remaining !== null) {
-            const doseAmount = Math.max(1, med.frequency || targetItem.doseCount || 1);
+            const doseAmount = Math.max(1, targetItem.doseCount || 1);
             const nextRemaining = isTaken
               ? Math.max(0, med.remaining - doseAmount)
               : med.remaining + doseAmount;

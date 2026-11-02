@@ -66,11 +66,36 @@ export function formatCleanDrugName(rawName?: string | null): string {
  */
 export function formatCleanFoodName(rawFoodName?: string | null): string {
   if (!rawFoodName) return '';
-  const cleaned = rawFoodName
+  let cleaned = rawFoodName
     .replace(/\s*[\(\（\[【][^\)\）\]】]*[\)\）\]】]?\s*/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+
+  // Simplify long repetitive lists to concise readable terms that fit cleanly in 1 line
+  cleaned = cleaned.replace(/อาหารรสจัด,\s*อาหารเผ็ดร้อน,\s*ชา,\s*กาแฟเข้มข้น/g, 'อาหารรสจัด, ชา, กาแฟ');
+  cleaned = cleaned.replace(/อาหารรสจัด,\s*อาหารเผ็ดร้อน/g, 'อาหารรสจัด');
+  cleaned = cleaned.replace(/เครื่องดื่มแอลกอฮอล์\s*และน้ำผลไม้รสเปรี้ยวจัด\/น้ำอัดลม/g, 'แอลกอฮอล์, น้ำรสเปรี้ยว');
+  cleaned = cleaned.replace(/รสเปรี้ยวจัด\/น้ำอัดลม/g, 'น้ำรสเปรี้ยว');
+  cleaned = cleaned.replace(/เครื่องดื่มที่มีคาเฟอีน/g, 'เครื่องดื่มคาเฟอีน');
+  cleaned = cleaned.replace(/นม,\s*โยเกิร์ต,\s*ชีส,\s*ผลิตภัณฑ์จากนม\s*และน้ำผลไม้เสริมแคลเซียม/g, 'นม, ผลิตภัณฑ์จากนม');
+  cleaned = cleaned.replace(/กาแฟเข้มข้น,\s*ชา,\s*น้ำอัดลมโคล่า\s*และเครื่องดื่มชูกำลัง/g, 'ชา, กาแฟ, น้ำอัดลม');
+  cleaned = cleaned.replace(/ชาเข้มข้น,\s*กาแฟ\s*หรือเครื่องดื่มแอลกอฮอล์/g, 'ชา, กาแฟ, แอลกอฮอล์');
+  cleaned = cleaned.replace(/ชาเข้มข้น,\s*กาแฟ,\s*นม\s*และเครื่องดื่มแอลกอฮอล์/g, 'ชา, กาแฟ, นม, แอลกอฮอล์');
+
   return cleaned || rawFoodName.trim();
+}
+
+/**
+ * Format food avoidance into 1 neat line: food name + hours to avoid
+ * e.g., "อาหารรสจัด, ชา, กาแฟ (เว้น 2 ชม.)"
+ */
+export function formatFoodAvoidanceHeader(foodName?: string | null, hoursNote?: string | null): string {
+  const cleanFood = formatCleanFoodName(foodName);
+  if (!hoursNote) return cleanFood;
+  const trimmedHours = hoursNote.trim();
+  const matchHours = trimmedHours.match(/(\d+)\s*(ชม\.|ชั่วโมง)/);
+  const hoursTag = matchHours ? `(เว้น ${matchHours[1]} ชม.)` : `(${trimmedHours})`;
+  return cleanFood ? `${cleanFood} ${hoursTag}` : hoursTag;
 }
 
 /**
@@ -91,6 +116,150 @@ export function formatConciseText(text?: string | null, maxLength: number = 80):
   const trimmed = text.trim().replace(/\s+/g, ' ');
   if (trimmed.length <= maxLength) return trimmed;
   return trimmed.slice(0, maxLength) + '...';
+}
+
+/**
+ * Summarize impact details into a short, complete Thai clinical reason without cutting words.
+ * (สรุปข้อควรระวังให้สั้น กระชับ อ่านง่าย และไม่ตัดคำกลางประโยค)
+ */
+export function formatShortFoodReason(impactDetails?: string | null): string {
+  if (!impactDetails) return '';
+  const text = impactDetails.trim();
+
+  // 1. Liver danger / toxicity
+  if (
+    text.includes('ตับวาย') ||
+    text.includes('พิษต่อตับ') ||
+    text.includes('ตับอักเสบ') ||
+    (text.includes('ตับ') && (text.includes('สารพิษ') || text.includes('ทำลายเซลล์')))
+  ) {
+    return 'เสี่ยงเป็นพิษต่อตับ';
+  }
+
+  // 2. Stomach bleed / gastric ulcer
+  if (text.includes('แผลในกระเพาะ') || text.includes('เลือดออกในทางเดินอาหาร')) {
+    return 'เสี่ยงแผลในกระเพาะ/เลือดออก';
+  }
+
+  // 3. Rhabdomyolysis
+  if (text.includes('กล้ามเนื้อลายสลาย')) {
+    return 'เสี่ยงกล้ามเนื้อลายสลายตัว';
+  }
+
+  // 4. Heart palpitations / high BP / insomnia
+  if (
+    text.includes('ใจสั่น') ||
+    text.includes('ความดันโลหิตสูง') ||
+    text.includes('ความดันพุ่ง') ||
+    text.includes('นอนไม่หลับ')
+  ) {
+    return 'อาจทำให้ใจสั่นหรือความดันสูง';
+  }
+
+  // 5. Hypotension / dizziness / syncope
+  if (
+    text.includes('ความดันโลหิตตก') ||
+    text.includes('ความดันตก') ||
+    text.includes('หน้ามืด') ||
+    text.includes('เป็นลม') ||
+    text.includes('วูบ')
+  ) {
+    return 'อาจทำให้ความดันตกหรือหน้ามืด';
+  }
+
+  // 6. Drowsiness / CNS depression
+  if (text.includes('ง่วงซึม') || text.includes('สูญเสียการทรงตัว') || text.includes('กดประสาท')) {
+    return 'อาจทำให้ง่วงซึมรุนแรงและกดประสาท';
+  }
+
+  // 7. Stomach irritation / acid reflux
+  if (
+    text.includes('ระคายเคืองกระเพาะ') ||
+    text.includes('หลั่งกรด') ||
+    text.includes('แสบท้อง') ||
+    text.includes('กรดในกระเพาะ') ||
+    text.includes('กรดไหลย้อน')
+  ) {
+    return 'อาจระคายเคืองกระเพาะอาหาร';
+  }
+
+  // 8. Hyperkalemia
+  if (text.includes('โพแทสเซียม')) {
+    return 'อาจทำให้โพแทสเซียมในเลือดสูง';
+  }
+
+  // 9. Blood sugar fluctuations
+  if (text.includes('น้ำตาลในเลือด') || text.includes('น้ำตาลต่ำ') || text.includes('น้ำตาลตก')) {
+    return 'อาจส่งผลต่อระดับน้ำตาลในเลือด';
+  }
+
+  // 10. Kidney damage
+  if (text.includes('ไตวาย') || text.includes('ท่อไต') || (text.includes('ไต') && text.includes('พิษ'))) {
+    return 'เสี่ยงอันตรายต่อไต';
+  }
+
+  // 11. Clotting / bleeding
+  if (
+    text.includes('เกล็ดเลือด') ||
+    text.includes('เลือดหยุดไหลยาก') ||
+    text.includes('ต้านการเกาะกลุ่ม') ||
+    text.includes('ต้านการแข็งตัว') ||
+    text.includes('เลือดออกผิดปกติ')
+  ) {
+    return 'เสี่ยงเลือดออกผิดปกติหรือหยุดยาก';
+  }
+
+  // 12. Edema / high sodium
+  if (text.includes('บวมน้ำ') || text.includes('โซเดียม')) {
+    return 'อาจทำให้ความดันสูงหรือบวมน้ำ';
+  }
+
+  // 13. Bloating / gas
+  if (text.includes('ท้องอืด') || text.includes('แน่นท้อง') || text.includes('จุกเสียด') || text.includes('แก๊ส')) {
+    return 'อาจทำให้ท้องอืดหรือแน่นท้อง';
+  }
+
+  // 14. Diuretic / dehydration
+  if (text.includes('ขับปัสสาวะ') || text.includes('ขาดน้ำ')) {
+    return 'อาจเร่งการขับตัวยาออกจากร่างกาย';
+  }
+
+  // 15. Uric acid
+  if (text.includes('ยูริก')) {
+    return 'อาจทำให้ระดับกรดยูริกสูงขึ้น';
+  }
+
+  // 16. Efficacy reduction / absorption inhibition / drug breakdown
+  if (
+    text.includes('ฆ่าเชื้อ') ||
+    text.includes('ประสิทธิภาพ') ||
+    text.includes('ดูดซึม') ||
+    text.includes('สลายตัว') ||
+    text.includes('ลดฤทธิ์') ||
+    text.includes('ไม่ได้ผล') ||
+    text.includes('ต้านฤทธิ์') ||
+    text.includes('ตกตะกอน') ||
+    text.includes('ขัดขวาง') ||
+    text.includes('ลดคุณค่า') ||
+    text.includes('คุณประโยชน์')
+  ) {
+    return 'อาจลดประสิทธิภาพของยา';
+  }
+
+  return 'อาจส่งผลต่อการออกฤทธิ์ของยา';
+}
+
+/**
+ * Format hours note with a natural prefix if missing
+ * e.g., "2 ชม. ก่อน-2 ชม. หลัง" -> "เว้น 2 ชม. ก่อน-2 ชม. หลัง"
+ */
+export function formatHoursNote(note?: string | null): string {
+  if (!note) return '';
+  const trimmed = note.trim();
+  if (trimmed.startsWith('เว้น') || trimmed.startsWith('ห่าง')) {
+    return trimmed;
+  }
+  return `เว้น ${trimmed}`;
 }
 
 /**

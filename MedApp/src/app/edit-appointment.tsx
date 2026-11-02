@@ -16,6 +16,7 @@ import { Feather } from '@expo/vector-icons';
 import { AppHeader } from '@/components/ui/AppHeader';
 import { CalendarModal } from '@/components/ui/CalendarModal';
 import { useApp } from '@/context/AppContext';
+import { formatHospitalName, formatDepartmentName } from '@/services/medService';
 
 // Helper to normalize Thai doctor names for duplicate detection (removes title prefixes and collapses spaces)
 const normalizeDoctorName = (name: string): string => {
@@ -131,8 +132,8 @@ export default function EditAppointmentScreen() {
     await updateAppointment({
       id: currentApt.id,
       doctorName: doctorName.trim(),
-      department: department.trim() || 'ตรวจสุขภาพ',
-      hospital: hospital.trim() || 'โรงพยาบาล',
+      department: formatDepartmentName(department.trim() || 'ตรวจสุขภาพ'),
+      hospital: formatHospitalName(hospital.trim() || 'โรงพยาบาล'),
       date: finalDate,
       time: finalTime,
       details: details.trim(),

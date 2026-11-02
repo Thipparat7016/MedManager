@@ -431,6 +431,7 @@ export default function AddMedicationScreen() {
         mealTiming: primaryMealTiming,
         timeMealTimings: Object.keys(timeMealTimings).length > 0 ? timeMealTimings : undefined,
         startDate: formattedStartDate,
+        createdAt: new Date().toISOString(),
         instructions: durationNote,
         precautions: precautions.trim() || undefined,
         imageUrl: imageUri || undefined,

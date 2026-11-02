@@ -1,17 +1,63 @@
-import React from 'react';
+import React, { useRef, useEffect } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  Switch,
+  Animated,
+  Image,
   Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Ionicons, MaterialCommunityIcons, Feather } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '@/context/AppContext';
+
+interface SmoothSwitchProps {
+  value: boolean;
+  onValueChange: (val: boolean) => void;
+}
+
+function SmoothSwitch({ value, onValueChange }: SmoothSwitchProps) {
+  const animatedValue = useRef(new Animated.Value(value ? 1 : 0)).current;
+
+  useEffect(() => {
+    Animated.spring(animatedValue, {
+      toValue: value ? 1 : 0,
+      friction: 8,
+      tension: 65,
+      useNativeDriver: false,
+    }).start();
+  }, [value]);
+
+  const translateX = animatedValue.interpolate({
+    inputRange: [0, 1],
+    outputRange: [2, 22],
+  });
+
+  const backgroundColor = animatedValue.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['#CBD5E1', '#8B95F6'],
+  });
+
+  return (
+    <TouchableOpacity
+      activeOpacity={0.85}
+      onPress={() => onValueChange(!value)}
+      style={styles.switchTouchContainer}
+    >
+      <Animated.View style={[styles.switchTrack, { backgroundColor }]}>
+        <Animated.View
+          style={[
+            styles.switchThumb,
+            { transform: [{ translateX }] },
+          ]}
+        />
+      </Animated.View>
+    </TouchableOpacity>
+  );
+}
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -57,9 +103,13 @@ export default function ProfileScreen() {
         {/* User Info Header */}
         <View style={styles.profileHeader}>
           <View style={styles.avatarCircle}>
-            <View style={styles.avatarInner}>
-              <Ionicons name="person" size={28} color="#8B95F6" />
-            </View>
+            {user?.avatarUrl ? (
+              <Image source={{ uri: user.avatarUrl }} style={styles.avatarImage} />
+            ) : (
+              <View style={styles.avatarInner}>
+                <Ionicons name="person" size={28} color="#8B95F6" />
+              </View>
+            )}
           </View>
           <Text style={styles.userName}>{user?.name || 'ผู้ใช้งาน'}</Text>
           <Text style={styles.userEmail}>{user?.email || '-'}</Text>
@@ -109,41 +159,33 @@ export default function ProfileScreen() {
 
           <View style={styles.switchRow}>
             <Text style={styles.switchLabel}>แจ้งเตือนก่อนเวลา 30 นาที</Text>
-            <Switch
+            <SmoothSwitch
               value={user?.notify30MinBefore ?? true}
               onValueChange={() => handleToggle('notify30MinBefore')}
-              trackColor={{ false: '#E2E8F0', true: '#8B95F6' }}
-              thumbColor="#FFFFFF"
             />
           </View>
 
           <View style={styles.switchRow}>
             <Text style={styles.switchLabel}>แจ้งเตือนอาหารที่ต้องเลี่ยง</Text>
-            <Switch
+            <SmoothSwitch
               value={user?.notifyFoodWarning ?? true}
               onValueChange={() => handleToggle('notifyFoodWarning')}
-              trackColor={{ false: '#E2E8F0', true: '#8B95F6' }}
-              thumbColor="#FFFFFF"
             />
           </View>
 
           <View style={styles.switchRow}>
             <Text style={styles.switchLabel}>แจ้งเตือนนัดหมายแพทย์</Text>
-            <Switch
+            <SmoothSwitch
               value={user?.notifyAppointments ?? true}
               onValueChange={() => handleToggle('notifyAppointments')}
-              trackColor={{ false: '#E2E8F0', true: '#8B95F6' }}
-              thumbColor="#FFFFFF"
             />
           </View>
 
           <View style={[styles.switchRow, { borderBottomWidth: 0 }]}>
             <Text style={styles.switchLabel}>แจ้งเตือนยาหมด / ใกล้หมดอายุ</Text>
-            <Switch
+            <SmoothSwitch
               value={user?.notifyLowStock ?? false}
               onValueChange={() => handleToggle('notifyLowStock')}
-              trackColor={{ false: '#E2E8F0', true: '#8B95F6' }}
-              thumbColor="#FFFFFF"
             />
           </View>
         </View>
@@ -214,6 +256,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 12,
+    overflow: 'hidden',
+  },
+  avatarImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
   },
   avatarInner: {
     width: 44,
@@ -316,6 +364,27 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#1E293B',
     fontWeight: '500',
+  },
+  switchTouchContainer: {
+    paddingVertical: 4,
+    paddingHorizontal: 2,
+  },
+  switchTrack: {
+    width: 50,
+    height: 30,
+    borderRadius: 15,
+    justifyContent: 'center',
+  },
+  switchThumb: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.18,
+    shadowRadius: 3,
+    elevation: 3,
   },
   linkRow: {
     flexDirection: 'row',
