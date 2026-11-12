@@ -1,5 +1,17 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import {
+  Modal,
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  KeyboardAvoidingView,
+  Platform,
+  Alert,
+} from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import {
   medService,
   Medication,
   DrugFoodInteraction,
@@ -11,6 +23,7 @@ import {
   getMedicationStockStatus,
   formatHospitalName,
   formatDepartmentName,
+  hasValidPhone,
 } from '@/services/medService';
 import { isMedicationMatch, formatCleanDrugName, formatCleanFoodName, resolveMedicationImageUri } from '@/services/interactionMatcher';
 import { supabase } from '@/services/supabase';
@@ -40,7 +53,7 @@ interface AppContextType {
   isLoading: boolean;
   isAuthenticated: boolean;
   login: (email: string, pass: string) => Promise<{ success: boolean; error?: string }>;
-  loginWithGoogle: (email: string, fullName?: string) => Promise<{ success: boolean; error?: string }>;
+  loginWithGoogle: (email: string, fullName?: string, avatarUrl?: string) => Promise<{ success: boolean; needsPhone?: boolean; error?: string }>;
   register: (data: { name: string; email: string; phone?: string; password: string }) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
   refreshData: () => Promise<void>;
@@ -57,6 +70,7 @@ interface AppContextType {
   deleteAppointment: (id: string) => Promise<void>;
   addSideEffect: (log: Omit<SideEffectLog, 'id' | 'createdAt'>) => Promise<SideEffectLog>;
   updateProfile: (profile: Partial<UserProfile>) => Promise<void>;
+  setAccountPassword: (verifyInput: string, newPassword: string) => Promise<void>;
   clearNotifications: () => void;
 }
 
@@ -73,6 +87,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [phoneModalInput, setPhoneModalInput] = useState<string>('');
+  const [isSavingPhoneModal, setIsSavingPhoneModal] = useState<boolean>(false);
+  const [skippedPhoneEmail, setSkippedPhoneEmail] = useState<string | null>(null);
   const dismissedNotifIdsRef = useRef<Set<string>>(new Set());
 
   const loadAllData = useCallback(async (showGlobalLoading = false) => {
@@ -374,6 +391,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       const profile = await medService.loginUser(email, pass);
       setUser(profile);
       setIsAuthenticated(true);
+      setPhoneModalInput('');
+      setSkippedPhoneEmail(null);
       await loadAllData();
       return { success: true };
     } catch (e: any) {
@@ -384,14 +403,21 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  const loginWithGoogle = async (email: string, fullName?: string): Promise<{ success: boolean; error?: string }> => {
+  const loginWithGoogle = async (
+    email: string,
+    fullName?: string,
+    avatarUrl?: string
+  ): Promise<{ success: boolean; needsPhone?: boolean; error?: string }> => {
     try {
       setIsLoading(true);
-      const profile = await medService.loginWithGoogleUser(email, fullName);
+      const profile = await medService.loginWithGoogleUser(email, fullName, avatarUrl);
       setUser(profile);
       setIsAuthenticated(true);
+      setPhoneModalInput('');
+      setSkippedPhoneEmail(null);
       await loadAllData();
-      return { success: true };
+      const needsPhone = !hasValidPhone(profile.phone);
+      return { success: true, needsPhone };
     } catch (e: any) {
       console.warn('Google login error:', e);
       return { success: false, error: e?.message || 'เข้าสู่ระบบด้วย Google ไม่สำเร็จ' };
@@ -411,6 +437,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       const profile = await medService.registerUser(data);
       setUser(profile);
       setIsAuthenticated(true);
+      setPhoneModalInput('');
+      setSkippedPhoneEmail(null);
       await loadAllData();
       return { success: true };
     } catch (e: any) {
@@ -423,6 +451,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   const logout = async () => {
     await medService.logoutUser();
+    setSkippedPhoneEmail(null);
+    setPhoneModalInput('');
     setIsAuthenticated(false);
     setUser(null);
   };
@@ -526,11 +556,50 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     setUser(updated);
   };
 
+  const setAccountPassword = async (verifyInput: string, newPassword: string) => {
+    const updated = await medService.setAccountPassword({ verifyInput, newPassword });
+    setUser(updated);
+  };
+
   const clearNotifications = () => {
     setNotifications(prev => {
       prev.forEach(n => dismissedNotifIdsRef.current.add(n.id));
       return [];
     });
+  };
+
+  const currentCleanEmail = user?.email ? user.email.trim().toLowerCase() : '';
+  const showMandatoryPhoneModal = Boolean(
+    isAuthenticated &&
+      !isLoading &&
+      user &&
+      currentCleanEmail &&
+      !hasValidPhone(user.phone) &&
+      skippedPhoneEmail !== currentCleanEmail
+  );
+
+  const handleSkipPhoneModal = () => {
+    if (currentCleanEmail) {
+      setSkippedPhoneEmail(currentCleanEmail);
+    }
+    setPhoneModalInput('');
+  };
+
+  const handleSaveMandatoryPhone = async () => {
+    const trimmed = phoneModalInput.trim();
+    if (!hasValidPhone(trimmed)) {
+      Alert.alert('กรุณากรอกเบอร์โทรศัพท์', 'กรุณากรอกเบอร์โทรศัพท์ให้ถูกต้อง (อย่างน้อย 9 หลัก)');
+      return;
+    }
+    try {
+      setIsSavingPhoneModal(true);
+      await updateProfile({ phone: trimmed });
+      setPhoneModalInput('');
+    } catch (err: any) {
+      Alert.alert('เกิดข้อผิดพลาด', err?.message || 'ไม่สามารถบันทึกเบอร์โทรศัพท์ได้');
+    } finally {
+      setIsSavingPhoneModal(false);
+    }
   };
 
   return (
@@ -564,13 +633,186 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         deleteAppointment,
         addSideEffect,
         updateProfile,
+        setAccountPassword,
         clearNotifications,
       }}
     >
       {children}
+
+      {/* Global Phone Number Modal for Accounts Without Phone Number */}
+      <Modal
+        visible={showMandatoryPhoneModal}
+        transparent
+        animationType="fade"
+        onRequestClose={handleSkipPhoneModal}
+      >
+        <View style={phoneModalStyles.overlay}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            style={phoneModalStyles.keyboardWrapper}
+          >
+            <View style={phoneModalStyles.card}>
+              <View style={phoneModalStyles.iconBox}>
+                <MaterialCommunityIcons name="phone-outline" size={28} color="#8B95F6" />
+              </View>
+              <Text style={phoneModalStyles.title}>ระบุเบอร์โทรศัพท์เพิ่มเติม</Text>
+              <Text style={phoneModalStyles.subtitle}>
+                ยินดีต้อนรับคุณ {user?.name || ''}{'\n'}
+                บัญชี: {user?.email || ''}{'\n'}
+                กรุณากรอกเบอร์โทรศัพท์เพิ่มเติม หรือกดข้ามเพื่อกรอกภายหลังที่หน้าโปรไฟล์
+              </Text>
+
+              <View style={phoneModalStyles.inputGroup}>
+                <Text style={phoneModalStyles.label}>เบอร์โทรศัพท์</Text>
+                <TextInput
+                  style={phoneModalStyles.input}
+                  placeholder="0812345678"
+                  placeholderTextColor="#94A3B8"
+                  value={phoneModalInput}
+                  onChangeText={setPhoneModalInput}
+                  keyboardType="phone-pad"
+                  maxLength={15}
+                  autoFocus
+                />
+              </View>
+
+              <TouchableOpacity
+                style={[
+                  phoneModalStyles.primaryButton,
+                  isSavingPhoneModal && phoneModalStyles.disabledButton,
+                ]}
+                onPress={handleSaveMandatoryPhone}
+                activeOpacity={0.8}
+                disabled={isSavingPhoneModal}
+              >
+                <Text style={phoneModalStyles.primaryButtonText}>
+                  {isSavingPhoneModal ? 'กำลังบันทึกข้อมูล...' : 'บันทึกและเข้าสู่แอป'}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={phoneModalStyles.skipButton}
+                onPress={handleSkipPhoneModal}
+                disabled={isSavingPhoneModal}
+                activeOpacity={0.75}
+              >
+                <Text style={phoneModalStyles.skipButtonText}>ข้าม</Text>
+              </TouchableOpacity>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
     </AppContext.Provider>
   );
 };
+
+const phoneModalStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.48)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  keyboardWrapper: {
+    width: '100%',
+    alignItems: 'center',
+  },
+  card: {
+    width: '100%',
+    maxWidth: 400,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 24,
+    borderWidth: 1.5,
+    borderColor: '#EDE9FE',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.14,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  iconBox: {
+    width: 56,
+    height: 56,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: '#C7D2FE',
+    backgroundColor: '#F5F6FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
+    marginBottom: 14,
+  },
+  title: {
+    fontSize: 19,
+    fontWeight: '800',
+    color: '#0F172A',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  subtitle: {
+    fontSize: 13.5,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 20,
+  },
+  inputGroup: {
+    marginBottom: 18,
+  },
+  label: {
+    fontSize: 14.5,
+    fontWeight: '700',
+    color: '#1E293B',
+    marginBottom: 8,
+  },
+  input: {
+    height: 52,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    fontSize: 15,
+    color: '#0F172A',
+    backgroundColor: '#FAFAFC',
+  },
+  primaryButton: {
+    height: 52,
+    backgroundColor: '#8B95F6',
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#8B95F6',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  disabledButton: {
+    opacity: 0.7,
+  },
+  primaryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  skipButton: {
+    height: 48,
+    marginTop: 10,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#F8FAFC',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  skipButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+});
 
 export const useApp = () => {
   const context = useContext(AppContext);

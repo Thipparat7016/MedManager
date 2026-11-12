@@ -102,6 +102,7 @@ export interface UserProfile {
   email: string;
   phone: string;
   avatarUrl?: string;
+  hasPassword?: boolean;
   notify30MinBefore: boolean;
   notifyFoodWarning: boolean;
   notifyAppointments: boolean;
@@ -379,6 +380,19 @@ export function getMedicationStockStatus(med: Medication): {
 
 let toggleCheckedQueue: Promise<any> = Promise.resolve();
 
+export function toUserStorageKey(emailOrId?: string | null): string | null {
+  if (!emailOrId) return null;
+  const cleaned = emailOrId.trim().toLowerCase();
+  if (!cleaned) return null;
+  return cleaned.replace(/[^a-z0-9@._-]/gi, '_');
+}
+
+export function hasValidPhone(phone?: string | null): boolean {
+  if (!phone) return false;
+  const digits = String(phone).replace(/\D/g, '');
+  return digits.length >= 9;
+}
+
 export const medService = {
   // --------------------------------------------------------------------------
   // Cache Cleanup for Mock Data
@@ -398,6 +412,82 @@ export const medService = {
     }
   },
 
+  async getCurrentUserScope(): Promise<{
+    userKey: string | null;
+    userUUID: string | null;
+    user: UserProfile | null;
+  }> {
+    try {
+      const stored = await safeStorage.getItem('med_user_profile');
+      if (!stored) {
+        return { userKey: null, userUUID: null, user: null };
+      }
+
+      const parsed: UserProfile = JSON.parse(stored);
+      if (!parsed || !parsed.email || parsed.email === 'somchai@gmail.com') {
+        return { userKey: null, userUUID: null, user: null };
+      }
+
+      const cleanEmail = parsed.email.trim().toLowerCase();
+      const userKey = toUserStorageKey(cleanEmail);
+      let userUUID = parsed.id && isValidUUID(parsed.id) ? parsed.id : null;
+
+      if (!userUUID && supabase && cleanEmail) {
+        try {
+          const { data } = await supabase
+            .from('app_users')
+            .select('id, name, email, phone')
+            .ilike('email', cleanEmail);
+          const matchedUser = (data || []).find(
+            (row: any) => String(row.email || '').trim().toLowerCase() === cleanEmail
+          );
+          if (matchedUser && isValidUUID(matchedUser.id)) {
+            userUUID = matchedUser.id;
+            parsed.id = matchedUser.id;
+            if (matchedUser.name) parsed.name = matchedUser.name;
+            if (matchedUser.phone !== undefined) parsed.phone = matchedUser.phone || parsed.phone || '';
+            await safeStorage.setItem('med_user_profile', JSON.stringify(parsed));
+          }
+        } catch {}
+      }
+
+      return { userKey, userUUID, user: parsed };
+    } catch {
+      return { userKey: null, userUUID: null, user: null };
+    }
+  },
+
+  async getUserPreferences(userKey: string | null): Promise<{
+    avatarUrl?: string;
+    notify30MinBefore: boolean;
+    notifyFoodWarning: boolean;
+    notifyAppointments: boolean;
+    notifyLowStock: boolean;
+  }> {
+    const defaults = {
+      avatarUrl: undefined as string | undefined,
+      notify30MinBefore: true,
+      notifyFoodWarning: true,
+      notifyAppointments: true,
+      notifyLowStock: false,
+    };
+    if (!userKey) return defaults;
+    try {
+      const raw = await safeStorage.getItem(`med_user_prefs_${userKey}`);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        return {
+          avatarUrl: parsed.avatarUrl || undefined,
+          notify30MinBefore: parsed.notify30MinBefore ?? true,
+          notifyFoodWarning: parsed.notifyFoodWarning ?? true,
+          notifyAppointments: parsed.notifyAppointments ?? true,
+          notifyLowStock: parsed.notifyLowStock ?? false,
+        };
+      }
+    } catch {}
+    return defaults;
+  },
+
   // --------------------------------------------------------------------------
   // User Profile & Authentication (app_users table)
   // --------------------------------------------------------------------------
@@ -414,23 +504,43 @@ export const medService = {
         return null;
       }
 
+      const cleanEmail = parsed.email.trim().toLowerCase();
+      const userKey = toUserStorageKey(cleanEmail);
+      const prefs = await this.getUserPreferences(userKey);
+      if (!parsed.avatarUrl && prefs.avatarUrl) {
+        parsed.avatarUrl = prefs.avatarUrl;
+      }
+
+      const cachedPass = await safeStorage.getItem(`med_user_pwd_${cleanEmail}`);
+      if (cachedPass) {
+        parsed.hasPassword = true;
+      }
+
       // Ensure authenticated flag is synced
       await safeStorage.setItem('med_is_authenticated', 'true');
 
-      // 2. Refresh profile details silently from Supabase if online
-      if (supabase && parsed.email) {
+      // 2. Refresh profile details silently from Supabase if online (matched strictly by email)
+      if (supabase && cleanEmail) {
         try {
           const { data, error } = await supabase
             .from('app_users')
             .select('*')
-            .eq('email', parsed.email.trim().toLowerCase())
-            .limit(1);
+            .ilike('email', cleanEmail);
 
-          if (!error && data && data.length > 0) {
-            const u = data[0];
+          const u = !error
+            ? (data || []).find(
+                (row: any) => String(row.email || '').trim().toLowerCase() === cleanEmail
+              )
+            : null;
+
+          if (u) {
             parsed.id = u.id;
             parsed.name = u.name;
-            parsed.phone = u.phone || '';
+            parsed.phone = u.phone || parsed.phone || '';
+            parsed.hasPassword = Boolean(
+              (u.password !== undefined && u.password !== null && String(u.password).trim() !== '') ||
+                cachedPass
+            );
             await safeStorage.setItem('med_user_profile', JSON.stringify(parsed));
           }
         } catch (syncErr) {
@@ -464,7 +574,7 @@ export const medService = {
     const { data, error } = await supabase
       .from('app_users')
       .select('*')
-      .eq('email', cleanEmail)
+      .ilike('email', cleanEmail)
       .limit(1);
 
     if (error) {
@@ -481,10 +591,11 @@ export const medService = {
 
     // PASSWORD VERIFICATION:
     // 1. If password exists in database record
-    if (u.password !== undefined && u.password !== null && u.password !== '') {
+    if (u.password !== undefined && u.password !== null && String(u.password).trim() !== '') {
       if (u.password !== cleanPass) {
         throw new Error('รหัสผ่านไม่ถูกต้อง กรุณาตรวจสอบรหัสผ่านอีกครั้ง');
       }
+      await safeStorage.setItem(`med_user_pwd_${cleanEmail}`, cleanPass);
     } else {
       // 2. Fallback check local credential cache
       const cachedPass = await safeStorage.getItem(`med_user_pwd_${cleanEmail}`);
@@ -492,25 +603,26 @@ export const medService = {
         if (cachedPass !== cleanPass) {
           throw new Error('รหัสผ่านไม่ถูกต้อง กรุณาตรวจสอบรหัสผ่านอีกครั้ง');
         }
-      } else {
-        // Account exists in DB but had no password set yet (e.g. initial user)
-        // Store password for this user both in DB (if column exists) and local cache
-        await safeStorage.setItem(`med_user_pwd_${cleanEmail}`, cleanPass);
         try {
           await supabase.from('app_users').update({ password: cleanPass }).eq('id', u.id);
-        } catch (ignoreErr) {}
+        } catch {}
+      } else {
+        throw new Error(
+          'บัญชีนี้สมัครด้วย Google และยังไม่ได้ตั้งรหัสผ่าน กรุณาเข้าสู่ระบบด้วย Google แล้วไปตั้งรหัสผ่านที่หน้าโปรไฟล์'
+        );
       }
     }
+
+    const userKey = toUserStorageKey(cleanEmail);
+    const prefs = await this.getUserPreferences(userKey);
 
     const profile: UserProfile = {
       id: u.id,
       name: u.name,
-      email: u.email,
+      email: u.email || cleanEmail,
       phone: u.phone || '',
-      notify30MinBefore: true,
-      notifyFoodWarning: true,
-      notifyAppointments: true,
-      notifyLowStock: false,
+      hasPassword: true,
+      ...prefs,
     };
     await safeStorage.setItem('med_is_authenticated', 'true');
     await safeStorage.setItem('med_user_profile', JSON.stringify(profile));
@@ -532,7 +644,11 @@ export const medService = {
     return profile;
   },
 
-  async loginWithGoogleUser(email: string, fullName?: string): Promise<UserProfile> {
+  async loginWithGoogleUser(
+    email: string,
+    fullName?: string,
+    avatarUrl?: string
+  ): Promise<UserProfile> {
     const cleanEmail = email.trim().toLowerCase();
     if (!cleanEmail) {
       throw new Error('ไม่พบข้อมูลอีเมลจาก Google');
@@ -542,50 +658,113 @@ export const medService = {
       throw new Error('ไม่สามารถเชื่อมต่อฐานข้อมูลได้ กรุณาลองใหม่อีกครั้ง');
     }
 
-    // STRICT CHECK: User MUST exist in Supabase app_users table!
+    const resolvedGoogleName =
+      (fullName && fullName.trim()) || cleanEmail.split('@')[0] || 'ผู้ใช้งาน';
+
+    // Check if user already exists in Supabase app_users table (strictly by email, never by name)
     const { data, error } = await supabase
       .from('app_users')
       .select('*')
-      .ilike('email', cleanEmail)
-      .limit(1);
+      .ilike('email', cleanEmail);
 
     if (error) {
       console.error('Supabase query error during Google login:', error);
       throw new Error('เกิดข้อผิดพลาดในการตรวจสอบบัญชี: ' + error.message);
     }
 
-    if (!data || data.length === 0) {
-      // Sign out from Supabase Auth session because user is not allowed
-      try {
-        await supabase.auth.signOut();
-      } catch {}
-      throw new Error('ไม่พบบัญชีผู้ใช้นี้ในระบบ กรุณาสมัครสมาชิกก่อนเข้าสู่ระบบ');
+    let u: any = (data || []).find(
+      (row: any) => String(row.email || '').trim().toLowerCase() === cleanEmail
+    );
+    let isNewGoogleRegistration = false;
+
+    // Auto-register user in app_users using Google profile data if this email is not yet registered
+    if (!u) {
+      isNewGoogleRegistration = true;
+
+      const { data: existingUsers } = await supabase
+        .from('app_users')
+        .select('code');
+
+      let maxNum = 0;
+      for (const row of existingUsers || []) {
+        const match = String(row.code || '').match(/(\d+)/);
+        if (match) {
+          const n = parseInt(match[1], 10);
+          if (!isNaN(n) && n > maxNum) maxNum = n;
+        }
+      }
+      const nextCode = `USR-${String(maxNum + 1).padStart(3, '0')}`;
+
+      const insertPayload: any = {
+        code: nextCode,
+        name: resolvedGoogleName,
+        email: cleanEmail,
+        phone: '',
+        status: 'Active',
+      };
+
+      const { data: insertedData, error: insertErr } = await supabase
+        .from('app_users')
+        .insert([insertPayload])
+        .select();
+
+      if (insertErr) {
+        console.error('Supabase insert error during Google auto-register:', insertErr);
+        throw new Error('ไม่สามารถสร้างบัญชีสมาชิกจาก Google ได้: ' + insertErr.message);
+      }
+
+      u = insertedData?.[0] || {
+        id: `user-${Date.now()}`,
+        name: resolvedGoogleName,
+        email: cleanEmail,
+        phone: '',
+      };
     }
 
-    const u = data[0];
+    const userKey = toUserStorageKey(cleanEmail);
+    const prefs = await this.getUserPreferences(userKey);
+    const resolvedAvatar = prefs.avatarUrl || (avatarUrl && avatarUrl.trim()) || undefined;
+
+    if (userKey && resolvedAvatar && !prefs.avatarUrl) {
+      await safeStorage.setItem(
+        `med_user_prefs_${userKey}`,
+        JSON.stringify({
+          ...prefs,
+          avatarUrl: resolvedAvatar,
+        })
+      );
+    }
+
+    const cachedPass = await safeStorage.getItem(`med_user_pwd_${cleanEmail}`);
+    const hasPassword = Boolean(
+      (u.password !== undefined && u.password !== null && String(u.password).trim() !== '') ||
+        cachedPass
+    );
+
     const profile: UserProfile = {
       id: u.id,
-      name: u.name || fullName || 'ผู้ใช้งาน',
-      email: u.email,
+      name: u.name || resolvedGoogleName,
+      email: u.email || cleanEmail,
       phone: u.phone || '',
-      notify30MinBefore: true,
-      notifyFoodWarning: true,
-      notifyAppointments: true,
-      notifyLowStock: false,
+      hasPassword,
+      ...prefs,
+      avatarUrl: resolvedAvatar,
     };
 
     await safeStorage.setItem('med_is_authenticated', 'true');
     await safeStorage.setItem('med_user_profile', JSON.stringify(profile));
 
-    // Log activity: 'เข้าสู่ระบบ (Google)'
+    // Log activity to activity_logs
     try {
       const now = new Date();
       const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
       await supabase.from('activity_logs').insert([{
         time: timeStr,
         user_name: profile.name,
-        activity: 'เข้าสู่ระบบ (Google)',
-        details: `ผู้ใช้งาน ${profile.name} (${profile.email}) เข้าสู่ระบบด้วย Google บน MedApp`,
+        activity: isNewGoogleRegistration ? 'สมัครสมาชิก (Google)' : 'เข้าสู่ระบบ (Google)',
+        details: isNewGoogleRegistration
+          ? `ผู้ใช้งาน ${profile.name} (${profile.email}) สมัครสมาชิกและเข้าสู่ระบบด้วย Google สำเร็จ`
+          : `ผู้ใช้งาน ${profile.name} (${profile.email}) เข้าสู่ระบบด้วย Google บน MedApp`,
       }]);
     } catch (logErr) {
       console.warn('Failed to log Google login activity:', logErr);
@@ -617,7 +796,7 @@ export const medService = {
     const { data: existingUser, error: checkErr } = await supabase
       .from('app_users')
       .select('id, email')
-      .eq('email', cleanEmail)
+      .ilike('email', cleanEmail)
       .limit(1);
 
     if (checkErr) {
@@ -683,6 +862,7 @@ export const medService = {
       name: insertedUser?.name || cleanName,
       email: insertedUser?.email || cleanEmail,
       phone: insertedUser?.phone || cleanPhone,
+      hasPassword: true,
       notify30MinBefore: true,
       notifyFoodWarning: true,
       notifyAppointments: true,
@@ -708,6 +888,106 @@ export const medService = {
     return profile;
   },
 
+  async setAccountPassword(params: {
+    verifyInput: string;
+    newPassword: string;
+  }): Promise<UserProfile> {
+    const current = await this.getUserProfile();
+    if (!current || !current.email) {
+      throw new Error('กรุณาเข้าสู่ระบบก่อนตั้งรหัสผ่าน');
+    }
+
+    const cleanEmail = current.email.trim().toLowerCase();
+    const cleanVerify = (params.verifyInput || '').trim();
+    const cleanNewPass = (params.newPassword || '').trim();
+
+    if (!cleanVerify) {
+      throw new Error('กรุณากรอกข้อมูลเพื่อยืนยันตัวตน');
+    }
+    if (!cleanNewPass || cleanNewPass.length < 6) {
+      throw new Error('กรุณากำหนดรหัสผ่านอย่างน้อย 6 ตัวอักษร');
+    }
+
+    if (!supabase) {
+      throw new Error('ไม่สามารถเชื่อมต่อฐานข้อมูลได้ กรุณาลองใหม่อีกครั้ง');
+    }
+
+    const { data, error } = await supabase
+      .from('app_users')
+      .select('*')
+      .ilike('email', cleanEmail)
+      .limit(1);
+
+    if (error || !data || data.length === 0) {
+      throw new Error('ไม่พบข้อมูลบัญชีผู้ใช้นี้ในฐานข้อมูล');
+    }
+
+    const u = data[0];
+    const dbPass = u.password !== undefined && u.password !== null ? String(u.password).trim() : '';
+    const cachedPass = (await safeStorage.getItem(`med_user_pwd_${cleanEmail}`)) || '';
+    const hasExistingPass = Boolean(dbPass || cachedPass);
+
+    const normalizePhoneDigits = (p?: string) => (p || '').replace(/\D/g, '');
+    const userPhoneDigits = normalizePhoneDigits(u.phone || current.phone);
+    const verifyDigits = normalizePhoneDigits(cleanVerify);
+
+    if (hasExistingPass) {
+      const matchesOldPass =
+        (dbPass && cleanVerify === dbPass) || (cachedPass && cleanVerify === cachedPass);
+      const matchesEmail = cleanVerify.toLowerCase() === cleanEmail;
+      if (!matchesOldPass && !matchesEmail) {
+        throw new Error('ข้อมูลยืนยันตัวตนไม่ถูกต้อง กรุณากรอกรหัสผ่านเดิมหรืออีเมลของบัญชีนี้ให้ถูกต้อง');
+      }
+    } else {
+      const matchesEmail = cleanVerify.toLowerCase() === cleanEmail;
+      const matchesPhone = Boolean(
+        userPhoneDigits && verifyDigits && userPhoneDigits === verifyDigits
+      );
+      if (!matchesEmail && !matchesPhone) {
+        throw new Error(
+          'การยืนยันตัวตนไม่สำเร็จ กรุณากรอกอีเมลหรือเบอร์โทรศัพท์ของบัญชีนี้ให้ถูกต้อง'
+        );
+      }
+    }
+
+    // Save password to Supabase app_users table
+    const { error: updateErr } = await supabase
+      .from('app_users')
+      .update({ password: cleanNewPass })
+      .eq('id', u.id);
+
+    if (updateErr) {
+      throw new Error('ไม่สามารถบันทึกรหัสผ่านลงฐานข้อมูลได้: ' + updateErr.message);
+    }
+
+    await safeStorage.setItem(`med_user_pwd_${cleanEmail}`, cleanNewPass);
+
+    const updatedProfile: UserProfile = {
+      ...current,
+      id: u.id,
+      hasPassword: true,
+    };
+    await safeStorage.setItem('med_user_profile', JSON.stringify(updatedProfile));
+
+    try {
+      const now = new Date();
+      const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now
+        .getMinutes()
+        .toString()
+        .padStart(2, '0')}`;
+      await supabase.from('activity_logs').insert([
+        {
+          time: timeStr,
+          user_name: updatedProfile.name,
+          activity: hasExistingPass ? 'เปลี่ยนรหัสผ่านบัญชี' : 'ตั้งรหัสผ่านบัญชี',
+          details: `ผู้ใช้งาน ${updatedProfile.name} (${updatedProfile.email}) กำหนดรหัสผ่านสำหรับการเข้าสู่ระบบแบบธรรมดาสำเร็จ`,
+        },
+      ]);
+    } catch {}
+
+    return updatedProfile;
+  },
+
   async updateUserProfile(profile: Partial<UserProfile>): Promise<UserProfile> {
     const current = (await this.getUserProfile()) || {
       id: `user-${Date.now()}`,
@@ -723,6 +1003,20 @@ export const medService = {
     const updated = { ...current, ...profile };
     await safeStorage.setItem('med_user_profile', JSON.stringify(updated));
 
+    const userKey = toUserStorageKey(updated.email);
+    if (userKey) {
+      await safeStorage.setItem(
+        `med_user_prefs_${userKey}`,
+        JSON.stringify({
+          avatarUrl: updated.avatarUrl || undefined,
+          notify30MinBefore: updated.notify30MinBefore,
+          notifyFoodWarning: updated.notifyFoodWarning,
+          notifyAppointments: updated.notifyAppointments,
+          notifyLowStock: updated.notifyLowStock,
+        })
+      );
+    }
+
     if (supabase && updated.email) {
       try {
         const cleanEmail = updated.email.trim().toLowerCase();
@@ -734,16 +1028,18 @@ export const medService = {
         if (updated.name) updatePayload.name = updated.name;
         if (updated.phone !== undefined) updatePayload.phone = updated.phone;
 
-        const { data: updatedData, error: updateErr } = await supabase
-          .from('app_users')
-          .update(updatePayload)
-          .eq('email', cleanEmail)
-          .select();
+        let updateQuery = supabase.from('app_users').update(updatePayload);
+        if (updated.id && isValidUUID(updated.id)) {
+          updateQuery = updateQuery.eq('id', updated.id);
+        } else {
+          updateQuery = updateQuery.ilike('email', cleanEmail);
+        }
+        const { data: updatedData, error: updateErr } = await updateQuery.select();
 
         if (!updateErr && updatedData?.[0]) {
           updated.id = updatedData[0].id;
           updated.name = updatedData[0].name;
-          updated.phone = updatedData[0].phone;
+          updated.phone = updatedData[0].phone || updated.phone || '';
           await safeStorage.setItem('med_user_profile', JSON.stringify(updated));
         }
       } catch (e) {
@@ -801,31 +1097,183 @@ export const medService = {
   },
 
   // --------------------------------------------------------------------------
-  // 2. User's "My Medications" (ยาของฉัน - ผู้ใช้เพิ่มเอง)
+  // 2. User's "My Medications" (ยาของฉัน - แยกตามบัญชีผู้ใช้แต่ละคน และซิงก์กับฐานข้อมูลของผู้ใช้นั้น)
   // --------------------------------------------------------------------------
   async getMedications(): Promise<Medication[]> {
+    await this.purgeMockCacheIfNeeded();
     try {
-      const stored = await safeStorage.getItem('med_user_medications_list');
+      const { userKey, userUUID, user } = await this.getCurrentUserScope();
+      if (!userKey) {
+        return [];
+      }
+      const listKey = `med_user_medications_list_${userKey}`;
+      let localMeds: Medication[] = [];
+      const stored = await safeStorage.getItem(listKey);
       if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed)) {
-          // Deduplicate if there are any historical duplicates with identical normalized names
-          const seen = new Map<string, Medication>();
-          for (const item of parsed) {
-            const key = normalizeMedName(item.name);
-            if (!key) continue;
-            if (!seen.has(key)) {
-              seen.set(key, item);
-            }
+        try {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed)) {
+            localMeds = parsed;
           }
-          if (seen.size < parsed.length) {
-            const deduplicated = Array.from(seen.values());
-            await safeStorage.setItem('med_user_medications_list', JSON.stringify(deduplicated));
-            return deduplicated;
-          }
-          return parsed;
+        } catch {}
+      }
+
+      // Deduplicate localMeds if needed
+      const seen = new Map<string, Medication>();
+      for (const item of localMeds) {
+        const key = normalizeMedName(item.name);
+        if (!key) continue;
+        if (!seen.has(key)) {
+          seen.set(key, item);
         }
       }
+      localMeds = Array.from(seen.values());
+
+      // Sync / restore user's medications from Supabase user_schedules (strictly for this userUUID)
+      if (supabase && userUUID) {
+        try {
+          const { data: schedRows, error: schedErr } = await supabase
+            .from('user_schedules')
+            .select('*')
+            .eq('user_id', userUUID)
+            .order('created_at', { ascending: true });
+
+          let masterListCache: Medication[] | null = null;
+          const getMasterCached = async () => {
+            if (!masterListCache) {
+              masterListCache = await this.getMasterMedications().catch(() => []);
+            }
+            return masterListCache;
+          };
+
+          let updatedFromRemote = false;
+
+          if (!schedErr && schedRows && schedRows.length > 0) {
+            const grouped = new Map<string, any[]>();
+            for (const row of schedRows) {
+              const normName = normalizeMedName(row.medication_name);
+              if (!normName) continue;
+              if (!grouped.has(normName)) {
+                grouped.set(normName, []);
+              }
+              grouped.get(normName)!.push(row);
+            }
+
+            // Check if any medication from this user's Supabase schedules is missing locally
+            let missingAny = false;
+            for (const normName of grouped.keys()) {
+              if (!seen.has(normName)) {
+                missingAny = true;
+                break;
+              }
+            }
+
+            if (missingAny) {
+              const masterList = await getMasterCached();
+              for (const [normName, rows] of grouped.entries()) {
+                if (seen.has(normName)) continue;
+
+                const firstRow = rows[0];
+                const latestRow = rows[rows.length - 1];
+                const medName = latestRow.medication_name || firstRow.medication_name;
+                const matchedMaster = masterList.find(
+                  m =>
+                    (latestRow.medication_id && m.id === latestRow.medication_id) ||
+                    normalizeMedName(m.name) === normName
+                );
+
+                const timeSet = new Set<string>();
+                const timeMealTimings: Record<string, 'ก่อนอาหาร' | 'หลังอาหาร'> = {};
+                let primaryMealTiming: any = undefined;
+
+                for (const r of rows) {
+                  const cleanT = String(r.time || '')
+                    .replace(' น.', '')
+                    .trim();
+                  if (/^\d{1,2}:\d{2}$/.test(cleanT)) {
+                    const [hh, mm] = cleanT.split(':');
+                    const normT = `${hh.padStart(2, '0')}:${mm}`;
+                    timeSet.add(normT);
+                    if (r.meal_timing === 'ก่อนอาหาร' || r.meal_timing === 'หลังอาหาร') {
+                      timeMealTimings[normT] = r.meal_timing;
+                    }
+                    if (!primaryMealTiming && r.meal_timing) {
+                      primaryMealTiming = r.meal_timing;
+                    }
+                  }
+                }
+
+                const times = Array.from(timeSet).sort((a, b) => a.localeCompare(b));
+                const resolvedTimes = times.length > 0 ? times : ['08:00'];
+
+                // Use earliest date or created_at so today's full schedule is active
+                let earliestCreatedAt = firstRow.created_at;
+                if (firstRow.date && /^\d{4}-\d{2}-\d{2}$/.test(firstRow.date)) {
+                  const dateStartIso = new Date(`${firstRow.date}T00:00:00`).toISOString();
+                  if (!earliestCreatedAt || dateStartIso < earliestCreatedAt) {
+                    earliestCreatedAt = dateStartIso;
+                  }
+                }
+
+                const restoredMed: Medication = {
+                  id:
+                    latestRow.medication_id ||
+                    matchedMaster?.id ||
+                    `med-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                  code: matchedMaster?.code,
+                  name: medName,
+                  type: (latestRow.type || matchedMaster?.type || 'เม็ด') as any,
+                  category: (matchedMaster?.category || 'ยา') as any,
+                  dosage: latestRow.dosage || matchedMaster?.dosage || '1',
+                  unit: latestRow.unit || matchedMaster?.unit || 'เม็ด',
+                  frequency: resolvedTimes.length,
+                  remaining: 30,
+                  durationMode: 'ทุกวัน',
+                  instructions: matchedMaster?.instructions || 'ทุกวัน',
+                  precautions: matchedMaster?.precautions || '',
+                  imageUrl: matchedMaster?.imageUrl,
+                  status: 'active',
+                  times: resolvedTimes,
+                  mealTiming: primaryMealTiming || 'หลังอาหาร',
+                  timeMealTimings:
+                    Object.keys(timeMealTimings).length > 0 ? timeMealTimings : undefined,
+                  createdAt: earliestCreatedAt || new Date(0).toISOString(),
+                };
+
+                seen.set(normName, restoredMed);
+                updatedFromRemote = true;
+              }
+            }
+          }
+
+          // Clean up any medications that were previously recovered from activity_logs by matching user_name
+          // when this specific user account (userUUID) actually has 0 rows in user_schedules
+          const recoveredKey = `med_recovered_logs_v1_${userKey}`;
+          const cleanedCollisionKey = `med_cleaned_log_collision_v1_${userKey}`;
+          const wasRecoveredByName = await safeStorage.getItem(recoveredKey);
+          const alreadyCleanedCollision = await safeStorage.getItem(cleanedCollisionKey);
+          if (
+            wasRecoveredByName &&
+            !alreadyCleanedCollision &&
+            !schedErr &&
+            (!schedRows || schedRows.length === 0)
+          ) {
+            seen.clear();
+            localMeds = [];
+            await safeStorage.setItem(listKey, JSON.stringify([]));
+            await safeStorage.setItem(cleanedCollisionKey, 'true');
+          }
+
+          if (updatedFromRemote) {
+            localMeds = Array.from(seen.values());
+            await safeStorage.setItem(listKey, JSON.stringify(localMeds));
+          }
+        } catch (syncErr) {
+          console.warn('Error syncing user medications from Supabase user_schedules:', syncErr);
+        }
+      }
+
+      return localMeds;
     } catch (e) {
       console.warn('Error fetching user medications from storage:', e);
     }
@@ -861,6 +1309,12 @@ export const medService = {
       }
     }
     try {
+      const { userKey, userUUID } = await this.getCurrentUserScope();
+      if (!userKey) {
+        return med;
+      }
+      const listKey = `med_user_medications_list_${userKey}`;
+
       // Determine effective times if active
       let effectiveTimes = med.times || [];
       if (med.status === 'active' && effectiveTimes.length === 0) {
@@ -899,12 +1353,12 @@ export const medService = {
         updated = [med, ...current];
       }
 
-      await safeStorage.setItem('med_user_medications_list', JSON.stringify(updated));
+      await safeStorage.setItem(listKey, JSON.stringify(updated));
 
-      // Manage today's schedule in local storage
+      // Manage today's schedule in local storage (scoped per user)
       const todayDate = new Date();
       const today = getLocalDateString(todayDate);
-      const scheduleKey = `med_schedule_${today}`;
+      const scheduleKey = `med_schedule_${userKey}_${today}`;
 
       let currentSchedule: ScheduleItem[] = [];
       const localStr = await safeStorage.getItem(scheduleKey);
@@ -989,27 +1443,26 @@ export const medService = {
       // ALWAYS update local storage for today
       await safeStorage.setItem(scheduleKey, JSON.stringify(currentSchedule));
 
-      // Sync to Supabase user_schedules
-      if (supabase) {
+      // Sync to Supabase user_schedules (strictly scoped to this user's UUID)
+      if (supabase && userUUID) {
         try {
           if (previousMed && previousMed.name !== med.name) {
             await supabase
               .from('user_schedules')
               .delete()
-              .eq('date', today)
+              .eq('user_id', userUUID)
               .eq('medication_name', previousMed.name);
           }
           await supabase
             .from('user_schedules')
             .delete()
+            .eq('user_id', userUUID)
             .eq('date', today)
             .eq('medication_name', med.name);
 
-          if (shouldScheduleToday && newScheduleItems.length > 0) {
-            const user = await this.getUserProfile();
-            const userUUID = user?.id && isValidUUID(user.id) ? user.id : null;
-            const medUUID = isValidUUID(med.id) ? med.id : null;
+          const medUUID = isValidUUID(med.id) ? med.id : null;
 
+          if (shouldScheduleToday && newScheduleItems.length > 0) {
             const supabaseRows = newScheduleItems.map(item => ({
               user_id: userUUID,
               medication_id: medUUID,
@@ -1026,6 +1479,38 @@ export const medService = {
             }));
 
             await supabase.from('user_schedules').insert(supabaseRows);
+          } else if (med.status === 'active' && effectiveTimes.length > 0) {
+            // Ensure all configured times are persisted in Supabase user_schedules for this user
+            const tomorrowDate = new Date(todayDate);
+            tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+            const tomorrowStr = getLocalDateString(tomorrowDate);
+
+            await supabase
+              .from('user_schedules')
+              .delete()
+              .eq('user_id', userUUID)
+              .eq('date', tomorrowStr)
+              .eq('medication_name', med.name);
+
+            const tomorrowRows = effectiveTimes.map(t => {
+              const normT = t.replace(' น.', '').trim();
+              return {
+                user_id: userUUID,
+                medication_id: medUUID,
+                medication_name: med.name,
+                dosage: med.dosage,
+                unit: med.unit,
+                type: med.type,
+                meal_timing: med.timeMealTimings?.[normT] || med.mealTiming || '',
+                time: `${normT} น.`,
+                date: tomorrowStr,
+                is_taken: false,
+                taken_at: null,
+                is_skipped: false,
+              };
+            });
+
+            await supabase.from('user_schedules').insert(tomorrowRows);
           }
         } catch (schErr) {
           console.warn('Failed to insert user_schedules to Supabase:', schErr);
@@ -1046,14 +1531,18 @@ export const medService = {
 
   async deleteMedication(id: string): Promise<boolean> {
     try {
+      const { userKey, userUUID } = await this.getCurrentUserScope();
+      if (!userKey) return false;
+      const listKey = `med_user_medications_list_${userKey}`;
+
       const current = await this.getMedications();
       const medToDelete = current.find(m => m.id === id);
       const updated = current.filter(m => m.id !== id);
-      await safeStorage.setItem('med_user_medications_list', JSON.stringify(updated));
+      await safeStorage.setItem(listKey, JSON.stringify(updated));
 
       // Remove from today's schedule
       const today = getLocalDateString();
-      const scheduleKey = `med_schedule_${today}`;
+      const scheduleKey = `med_schedule_${userKey}_${today}`;
       const localStr = await safeStorage.getItem(scheduleKey);
       if (localStr) {
         try {
@@ -1065,9 +1554,13 @@ export const medService = {
         } catch {}
       }
 
-      if (supabase && medToDelete) {
+      if (supabase && userUUID && medToDelete) {
         try {
-          await supabase.from('user_schedules').delete().eq('medication_name', medToDelete.name);
+          await supabase
+            .from('user_schedules')
+            .delete()
+            .eq('user_id', userUUID)
+            .eq('medication_name', medToDelete.name);
         } catch {}
       }
 
@@ -1112,15 +1605,21 @@ export const medService = {
   },
 
   // --------------------------------------------------------------------------
-  // Schedules & History
+  // Schedules & History (Strictly Scoped Per User)
   // --------------------------------------------------------------------------
   async getScheduleForDate(dateStr?: string): Promise<ScheduleItem[]> {
     await this.purgeMockCacheIfNeeded();
+    const { userKey, userUUID } = await this.getCurrentUserScope();
+    if (!userKey) {
+      return [];
+    }
+
     const targetDateStr = dateStr || getLocalDateString();
     const targetDate = parseLocalDateString(targetDateStr);
-    const key = `med_schedule_${targetDateStr}`;
+    const key = `med_schedule_${userKey}_${targetDateStr}`;
+    const snoozeKey = `med_snooze_until_map_${userKey}`;
 
-    // 1. Read local storage for this date (freshest isTaken state on this device)
+    // 1. Read local storage for this user & date (freshest isTaken state on this device)
     let localItems: ScheduleItem[] = [];
     const local = await safeStorage.getItem(key);
     if (local) {
@@ -1132,20 +1631,21 @@ export const medService = {
       } catch {}
     }
 
-    // 1.1 Read persistent snooze map (เพื่อกู้คืนสถานะ Snooze ของยาแม้แคชจะถูกรีเซ็ต)
+    // 1.1 Read persistent snooze map for this user
     let snoozeMap: Record<string, number> = {};
     try {
-      const snoozeRaw = await safeStorage.getItem('med_snooze_until_map');
+      const snoozeRaw = await safeStorage.getItem(snoozeKey);
       if (snoozeRaw) snoozeMap = JSON.parse(snoozeRaw);
     } catch {}
 
-    // 2. Read Supabase user_schedules for this date (to pick up remote UUIDs / records)
+    // 2. Read Supabase user_schedules ONLY for this specific user (user_id === userUUID)
     let remoteItems: ScheduleItem[] = [];
-    if (supabase) {
+    if (supabase && userUUID) {
       try {
         const { data, error } = await supabase
           .from('user_schedules')
           .select('*')
+          .eq('user_id', userUUID)
           .eq('date', targetDateStr)
           .order('time', { ascending: true });
 
@@ -1324,8 +1824,13 @@ export const medService = {
     return new Promise<ScheduleItem[]>((resolve, reject) => {
       toggleCheckedQueue = toggleCheckedQueue.then(async () => {
         try {
+          const { userKey } = await this.getCurrentUserScope();
+          if (!userKey) {
+            resolve([]);
+            return;
+          }
           const targetDate = dateStr || getLocalDateString();
-          const key = `med_schedule_${targetDate}`;
+          const key = `med_schedule_${userKey}_${targetDate}`;
 
           // อ่านจาก local storage ก่อนเพื่อความรวดเร็วและไม่ชนกับ network call
           let schedule: ScheduleItem[] = [];
@@ -1383,12 +1888,19 @@ export const medService = {
     scheduleIds: string[],
     dateStr?: string
   ): Promise<ScheduleItem[]> {
+    const { userKey, userUUID } = await this.getCurrentUserScope();
+    if (!userKey) {
+      return [];
+    }
+
     const targetDate = dateStr || getLocalDateString();
     if (!scheduleIds || scheduleIds.length === 0) {
       return this.getScheduleForDate(targetDate);
     }
 
-    const key = `med_schedule_${targetDate}`;
+    const key = `med_schedule_${userKey}_${targetDate}`;
+    const snoozeKey = `med_snooze_until_map_${userKey}`;
+    const listKey = `med_user_medications_list_${userKey}`;
     const schedule = await this.getScheduleForDate(targetDate);
     const idSet = new Set(scheduleIds);
 
@@ -1417,7 +1929,7 @@ export const medService = {
 
     if (newlyConfirmed.length > 0) {
       try {
-        const snoozeRaw = await safeStorage.getItem('med_snooze_until_map');
+        const snoozeRaw = await safeStorage.getItem(snoozeKey);
         if (snoozeRaw) {
           const snoozeMap = JSON.parse(snoozeRaw);
           newlyConfirmed.forEach(item => {
@@ -1425,7 +1937,7 @@ export const medService = {
             if (item.medicationId) delete snoozeMap[`${item.medicationId}_${targetDate}`];
             if (item.medicationName) delete snoozeMap[`${item.medicationName}_${targetDate}`];
           });
-          await safeStorage.setItem('med_snooze_until_map', JSON.stringify(snoozeMap));
+          await safeStorage.setItem(snoozeKey, JSON.stringify(snoozeMap));
         }
       } catch {}
     }
@@ -1455,24 +1967,26 @@ export const medService = {
         }
 
         if (medChanged) {
-          await safeStorage.setItem('med_user_medications_list', JSON.stringify(updatedMeds));
+          await safeStorage.setItem(listKey, JSON.stringify(updatedMeds));
         }
       } catch (stockErr) {
         console.warn('Failed to deduct medication stock on confirm:', stockErr);
       }
 
-      if (supabase) {
+      if (supabase && userUUID) {
         for (const confirmedItem of newlyConfirmed) {
           try {
             if (isValidUUID(confirmedItem.id)) {
               await supabase
                 .from('user_schedules')
                 .update({ is_taken: true, taken_at: timeNow })
-                .eq('id', confirmedItem.id);
+                .eq('id', confirmedItem.id)
+                .eq('user_id', userUUID);
             } else {
               const { data: existingRows } = await supabase
                 .from('user_schedules')
                 .select('id')
+                .eq('user_id', userUUID)
                 .eq('date', targetDate)
                 .eq('medication_name', confirmedItem.medicationName)
                 .eq('time', confirmedItem.time);
@@ -1481,10 +1995,9 @@ export const medService = {
                 await supabase
                   .from('user_schedules')
                   .update({ is_taken: true, taken_at: timeNow })
-                  .eq('id', existingRows[0].id);
+                  .eq('id', existingRows[0].id)
+                  .eq('user_id', userUUID);
               } else {
-                const user = await this.getUserProfile();
-                const userUUID = user?.id && isValidUUID(user.id) ? user.id : null;
                 const medUUID = isValidUUID(confirmedItem.medicationId)
                   ? confirmedItem.medicationId
                   : null;
@@ -1526,8 +2039,15 @@ export const medService = {
     isTaken: boolean,
     dateStr?: string
   ): Promise<ScheduleItem[]> {
+    const { userKey, userUUID } = await this.getCurrentUserScope();
+    if (!userKey) {
+      return [];
+    }
+
     const targetDate = dateStr || getLocalDateString();
-    const key = `med_schedule_${targetDate}`;
+    const key = `med_schedule_${userKey}_${targetDate}`;
+    const snoozeKey = `med_snooze_until_map_${userKey}`;
+    const listKey = `med_user_medications_list_${userKey}`;
     const schedule = await this.getScheduleForDate(targetDate);
     const targetItem = schedule.find(i => i.id === scheduleId);
     const wasTaken = Boolean(targetItem?.isTaken);
@@ -1556,13 +2076,13 @@ export const medService = {
 
     if (isTaken) {
       try {
-        const snoozeRaw = await safeStorage.getItem('med_snooze_until_map');
+        const snoozeRaw = await safeStorage.getItem(snoozeKey);
         if (snoozeRaw) {
           const snoozeMap = JSON.parse(snoozeRaw);
           delete snoozeMap[scheduleId];
           if (targetItem?.medicationId) delete snoozeMap[`${targetItem.medicationId}_${targetDate}`];
           if (targetItem?.medicationName) delete snoozeMap[`${targetItem.medicationName}_${targetDate}`];
-          await safeStorage.setItem('med_snooze_until_map', JSON.stringify(snoozeMap));
+          await safeStorage.setItem(snoozeKey, JSON.stringify(snoozeMap));
         }
       } catch {}
     }
@@ -1586,7 +2106,7 @@ export const medService = {
               ...med,
               remaining: nextRemaining,
             };
-            await safeStorage.setItem('med_user_medications_list', JSON.stringify(updatedMeds));
+            await safeStorage.setItem(listKey, JSON.stringify(updatedMeds));
           }
         }
       } catch (stockErr) {
@@ -1594,18 +2114,20 @@ export const medService = {
       }
     }
 
-    // Sync to Supabase user_schedules
-    if (supabase) {
+    // Sync to Supabase user_schedules (strictly scoped to this user)
+    if (supabase && userUUID) {
       try {
         if (isValidUUID(scheduleId)) {
           await supabase
             .from('user_schedules')
             .update({ is_taken: isTaken, taken_at: isTaken ? timeNow : null })
-            .eq('id', scheduleId);
+            .eq('id', scheduleId)
+            .eq('user_id', userUUID);
         } else if (targetItem) {
           const { data: existingRows } = await supabase
             .from('user_schedules')
             .select('id')
+            .eq('user_id', userUUID)
             .eq('date', targetDate)
             .eq('medication_name', targetItem.medicationName)
             .eq('time', targetItem.time);
@@ -1614,10 +2136,9 @@ export const medService = {
             await supabase
               .from('user_schedules')
               .update({ is_taken: isTaken, taken_at: isTaken ? timeNow : null })
-              .eq('id', existingRows[0].id);
+              .eq('id', existingRows[0].id)
+              .eq('user_id', userUUID);
           } else if (isTaken) {
-            const user = await this.getUserProfile();
-            const userUUID = user?.id && isValidUUID(user.id) ? user.id : null;
             const medUUID = isValidUUID(targetItem.medicationId) ? targetItem.medicationId : null;
             await supabase.from('user_schedules').insert([
               {
@@ -1656,8 +2177,14 @@ export const medService = {
     minutes: number = 30,
     dateStr?: string
   ): Promise<ScheduleItem[]> {
+    const { userKey, userUUID } = await this.getCurrentUserScope();
+    if (!userKey) {
+      return [];
+    }
+
     const targetDate = dateStr || getLocalDateString();
-    const key = `med_schedule_${targetDate}`;
+    const key = `med_schedule_${userKey}_${targetDate}`;
+    const snoozeKey = `med_snooze_until_map_${userKey}`;
     const schedule = await this.getScheduleForDate(targetDate);
     const targetItem = schedule.find(i => i.id === scheduleId);
 
@@ -1685,14 +2212,14 @@ export const medService = {
     const postponedUntil = Date.now() + minutes * 60 * 1000;
 
     try {
-      const snoozeRaw = await safeStorage.getItem('med_snooze_until_map');
+      const snoozeRaw = await safeStorage.getItem(snoozeKey);
       const snoozeMap: Record<string, number> = snoozeRaw ? JSON.parse(snoozeRaw) : {};
       snoozeMap[scheduleId] = postponedUntil;
       if (targetItem.medicationId) {
         snoozeMap[`${targetItem.medicationId}_${targetDate}`] = postponedUntil;
       }
       snoozeMap[`${targetItem.medicationName}_${targetDate}`] = postponedUntil;
-      await safeStorage.setItem('med_snooze_until_map', JSON.stringify(snoozeMap));
+      await safeStorage.setItem(snoozeKey, JSON.stringify(snoozeMap));
     } catch {}
 
     const updated = schedule
@@ -1713,9 +2240,13 @@ export const medService = {
 
     await safeStorage.setItem(key, JSON.stringify(updated));
 
-    if (supabase && isValidUUID(scheduleId)) {
+    if (supabase && userUUID && isValidUUID(scheduleId)) {
       try {
-        await supabase.from('user_schedules').update({ time: newTimeStr }).eq('id', scheduleId);
+        await supabase
+          .from('user_schedules')
+          .update({ time: newTimeStr })
+          .eq('id', scheduleId)
+          .eq('user_id', userUUID);
       } catch {}
     }
 
@@ -1723,8 +2254,14 @@ export const medService = {
   },
 
   async skipSchedule(scheduleId: string, dateStr?: string): Promise<ScheduleItem[]> {
+    const { userKey, userUUID } = await this.getCurrentUserScope();
+    if (!userKey) {
+      return [];
+    }
+
     const targetDate = dateStr || getLocalDateString();
-    const key = `med_schedule_${targetDate}`;
+    const key = `med_schedule_${userKey}_${targetDate}`;
+    const snoozeKey = `med_snooze_until_map_${userKey}`;
     const schedule = await this.getScheduleForDate(targetDate);
     const targetItem = schedule.find(i => i.id === scheduleId);
 
@@ -1739,19 +2276,23 @@ export const medService = {
     await safeStorage.setItem(key, JSON.stringify(updated));
 
     try {
-      const snoozeRaw = await safeStorage.getItem('med_snooze_until_map');
+      const snoozeRaw = await safeStorage.getItem(snoozeKey);
       if (snoozeRaw) {
         const snoozeMap = JSON.parse(snoozeRaw);
         delete snoozeMap[scheduleId];
         if (targetItem?.medicationId) delete snoozeMap[`${targetItem.medicationId}_${targetDate}`];
         if (targetItem?.medicationName) delete snoozeMap[`${targetItem.medicationName}_${targetDate}`];
-        await safeStorage.setItem('med_snooze_until_map', JSON.stringify(snoozeMap));
+        await safeStorage.setItem(snoozeKey, JSON.stringify(snoozeMap));
       }
     } catch {}
 
-    if (supabase && isValidUUID(scheduleId)) {
+    if (supabase && userUUID && isValidUUID(scheduleId)) {
       try {
-        await supabase.from('user_schedules').update({ is_skipped: true }).eq('id', scheduleId);
+        await supabase
+          .from('user_schedules')
+          .update({ is_skipped: true })
+          .eq('id', scheduleId)
+          .eq('user_id', userUUID);
       } catch {}
     }
 
@@ -1759,19 +2300,26 @@ export const medService = {
   },
 
   // --------------------------------------------------------------------------
-  // Doctor Appointments (appointments table)
+  // Doctor Appointments (appointments table - Strictly Scoped Per User)
   // --------------------------------------------------------------------------
   async getAppointments(): Promise<DoctorAppointment[]> {
     await this.purgeMockCacheIfNeeded();
-    if (supabase) {
+    const { userKey, userUUID } = await this.getCurrentUserScope();
+    if (!userKey) {
+      return [];
+    }
+    const storageKey = `med_appointments_${userKey}`;
+
+    if (supabase && userUUID) {
       try {
         const { data, error } = await supabase
           .from('appointments')
           .select('*')
+          .eq('user_id', userUUID)
           .order('appointment_date', { ascending: true });
 
-        if (!error && data && data.length > 0) {
-          return data.map((d: any) => ({
+        if (!error && data) {
+          const mapped = data.map((d: any) => ({
             id: d.id,
             doctorName: d.doctor_name,
             department: d.department || '',
@@ -1781,33 +2329,44 @@ export const medService = {
             details: d.details || '',
             status: d.status || 'confirmed',
           }));
+          await safeStorage.setItem(storageKey, JSON.stringify(mapped));
+          return mapped;
         }
       } catch {}
     }
 
-    const local = await safeStorage.getItem('med_appointments');
+    const local = await safeStorage.getItem(storageKey);
     if (local) {
-      const parsed = JSON.parse(local);
-      if (Array.isArray(parsed)) {
-        return parsed.filter(a => !['apt-1', 'apt-2', 'apt-3'].includes(a.id));
-      }
+      try {
+        const parsed = JSON.parse(local);
+        if (Array.isArray(parsed)) {
+          return parsed.filter(a => !['apt-1', 'apt-2', 'apt-3'].includes(a.id));
+        }
+      } catch {}
     }
 
     return [];
   },
 
   async addAppointment(appointment: Omit<DoctorAppointment, 'id'>): Promise<DoctorAppointment> {
+    const { userKey, userUUID } = await this.getCurrentUserScope();
     const newApt: DoctorAppointment = {
       ...appointment,
       id: `apt-${Date.now()}`,
     };
 
-    if (supabase) {
+    if (!userKey) {
+      return newApt;
+    }
+    const storageKey = `med_appointments_${userKey}`;
+
+    if (supabase && userUUID) {
       try {
         const { data, error } = await supabase
           .from('appointments')
           .insert([
             {
+              user_id: userUUID,
               doctor_name: appointment.doctorName,
               department: appointment.department,
               hospital: appointment.hospital,
@@ -1826,15 +2385,22 @@ export const medService = {
     }
 
     const appointments = await this.getAppointments();
-    const updated = [newApt, ...appointments];
-    await safeStorage.setItem('med_appointments', JSON.stringify(updated));
+    const exists = appointments.some(a => a.id === newApt.id);
+    const updated = exists ? appointments : [newApt, ...appointments];
+    await safeStorage.setItem(storageKey, JSON.stringify(updated));
 
     await this.logActivity(`เพิ่มนัดหมายแพทย์: ${appointment.doctorName}`, `${appointment.hospital} (${appointment.date} ${appointment.time})`);
     return newApt;
   },
 
   async updateAppointment(appointment: DoctorAppointment): Promise<DoctorAppointment> {
-    if (supabase && !appointment.id.startsWith('apt-')) {
+    const { userKey, userUUID } = await this.getCurrentUserScope();
+    if (!userKey) {
+      return appointment;
+    }
+    const storageKey = `med_appointments_${userKey}`;
+
+    if (supabase && userUUID && !appointment.id.startsWith('apt-')) {
       try {
         await supabase
           .from('appointments')
@@ -1847,7 +2413,8 @@ export const medService = {
             details: appointment.details,
             status: appointment.status,
           })
-          .eq('id', appointment.id);
+          .eq('id', appointment.id)
+          .eq('user_id', userUUID);
       } catch (e) {
         console.warn('Supabase update appointment error:', e);
       }
@@ -1855,38 +2422,55 @@ export const medService = {
 
     const appointments = await this.getAppointments();
     const updated = appointments.map(a => (a.id === appointment.id ? appointment : a));
-    await safeStorage.setItem('med_appointments', JSON.stringify(updated));
+    await safeStorage.setItem(storageKey, JSON.stringify(updated));
 
     await this.logActivity(`แก้ไขนัดหมายแพทย์: ${appointment.doctorName}`, `${appointment.hospital} (${appointment.date} ${appointment.time})`);
     return appointment;
   },
 
   async deleteAppointment(id: string): Promise<boolean> {
-    if (supabase) {
+    const { userKey, userUUID } = await this.getCurrentUserScope();
+    if (!userKey) {
+      return false;
+    }
+    const storageKey = `med_appointments_${userKey}`;
+
+    if (supabase && userUUID) {
       try {
-        await supabase.from('appointments').delete().eq('id', id);
+        await supabase
+          .from('appointments')
+          .delete()
+          .eq('id', id)
+          .eq('user_id', userUUID);
       } catch {}
     }
     const appointments = await this.getAppointments();
     const updated = appointments.filter(a => a.id !== id);
-    await safeStorage.setItem('med_appointments', JSON.stringify(updated));
+    await safeStorage.setItem(storageKey, JSON.stringify(updated));
     return true;
   },
 
   // --------------------------------------------------------------------------
-  // Side Effect Logs (side_effects table)
+  // Side Effect Logs (side_effects table - Strictly Scoped Per User)
   // --------------------------------------------------------------------------
   async getSideEffects(): Promise<SideEffectLog[]> {
     await this.purgeMockCacheIfNeeded();
-    if (supabase) {
+    const { userKey, userUUID } = await this.getCurrentUserScope();
+    if (!userKey) {
+      return [];
+    }
+    const storageKey = `med_side_effects_${userKey}`;
+
+    if (supabase && userUUID) {
       try {
         const { data, error } = await supabase
           .from('side_effects')
           .select('*')
+          .eq('user_id', userUUID)
           .order('created_at', { ascending: false });
 
-        if (!error && data && data.length > 0) {
-          return data.map((d: any) => ({
+        if (!error && data) {
+          const mapped = data.map((d: any) => ({
             id: d.id,
             date: d.log_date || '',
             time: d.log_time || '',
@@ -1896,34 +2480,45 @@ export const medService = {
             details: d.details || '',
             createdAt: d.created_at,
           }));
+          await safeStorage.setItem(storageKey, JSON.stringify(mapped));
+          return mapped;
         }
       } catch {}
     }
 
-    const local = await safeStorage.getItem('med_side_effects');
+    const local = await safeStorage.getItem(storageKey);
     if (local) {
-      const parsed = JSON.parse(local);
-      if (Array.isArray(parsed)) {
-        return parsed.filter(se => !se.id.startsWith('se-'));
-      }
+      try {
+        const parsed = JSON.parse(local);
+        if (Array.isArray(parsed)) {
+          return parsed;
+        }
+      } catch {}
     }
 
     return [];
   },
 
   async addSideEffect(log: Omit<SideEffectLog, 'id' | 'createdAt'>): Promise<SideEffectLog> {
+    const { userKey, userUUID } = await this.getCurrentUserScope();
     const newLog: SideEffectLog = {
       ...log,
       id: `se-${Date.now()}`,
       createdAt: new Date().toISOString(),
     };
 
-    if (supabase) {
+    if (!userKey) {
+      return newLog;
+    }
+    const storageKey = `med_side_effects_${userKey}`;
+
+    if (supabase && userUUID) {
       try {
         const { data, error } = await supabase
           .from('side_effects')
           .insert([
             {
+              user_id: userUUID,
               medication_name: log.medicationName,
               symptoms: log.symptoms,
               severity: log.severity,
@@ -1941,8 +2536,9 @@ export const medService = {
     }
 
     const list = await this.getSideEffects();
-    const updated = [newLog, ...list];
-    await safeStorage.setItem('med_side_effects', JSON.stringify(updated));
+    const exists = list.some(item => item.id === newLog.id);
+    const updated = exists ? list : [newLog, ...list];
+    await safeStorage.setItem(storageKey, JSON.stringify(updated));
 
     await this.logActivity(`บันทึกผลข้างเคียง: ${log.medicationName}`, `อาการ: ${log.symptoms.join(', ')} (ระดับ: ${log.severity})`);
     return newLog;

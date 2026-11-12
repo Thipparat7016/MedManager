@@ -17,7 +17,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppHeader } from '@/components/ui/AppHeader';
 import { CalendarModal } from '@/components/ui/CalendarModal';
 import { useApp } from '@/context/AppContext';
-import { formatHospitalName, formatDepartmentName } from '@/services/medService';
+import { formatHospitalName, formatDepartmentName, toUserStorageKey } from '@/services/medService';
 
 interface FavoriteDoctor {
   id: string;
@@ -37,7 +37,11 @@ const normalizeDoctorName = (name: string): string => {
 
 export default function AddAppointmentScreen() {
   const router = useRouter();
-  const { appointments, addAppointment } = useApp();
+  const { user, appointments, addAppointment } = useApp();
+  const favStorageKey = useMemo(() => {
+    const key = toUserStorageKey(user?.email || user?.id);
+    return key ? `favorite_doctors_${key}` : null;
+  }, [user?.email, user?.id]);
 
   const now = useMemo(() => new Date(), []);
   const pad = (n: number) => n.toString().padStart(2, '0');
@@ -79,22 +83,29 @@ export default function AddAppointmentScreen() {
     { label: 'เย็น (16:00)', hour: 16, minute: 0 },
   ];
 
-  // Load persisted favorite doctors on mount
+  // Load persisted favorite doctors for current user
   useEffect(() => {
     (async () => {
+      if (!favStorageKey) {
+        setFavoriteDoctors([]);
+        return;
+      }
       try {
-        const stored = await AsyncStorage.getItem('favorite_doctors');
+        const stored = await AsyncStorage.getItem(favStorageKey);
         if (stored) {
           const parsed = JSON.parse(stored);
-          if (Array.isArray(parsed) && parsed.length > 0) {
+          if (Array.isArray(parsed)) {
             setFavoriteDoctors(parsed);
+            return;
           }
         }
+        setFavoriteDoctors([]);
       } catch (e) {
         console.warn('Failed to load favorite doctors:', e);
+        setFavoriteDoctors([]);
       }
     })();
-  }, []);
+  }, [favStorageKey]);
 
   // Handle selecting a favorite doctor
   const handleSelectDoctor = (doc: FavoriteDoctor) => {
@@ -135,10 +146,12 @@ export default function AddAppointmentScreen() {
           onPress: async () => {
             const updated = favoriteDoctors.filter(d => d.id !== doc.id);
             setFavoriteDoctors(updated);
-            try {
-              await AsyncStorage.setItem('favorite_doctors', JSON.stringify(updated));
-            } catch (e) {
-              console.warn('Failed to delete favorite doctor:', e);
+            if (favStorageKey) {
+              try {
+                await AsyncStorage.setItem(favStorageKey, JSON.stringify(updated));
+              } catch (e) {
+                console.warn('Failed to delete favorite doctor:', e);
+              }
             }
             if (selectedDoctorId === doc.id) {
               setSelectedDoctorId(null);
@@ -180,10 +193,12 @@ export default function AddAppointmentScreen() {
         : d
     );
     setFavoriteDoctors(updated);
-    try {
-      await AsyncStorage.setItem('favorite_doctors', JSON.stringify(updated));
-    } catch (e) {
-      console.warn('Failed to update favorite doctor:', e);
+    if (favStorageKey) {
+      try {
+        await AsyncStorage.setItem(favStorageKey, JSON.stringify(updated));
+      } catch (e) {
+        console.warn('Failed to update favorite doctor:', e);
+      }
     }
 
     if (selectedDoctorId === editingDoc.id) {
@@ -274,9 +289,11 @@ export default function AddAppointmentScreen() {
           };
           const updated = [...favoriteDoctors, newDoc];
           setFavoriteDoctors(updated);
-          await AsyncStorage.setItem('favorite_doctors', JSON.stringify(updated)).catch(e => {
-            console.warn('Failed to save favorite doctor:', e);
-          });
+          if (favStorageKey) {
+            await AsyncStorage.setItem(favStorageKey, JSON.stringify(updated)).catch(e => {
+              console.warn('Failed to save favorite doctor:', e);
+            });
+          }
         }
       }
 

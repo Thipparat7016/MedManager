@@ -10,6 +10,7 @@ import {
   ScrollView,
   Alert,
   ActivityIndicator,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, Redirect, useLocalSearchParams } from 'expo-router';
@@ -93,8 +94,25 @@ export default function LoginScreen() {
           return;
         }
 
+        const resolveGoogleName = (meta: any) => {
+          if (!meta) return '';
+          if (meta.full_name) return String(meta.full_name).trim();
+          if (meta.name) return String(meta.name).trim();
+          const given = meta.given_name ? String(meta.given_name).trim() : '';
+          const family = meta.family_name ? String(meta.family_name).trim() : '';
+          return `${given} ${family}`.trim();
+        };
+
+        const resolveGoogleAvatar = (meta: any) => {
+          if (!meta) return '';
+          if (meta.avatar_url) return String(meta.avatar_url).trim();
+          if (meta.picture) return String(meta.picture).trim();
+          return '';
+        };
+
         let googleEmail = '';
         let googleName = '';
+        let googleAvatar = '';
 
         if (params.access_token) {
           const { data: sessionData, error: sessionErr } = await supabase.auth.setSession({
@@ -103,29 +121,23 @@ export default function LoginScreen() {
           });
           if (sessionErr) throw sessionErr;
           googleEmail = sessionData?.user?.email || '';
-          googleName =
-            sessionData?.user?.user_metadata?.full_name ||
-            sessionData?.user?.user_metadata?.name ||
-            '';
+          googleName = resolveGoogleName(sessionData?.user?.user_metadata);
+          googleAvatar = resolveGoogleAvatar(sessionData?.user?.user_metadata);
         } else if (params.code) {
           const { data: codeData, error: codeErr } = await supabase.auth.exchangeCodeForSession(
             params.code
           );
           if (codeErr) throw codeErr;
           googleEmail = codeData?.user?.email || '';
-          googleName =
-            codeData?.user?.user_metadata?.full_name ||
-            codeData?.user?.user_metadata?.name ||
-            '';
+          googleName = resolveGoogleName(codeData?.user?.user_metadata);
+          googleAvatar = resolveGoogleAvatar(codeData?.user?.user_metadata);
         }
 
         if (!googleEmail) {
           const { data: freshSession } = await supabase.auth.getSession();
           googleEmail = freshSession?.session?.user?.email || '';
-          googleName =
-            freshSession?.session?.user?.user_metadata?.full_name ||
-            freshSession?.session?.user?.user_metadata?.name ||
-            '';
+          googleName = resolveGoogleName(freshSession?.session?.user?.user_metadata);
+          googleAvatar = resolveGoogleAvatar(freshSession?.session?.user?.user_metadata);
         }
 
         if (!googleEmail) {
@@ -133,7 +145,7 @@ export default function LoginScreen() {
           return;
         }
 
-        const res = await loginWithGoogle(googleEmail, googleName);
+        const res = await loginWithGoogle(googleEmail, googleName, googleAvatar);
         if (res.success) {
           router.replace('/(tabs)' as any);
         } else {
@@ -209,8 +221,8 @@ export default function LoginScreen() {
     completeOAuthFromUrl,
   ]);
 
-  // If already logged in, redirect directly to tabs
-  if (!isAppLoading && isAuthenticated) {
+  // If already logged in, redirect directly to tabs (AppContext handles mandatory phone modal globally)
+  if (!isAppLoading && isAuthenticated && !isProcessingOAuthRef.current) {
     return <Redirect href={'/(tabs)' as any} />;
   }
 
@@ -237,6 +249,7 @@ export default function LoginScreen() {
     }
 
     try {
+      processedTokensRef.current.clear();
       setIsGoogleLoading(true);
 
       if (Platform.OS === 'web') {
