@@ -51,6 +51,7 @@ export interface ScheduleItem {
   time: string; // "08:00 น."
   originalTime?: string; // "08:00"
   postponedTime?: string; // "08:30 น."
+  postponedUntil?: number; // timestamp (ms) until which the item is snoozed
   date: string; // "2026-07-12"
   isChecked?: boolean; // กดติ๊กที่หน้าหลักแล้ว (รอยืนยัน หาก isTaken === false)
   isTaken: boolean;
@@ -376,6 +377,8 @@ export function getMedicationStockStatus(med: Medication): {
   };
 }
 
+let toggleCheckedQueue: Promise<any> = Promise.resolve();
+
 export const medService = {
   // --------------------------------------------------------------------------
   // Cache Cleanup for Mock Data
@@ -524,6 +527,68 @@ export const medService = {
       }]);
     } catch (logErr) {
       console.warn('Failed to log login activity:', logErr);
+    }
+
+    return profile;
+  },
+
+  async loginWithGoogleUser(email: string, fullName?: string): Promise<UserProfile> {
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail) {
+      throw new Error('ไม่พบข้อมูลอีเมลจาก Google');
+    }
+
+    if (!supabase) {
+      throw new Error('ไม่สามารถเชื่อมต่อฐานข้อมูลได้ กรุณาลองใหม่อีกครั้ง');
+    }
+
+    // STRICT CHECK: User MUST exist in Supabase app_users table!
+    const { data, error } = await supabase
+      .from('app_users')
+      .select('*')
+      .ilike('email', cleanEmail)
+      .limit(1);
+
+    if (error) {
+      console.error('Supabase query error during Google login:', error);
+      throw new Error('เกิดข้อผิดพลาดในการตรวจสอบบัญชี: ' + error.message);
+    }
+
+    if (!data || data.length === 0) {
+      // Sign out from Supabase Auth session because user is not allowed
+      try {
+        await supabase.auth.signOut();
+      } catch {}
+      throw new Error('ไม่พบบัญชีผู้ใช้นี้ในระบบ กรุณาสมัครสมาชิกก่อนเข้าสู่ระบบ');
+    }
+
+    const u = data[0];
+    const profile: UserProfile = {
+      id: u.id,
+      name: u.name || fullName || 'ผู้ใช้งาน',
+      email: u.email,
+      phone: u.phone || '',
+      notify30MinBefore: true,
+      notifyFoodWarning: true,
+      notifyAppointments: true,
+      notifyLowStock: false,
+    };
+
+    await safeStorage.setItem('med_is_authenticated', 'true');
+    await safeStorage.setItem('med_user_profile', JSON.stringify(profile));
+
+    // Log activity: 'เข้าสู่ระบบ (Google)'
+    try {
+      const now = new Date();
+      const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+      await supabase.from('activity_logs').insert([{
+        time: timeStr,
+        user_name: profile.name,
+        activity: 'เข้าสู่ระบบ (Google)',
+        details: `ผู้ใช้งาน ${profile.name} (${profile.email}) เข้าสู่ระบบด้วย Google บน MedApp`,
+      }]);
+    } catch (logErr) {
+      console.warn('Failed to log Google login activity:', logErr);
     }
 
     return profile;
@@ -692,6 +757,9 @@ export const medService = {
     try {
       await safeStorage.removeItem('med_user_profile');
       await safeStorage.removeItem('med_is_authenticated');
+      if (supabase) {
+        await supabase.auth.signOut().catch(() => {});
+      }
     } catch (e) {
       console.warn('Error clearing med_user_profile on logout:', e);
     }
@@ -1064,6 +1132,13 @@ export const medService = {
       } catch {}
     }
 
+    // 1.1 Read persistent snooze map (เพื่อกู้คืนสถานะ Snooze ของยาแม้แคชจะถูกรีเซ็ต)
+    let snoozeMap: Record<string, number> = {};
+    try {
+      const snoozeRaw = await safeStorage.getItem('med_snooze_until_map');
+      if (snoozeRaw) snoozeMap = JSON.parse(snoozeRaw);
+    } catch {}
+
     // 2. Read Supabase user_schedules for this date (to pick up remote UUIDs / records)
     let remoteItems: ScheduleItem[] = [];
     if (supabase) {
@@ -1196,6 +1271,12 @@ export const medService = {
             }
           }
 
+          const itemPostponedUntil =
+            matched?.postponedUntil ||
+            snoozeMap[matched?.id || syntheticId] ||
+            snoozeMap[`${med.id}_${targetDateStr}`] ||
+            snoozeMap[`${med.name}_${targetDateStr}`];
+
           reconciled.push({
             id: matched?.id || syntheticId,
             medicationId: med.id,
@@ -1208,6 +1289,7 @@ export const medService = {
               med.timeMealTimings?.[normTime] || med.mealTiming || matched?.mealTiming || '',
             originalTime: normTime,
             postponedTime: matched?.postponedTime,
+            postponedUntil: itemPostponedUntil && Date.now() < itemPostponedUntil ? itemPostponedUntil : undefined,
             time: matched?.postponedTime || displayTime,
             date: targetDateStr,
             isChecked: matched ? Boolean(matched.isChecked || matched.isTaken) : false,
@@ -1239,38 +1321,62 @@ export const medService = {
     isChecked: boolean,
     dateStr?: string
   ): Promise<ScheduleItem[]> {
-    const targetDate = dateStr || getLocalDateString();
-    const key = `med_schedule_${targetDate}`;
-    const schedule = await this.getScheduleForDate(targetDate);
-    const targetItem = schedule.find(i => i.id === scheduleId);
+    return new Promise<ScheduleItem[]>((resolve, reject) => {
+      toggleCheckedQueue = toggleCheckedQueue.then(async () => {
+        try {
+          const targetDate = dateStr || getLocalDateString();
+          const key = `med_schedule_${targetDate}`;
 
-    // ถ้ายืนยันการรับประทานยาแล้ว (isTaken === true) ล็อกไว้ ไม่ให้กดติ๊กออกได้
-    if (!targetItem || targetItem.isTaken) {
-      return schedule;
-    }
+          // อ่านจาก local storage ก่อนเพื่อความรวดเร็วและไม่ชนกับ network call
+          let schedule: ScheduleItem[] = [];
+          const local = await safeStorage.getItem(key);
+          if (local) {
+            try {
+              const parsed = JSON.parse(local);
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                schedule = parsed;
+              }
+            } catch {}
+          }
+          if (schedule.length === 0) {
+            schedule = await this.getScheduleForDate(targetDate);
+          }
 
-    const updated = schedule.map(item => {
-      if (item.id === scheduleId) {
-        if (isChecked) {
-          // ติ๊กแล้ว แต่ยังไม่ได้กดปุ่มยืนยัน = รอยืนยัน (ยังไม่หักยา)
-          return {
-            ...item,
-            isChecked: true,
-          };
+          const targetItem = schedule.find(i => i.id === scheduleId);
+
+          // ถ้ายืนยันการรับประทานยาแล้ว (isTaken === true) ล็อกไว้ ไม่ให้กดติ๊กออกได้
+          if (!targetItem || targetItem.isTaken) {
+            resolve(schedule);
+            return;
+          }
+
+          const updated = schedule.map(item => {
+            if (item.id === scheduleId) {
+              if (isChecked) {
+                // ติ๊กแล้ว แต่ยังไม่ได้กดปุ่มยืนยัน = รอยืนยัน (ยังไม่หักยา)
+                return {
+                  ...item,
+                  isChecked: true,
+                };
+              }
+              // ยกเลิกการติ๊ก (เฉพาะรายการที่ยังไม่ยืนยัน) = กลับเป็น ยังไม่ได้กินยา
+              return {
+                ...item,
+                isChecked: false,
+                isTaken: false,
+                takenAt: undefined,
+              };
+            }
+            return item;
+          });
+
+          await safeStorage.setItem(key, JSON.stringify(updated));
+          resolve(updated);
+        } catch (err) {
+          reject(err);
         }
-        // ยกเลิกการติ๊ก (เฉพาะรายการที่ยังไม่ยืนยัน) = กลับเป็น ยังไม่ได้กินยา
-        return {
-          ...item,
-          isChecked: false,
-          isTaken: false,
-          takenAt: undefined,
-        };
-      }
-      return item;
+      });
     });
-
-    await safeStorage.setItem(key, JSON.stringify(updated));
-    return updated;
   },
 
   async confirmCheckedSchedules(
@@ -1308,6 +1414,21 @@ export const medService = {
     });
 
     await safeStorage.setItem(key, JSON.stringify(updated));
+
+    if (newlyConfirmed.length > 0) {
+      try {
+        const snoozeRaw = await safeStorage.getItem('med_snooze_until_map');
+        if (snoozeRaw) {
+          const snoozeMap = JSON.parse(snoozeRaw);
+          newlyConfirmed.forEach(item => {
+            delete snoozeMap[item.id];
+            if (item.medicationId) delete snoozeMap[`${item.medicationId}_${targetDate}`];
+            if (item.medicationName) delete snoozeMap[`${item.medicationName}_${targetDate}`];
+          });
+          await safeStorage.setItem('med_snooze_until_map', JSON.stringify(snoozeMap));
+        }
+      } catch {}
+    }
 
     // หักจำนวนยาคงเหลือเฉพาะรายการที่พึ่งกดยืนยันรับประทาน
     if (newlyConfirmed.length > 0) {
@@ -1424,6 +1545,7 @@ export const medService = {
           isChecked: isTaken,
           isTaken,
           isSkipped: isTaken ? false : item.isSkipped,
+          postponedUntil: isTaken ? undefined : item.postponedUntil,
           takenAt: isTaken ? (wasTaken && item.takenAt ? item.takenAt : timeNow) : undefined,
         };
       }
@@ -1431,6 +1553,19 @@ export const medService = {
     });
 
     await safeStorage.setItem(key, JSON.stringify(updated));
+
+    if (isTaken) {
+      try {
+        const snoozeRaw = await safeStorage.getItem('med_snooze_until_map');
+        if (snoozeRaw) {
+          const snoozeMap = JSON.parse(snoozeRaw);
+          delete snoozeMap[scheduleId];
+          if (targetItem?.medicationId) delete snoozeMap[`${targetItem.medicationId}_${targetDate}`];
+          if (targetItem?.medicationName) delete snoozeMap[`${targetItem.medicationName}_${targetDate}`];
+          await safeStorage.setItem('med_snooze_until_map', JSON.stringify(snoozeMap));
+        }
+      } catch {}
+    }
 
     // Real-time stock update for this medication if intake status changed
     if (targetItem && wasTaken !== isTaken) {
@@ -1534,11 +1669,31 @@ export const medService = {
     const [hStr, mStr] = oldNorm.split(':');
     const h = parseInt(hStr, 10);
     const m = parseInt(mStr, 10);
-    const baseTotal = (!isNaN(h) ? h : 8) * 60 + (!isNaN(m) ? m : 0);
+    const itemTotal = (!isNaN(h) ? h : 8) * 60 + (!isNaN(m) ? m : 0);
+
+    const now = new Date();
+    const currentTotal = now.getHours() * 60 + now.getMinutes();
+
+    // คำนวณเวลาเลื่อนโดยนับจากเวลาปัจจุบันเป็นหลัก (หรือเวลาของยาเดิมหากยังมาไม่ถึง) เพื่อให้เวลาเป็นอนาคตเสมอ
+    const baseTotal = Math.max(itemTotal, currentTotal);
     const nextTotal = (((baseTotal + minutes) % 1440) + 1440) % 1440;
     const nextH = String(Math.floor(nextTotal / 60)).padStart(2, '0');
     const nextM = String(nextTotal % 60).padStart(2, '0');
     const newTimeStr = `${nextH}:${nextM} น.`;
+
+    // กำหนด timestamp ให้ระบบทราบว่ารายการนี้ถูก Snooze ไว้จนถึงเวลาใด
+    const postponedUntil = Date.now() + minutes * 60 * 1000;
+
+    try {
+      const snoozeRaw = await safeStorage.getItem('med_snooze_until_map');
+      const snoozeMap: Record<string, number> = snoozeRaw ? JSON.parse(snoozeRaw) : {};
+      snoozeMap[scheduleId] = postponedUntil;
+      if (targetItem.medicationId) {
+        snoozeMap[`${targetItem.medicationId}_${targetDate}`] = postponedUntil;
+      }
+      snoozeMap[`${targetItem.medicationName}_${targetDate}`] = postponedUntil;
+      await safeStorage.setItem('med_snooze_until_map', JSON.stringify(snoozeMap));
+    } catch {}
 
     const updated = schedule
       .map(s =>
@@ -1547,6 +1702,7 @@ export const medService = {
               ...s,
               originalTime: s.originalTime || oldNorm,
               postponedTime: newTimeStr,
+              postponedUntil,
               time: newTimeStr,
             }
           : s
@@ -1577,10 +1733,21 @@ export const medService = {
     }
 
     const updated = schedule.map(s =>
-      s.id === scheduleId ? { ...s, isSkipped: true, isChecked: false } : s
+      s.id === scheduleId ? { ...s, isSkipped: true, isChecked: false, postponedUntil: undefined } : s
     );
 
     await safeStorage.setItem(key, JSON.stringify(updated));
+
+    try {
+      const snoozeRaw = await safeStorage.getItem('med_snooze_until_map');
+      if (snoozeRaw) {
+        const snoozeMap = JSON.parse(snoozeRaw);
+        delete snoozeMap[scheduleId];
+        if (targetItem?.medicationId) delete snoozeMap[`${targetItem.medicationId}_${targetDate}`];
+        if (targetItem?.medicationName) delete snoozeMap[`${targetItem.medicationName}_${targetDate}`];
+        await safeStorage.setItem('med_snooze_until_map', JSON.stringify(snoozeMap));
+      }
+    } catch {}
 
     if (supabase && isValidUUID(scheduleId)) {
       try {

@@ -24,6 +24,7 @@ import {
   formatFoodAvoidanceHeader,
   resolveMedicationImageUri,
 } from '@/services/interactionMatcher';
+import { getLocalDateString, ScheduleItem } from '@/services/medService';
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -38,6 +39,7 @@ export default function HomeScreen() {
     medications,
     masterMedications,
     refreshData,
+    getScheduleForDate,
   } = useApp();
 
   const [isExpandedAllMeals, setIsExpandedAllMeals] = useState<boolean>(false);
@@ -155,28 +157,44 @@ export default function HomeScreen() {
     const itemMinutes = parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
     return itemMinutes >= currentMinutes - 60;
   });
-  const firstPending = upcomingPending || pendingItemsToday[0] || null;
-  const nextMealName = firstPending
-    ? getMealCategory(firstPending.time, firstPending.mealTiming)
+  const firstTodayPending = upcomingPending || pendingItemsToday[0] || null;
+  const effectiveNextItem = firstTodayPending;
+
+  // กำหนดมื้อที่จะแสดงผลในตารางแจ้งเตือนถัดไป (อิงเฉพาะรายการของวันนั้นๆ เท่านั้น)
+  const nextMealName = effectiveNextItem
+    ? getMealCategory(effectiveNextItem.time, effectiveNextItem.mealTiming)
     : todaySchedule.length > 0
     ? 'ทานครบแล้ว'
     : 'ยังไม่มีมื้อยา';
 
-  // All medication items belonging to this upcoming meal
-  const nextMealItems = firstPending
+  // รายการยาทั้งหมดในมื้อนี้ (อิงตาม todaySchedule ของวันนั้นๆ)
+  const nextMealItems = effectiveNextItem
     ? todaySchedule.filter(
         s => getMealCategory(s.time, s.mealTiming) === nextMealName
+      )
+    : todaySchedule.length > 0
+    ? todaySchedule.filter(
+        s =>
+          getMealCategory(s.time, s.mealTiming) ===
+          getMealCategory(
+            todaySchedule[todaySchedule.length - 1].time,
+            todaySchedule[todaySchedule.length - 1].mealTiming
+          )
       )
     : [];
 
   // Grouped schedule by Meal (1 page = 1 meal in Checklist)
   const MEAL_ORDER = ['มื้อเช้า', 'มื้อกลางวัน', 'มื้อเย็น', 'ก่อนนอน'];
+  const activeScheduleForChecklist = todaySchedule;
+
   const mealsGrouped = useMemo(() => {
     return MEAL_ORDER.map(mealName => ({
       name: mealName,
-      items: todaySchedule.filter(s => getMealCategory(s.time, s.mealTiming) === mealName),
+      items: activeScheduleForChecklist.filter(
+        s => getMealCategory(s.time, s.mealTiming) === mealName
+      ),
     })).filter(g => g.items.length > 0);
-  }, [todaySchedule]);
+  }, [activeScheduleForChecklist]);
 
   const checklistMeals = useMemo(() => {
     return mealsGrouped.length > 0
@@ -215,6 +233,7 @@ export default function HomeScreen() {
 
   const handleConfirmCurrentPage = async () => {
     if (!currentMeal || currentMeal.items.length === 0) return;
+
     const pendingChecked = currentMeal.items.filter(i => i.isChecked && !i.isTaken);
     if (pendingChecked.length > 0) {
       await confirmCheckedIntake(pendingChecked.map(i => i.id));
@@ -300,7 +319,16 @@ export default function HomeScreen() {
             {/* Left Column: Next Meal Information */}
             <View style={styles.reminderLeftCol}>
               <Text style={styles.nextMealTag}>มื้อถัดไป</Text>
-              <Text style={styles.nextMealTitle}>{nextMealName}</Text>
+              <Text
+                style={styles.nextMealTitle}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.8}
+              >
+                {effectiveNextItem
+                  ? `${nextMealName} • ${effectiveNextItem.time}`
+                  : nextMealName}
+              </Text>
 
               {nextMealItems.length > 0 ? (
                 /* Medicine Rows: Display ALL medications in this meal completely */
@@ -462,7 +490,8 @@ export default function HomeScreen() {
                             toggleChecklist(item.id, !isChecked);
                           }
                         }}
-                        activeOpacity={item.isTaken ? 1 : 0.7}
+                        activeOpacity={item.isTaken ? 1 : 0.6}
+                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                       >
                         <View
                           style={[
@@ -565,7 +594,9 @@ export default function HomeScreen() {
                               styles.statusBadge,
                               item.isTaken
                                 ? styles.statusBadgeTaken
-                                : styles.statusBadgePending,
+                                : item.isChecked
+                                ? styles.statusBadgePending
+                                : styles.statusBadgeUntaken,
                             ]}
                           >
                             <Text
@@ -573,10 +604,16 @@ export default function HomeScreen() {
                                 styles.statusBadgeText,
                                 item.isTaken
                                   ? styles.statusBadgeTextTaken
-                                  : styles.statusBadgeTextPending,
+                                  : item.isChecked
+                                  ? styles.statusBadgeTextPending
+                                  : styles.statusBadgeTextUntaken,
                               ]}
                             >
-                              {item.isTaken ? 'ยืนยันแล้ว' : 'รอยืนยัน'}
+                              {item.isTaken
+                                ? 'ยืนยันแล้ว'
+                                : item.isChecked
+                                ? 'รอยืนยัน'
+                                : 'ยังไม่ได้ทานยา'}
                             </Text>
                           </View>
                         </View>
@@ -829,8 +866,10 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   nextReminderCard: {
-    backgroundColor: '#F3F4FD',
+    backgroundColor: '#F4F6FF',
     borderRadius: 22,
+    borderWidth: 1,
+    borderColor: '#E0E7FF',
     padding: 16,
     marginBottom: 24,
   },
@@ -840,8 +879,8 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   reminderLeftCol: {
-    flex: 1.08,
-    paddingRight: 8,
+    flex: 1.15,
+    paddingRight: 6,
   },
   nextMealHeaderRow: {
     flexDirection: 'row',
@@ -852,8 +891,8 @@ const styles = StyleSheet.create({
   nextMealTag: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#8B95F6',
-    marginBottom: 1,
+    color: '#6366F1',
+    marginBottom: 2,
   },
   nextMealTimeBadge: {
     flexDirection: 'row',
@@ -869,7 +908,7 @@ const styles = StyleSheet.create({
     color: '#4338CA',
   },
   nextMealTitle: {
-    fontSize: 22,
+    fontSize: 18,
     fontWeight: '800',
     color: '#1E1B4B',
     marginBottom: 10,
@@ -949,7 +988,7 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   avoidBadge: {
-    backgroundColor: '#FEE2E2',
+    backgroundColor: '#FFF1F2',
     paddingHorizontal: 7,
     paddingVertical: 2.5,
     borderRadius: 8,
@@ -961,7 +1000,7 @@ const styles = StyleSheet.create({
   avoidBadgeText: {
     fontSize: 10,
     fontWeight: '700',
-    color: '#EF4444',
+    color: '#E11D48',
   },
   avoidItemBlock: {
     marginBottom: 0,
@@ -993,9 +1032,11 @@ const styles = StyleSheet.create({
     color: '#94A3B8',
   },
   reminderRightBox: {
-    flex: 1,
+    flex: 0.95,
     backgroundColor: '#FFFFFF',
     borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E8EDF5',
     paddingHorizontal: 8,
     paddingVertical: 9,
     shadowColor: '#000',
@@ -1089,7 +1130,7 @@ const styles = StyleSheet.create({
     marginVertical: 10,
   },
   confirmButton: {
-    backgroundColor: '#6366F1',
+    backgroundColor: '#8B9BF6',
     borderRadius: 8,
     paddingVertical: 7,
     alignItems: 'center',
@@ -1145,12 +1186,14 @@ const styles = StyleSheet.create({
   },
   expandedItemCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E8EDF5',
+    padding: 14,
     marginBottom: 8,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
+    shadowOpacity: 0.03,
     shadowRadius: 3,
     elevation: 1,
   },
@@ -1177,13 +1220,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 9,
     paddingVertical: 3,
     borderWidth: 1,
+    alignSelf: 'flex-start',
   },
   statusBadgeTaken: {
-    borderColor: '#86EFAC',
+    borderColor: '#A7F3D0',
     backgroundColor: '#F0FDF4',
   },
   statusBadgePending: {
-    borderColor: '#FDE047',
+    borderColor: '#FEF08A',
     backgroundColor: '#FEFCE8',
   },
   statusBadgeUntaken: {
@@ -1198,7 +1242,7 @@ const styles = StyleSheet.create({
     color: '#16A34A',
   },
   statusBadgeTextPending: {
-    color: '#CA8A04',
+    color: '#B45309',
   },
   statusBadgeTextUntaken: {
     color: '#64748B',

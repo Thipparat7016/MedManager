@@ -22,12 +22,26 @@ interface SelectedDateObj {
   year: number;
 }
 
-interface CalendarModalProps {
+export type CalendarModalTheme = 'sage' | 'green' | 'coral' | 'red' | 'purple' | 'blue';
+
+const THEME_PALETTES: Record<CalendarModalTheme, { primary: string; light: string }> = {
+  sage: { primary: '#6FA07E', light: '#F0FDF4' },
+  green: { primary: '#6FA07E', light: '#F0FDF4' },
+  coral: { primary: '#F87171', light: '#FEF2F2' },
+  red: { primary: '#F87171', light: '#FEF2F2' },
+  purple: { primary: '#8B95F6', light: '#EEF0FF' },
+  blue: { primary: '#6366F1', light: '#EEF2FF' },
+};
+
+export interface CalendarModalProps {
   visible: boolean;
   onClose: () => void;
   onSelectDate: (formattedDate: string) => void;
   initialDate?: string; // Format: DD/MM/YYYY e.g. "31/12/2026"
   title?: string;
+  theme?: CalendarModalTheme;
+  primaryColor?: string;
+  lightColor?: string;
 }
 
 export const CalendarModal: React.FC<CalendarModalProps> = ({
@@ -36,7 +50,14 @@ export const CalendarModal: React.FC<CalendarModalProps> = ({
   onSelectDate,
   initialDate,
   title = 'เลือกวันที่',
+  theme,
+  primaryColor,
+  lightColor,
 }) => {
+  const palette = theme ? THEME_PALETTES[theme] : THEME_PALETTES.purple;
+  const activePrimary = primaryColor || palette.primary;
+  const activeLight = lightColor || palette.light;
+
   const today = useMemo(() => new Date(), []);
   const getYearPageBase = (y: number) => y - ((((y - 2024) % 12) + 12) % 12);
 
@@ -188,7 +209,7 @@ export const CalendarModal: React.FC<CalendarModalProps> = ({
           <View style={styles.header}>
             <View style={{ flex: 1 }}>
               <Text style={styles.title}>{title}</Text>
-              <Text style={styles.subtitle}>{previewSubtitle}</Text>
+              <Text style={[styles.subtitle, { color: activePrimary }]}>{previewSubtitle}</Text>
             </View>
             <TouchableOpacity
               onPress={onClose}
@@ -233,7 +254,7 @@ export const CalendarModal: React.FC<CalendarModalProps> = ({
                 <TouchableOpacity
                   style={[
                     styles.headerSelectorPill,
-                    pickerMode === 'month' && styles.headerSelectorPillActive,
+                    pickerMode === 'month' && { backgroundColor: activeLight },
                   ]}
                   onPress={() =>
                     setPickerMode(prev => (prev === 'month' ? 'day' : 'month'))
@@ -243,7 +264,7 @@ export const CalendarModal: React.FC<CalendarModalProps> = ({
                   <Text
                     style={[
                       styles.monthYearTitle,
-                      pickerMode === 'month' && styles.headerSelectorTextActive,
+                      pickerMode === 'month' && { color: activePrimary },
                     ]}
                   >
                     {THAI_MONTHS[viewMonth]}
@@ -292,7 +313,14 @@ export const CalendarModal: React.FC<CalendarModalProps> = ({
                         key={`yr-${yr}`}
                         style={[
                           styles.yearChip,
-                          isYearSelected && styles.yearChipSelected,
+                          isYearSelected && [
+                            styles.yearChipSelected,
+                            {
+                              backgroundColor: activePrimary,
+                              borderColor: activePrimary,
+                              shadowColor: activePrimary,
+                            },
+                          ],
                         ]}
                         onPress={() => handleSelectYear(yr)}
                         activeOpacity={0.7}
@@ -324,7 +352,14 @@ export const CalendarModal: React.FC<CalendarModalProps> = ({
                         key={`mo-${mIdx}`}
                         style={[
                           styles.yearChip,
-                          isMonthSelected && styles.yearChipSelected,
+                          isMonthSelected && [
+                            styles.yearChipSelected,
+                            {
+                              backgroundColor: activePrimary,
+                              borderColor: activePrimary,
+                              shadowColor: activePrimary,
+                            },
+                          ],
                         ]}
                         onPress={() => handleSelectMonth(mIdx)}
                         activeOpacity={0.7}
@@ -354,7 +389,7 @@ export const CalendarModal: React.FC<CalendarModalProps> = ({
                       style={[
                         styles.weekdayText,
                         idx === 0 && { color: '#EF4444' }, // Sun in red
-                        idx === 6 && { color: '#6366F1' }, // Sat in indigo
+                        idx === 6 && { color: activePrimary }, // Sat in theme primary
                       ]}
                     >
                       {w}
@@ -385,7 +420,13 @@ export const CalendarModal: React.FC<CalendarModalProps> = ({
                           <TouchableOpacity
                             style={[
                               styles.dayChip,
-                              isSelected && styles.dayChipSelected,
+                              isSelected && [
+                                styles.dayChipSelected,
+                                {
+                                  backgroundColor: activePrimary,
+                                  shadowColor: activePrimary,
+                                },
+                              ],
                             ]}
                             onPress={() => setSelectedDate({ day, month: viewMonth, year: viewYear })}
                             activeOpacity={0.7}
@@ -419,7 +460,13 @@ export const CalendarModal: React.FC<CalendarModalProps> = ({
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={styles.confirmBtn}
+              style={[
+                styles.confirmBtn,
+                {
+                  backgroundColor: activePrimary,
+                  shadowColor: activePrimary,
+                },
+              ]}
               onPress={handleConfirm}
               activeOpacity={0.8}
             >

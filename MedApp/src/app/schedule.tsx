@@ -218,7 +218,7 @@ export default function ScheduleScreen() {
     ].filter(Boolean);
 
     const statusLabel = item.isTaken
-      ? 'กินยาแล้ว'
+      ? 'ยืนยันแล้ว'
       : item.isChecked
       ? 'รอยืนยัน'
       : 'ยังไม่ได้กินยา';
@@ -416,7 +416,7 @@ export default function ScheduleScreen() {
           !weekHasAnyItems ? (
             <View style={styles.emptyContainer}>
               <View style={styles.emptyIconCircle}>
-                <Feather name="calendar" size={36} color="#8B95F6" />
+                <Feather name="calendar" size={36} color="#6FA07E" />
               </View>
               <Text style={styles.emptyTitle}>ไม่มีตารางยาสำหรับสัปดาห์นี้</Text>
               <Text style={styles.emptySubtitle}>
@@ -458,7 +458,7 @@ export default function ScheduleScreen() {
         ) : timeSlots.length === 0 ? (
           <View style={styles.emptyContainer}>
             <View style={styles.emptyIconCircle}>
-              <Feather name="calendar" size={36} color="#8B95F6" />
+              <Feather name="calendar" size={36} color="#6FA07E" />
             </View>
             <Text style={styles.emptyTitle}>
               {selectedDateStr === todayStr
@@ -546,30 +546,28 @@ const styles = StyleSheet.create({
   },
   viewToggleGroup: {
     flexDirection: 'row',
-    backgroundColor: '#F1F5F9',
-    borderRadius: 12,
-    padding: 2,
+    gap: 6,
+    alignItems: 'center',
   },
   toggleBtn: {
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     paddingVertical: 4,
-    borderRadius: 10,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#D1E7DD',
+    backgroundColor: '#FFFFFF',
   },
   toggleBtnActive: {
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
+    backgroundColor: '#6FA07E',
+    borderColor: '#6FA07E',
   },
   toggleBtnText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#64748B',
+    color: '#3D7B54',
   },
   toggleBtnTextActive: {
-    color: '#6366F1',
+    color: '#FFFFFF',
     fontWeight: '700',
   },
   weekHeader: {
@@ -635,9 +633,12 @@ const styles = StyleSheet.create({
     borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
   dayCircleActive: {
-    backgroundColor: '#8B95F6',
+    backgroundColor: '#dbede1ff',
+    borderRadius: 17,
+    overflow: 'hidden',
   },
   dayNumber: {
     fontSize: 13,
@@ -645,14 +646,14 @@ const styles = StyleSheet.create({
     color: '#334155',
   },
   dayNumberActive: {
-    color: '#FFFFFF',
+    color: '#629a72ff',
     fontWeight: '800',
   },
   dot: {
     width: 4,
     height: 4,
     borderRadius: 2,
-    backgroundColor: '#8B95F6',
+    backgroundColor: '#B91C1C',
     marginTop: 4,
   },
   dotSpacer: {
@@ -661,9 +662,9 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   selectedDateBanner: {
-    fontSize: 13,
+    fontSize: 17,
     fontWeight: '700',
-    color: '#6366F1',
+    color: '#629a72ff',
     marginBottom: 12,
   },
   weekDaySection: {
@@ -679,7 +680,7 @@ const styles = StyleSheet.create({
     width: 72,
     height: 72,
     borderRadius: 36,
-    backgroundColor: '#EEF0FF',
+    backgroundColor: '#F0FDF4',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
@@ -699,7 +700,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   addMedButton: {
-    backgroundColor: '#8B95F6',
+    backgroundColor: '#6FA07E',
     paddingHorizontal: 20,
     paddingVertical: 10,
     borderRadius: 12,
@@ -721,12 +722,15 @@ const styles = StyleSheet.create({
   itemCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
+    backgroundColor: '#F9FBFC',
+    borderRadius: 11,
     borderWidth: 1.5,
-    borderColor: '#E2E8F0',
-    padding: 14,
+    borderColor: '#C8EBD2',
+    paddingVertical: 18,
+    paddingHorizontal: 14,
+    minHeight: 86,
     marginBottom: 10,
+    position: 'relative',
   },
   medThumbImage: {
     width: 44,
@@ -739,7 +743,7 @@ const styles = StyleSheet.create({
   itemDetails: {
     flex: 1,
     marginLeft: 14,
-    marginRight: 10,
+    marginRight: 84,
   },
   itemName: {
     fontSize: 15,
@@ -752,16 +756,19 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   intakeStatusBadge: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
     paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingVertical: 4,
     borderRadius: 9999,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
   intakeStatusTaken: {
-    backgroundColor: '#DCFCE7',
-    borderColor: '#BBF7D0',
+    backgroundColor: '#F0FDF4',
+    borderColor: '#A7F3D0',
   },
   intakeStatusPending: {
     backgroundColor: '#FEF9C3',

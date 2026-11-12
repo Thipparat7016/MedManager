@@ -2,6 +2,38 @@ import React, { useState, useEffect } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { dataService } from '../services/dataService'
 
+const THAI_SHORT_MONTHS = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.']
+const THAI_SHORT_DAYS = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส']
+
+function buildDefaultSideEffectTrend() {
+  const now = new Date()
+  const list = []
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    list.push({ month: THAI_SHORT_MONTHS[d.getMonth()], value: 0 })
+  }
+  return list
+}
+
+function buildDefaultAdherenceBars() {
+  const now = new Date()
+  const list = []
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i)
+    list.push({
+      label: THAI_SHORT_DAYS[d.getDay()],
+      dateLabel: `${d.getDate()} ${THAI_SHORT_MONTHS[d.getMonth()]}`,
+      height: 0,
+      rate: 0,
+      taken: 0,
+      total: 0,
+      hasData: false,
+      active: i === 0
+    })
+  }
+  return list
+}
+
 export default function DashboardPage() {
   const [stats, setStats] = useState(null)
   const [activities, setActivities] = useState([])
@@ -16,7 +48,7 @@ export default function DashboardPage() {
     setIsRefreshing(true)
     const [dashStats, activityLogs] = await Promise.all([
       dataService.getDashboardStats(),
-      dataService.getActivityLogs()
+      dataService.getPharmacyActivities()
     ])
     setStats(dashStats)
     setActivities(activityLogs)
@@ -24,34 +56,58 @@ export default function DashboardPage() {
     setTimeout(() => setIsRefreshing(false), 300)
   }
 
-  // Monthly user growth data
-  const userGrowthData = [
-    { month: 'ม.ค.', value: 0 },
-    { month: 'ก.พ.', value: 0 },
-    { month: 'มี.ค.', value: 0 },
-    { month: 'เม.ย.', value: 0 },
-    { month: 'พ.ค.', value: 0 },
-    { month: 'มิ.ย.', value: 0 },
-    { month: 'ก.ค.', value: 0 }
-  ]
+  // 7-month ADR / side-effect trend data (real Supabase data)
+  const sideEffectTrendData = stats?.sideEffectTrend || buildDefaultSideEffectTrend()
+  const maxTrendValue = Math.max(...sideEffectTrendData.map(d => d.value), 1)
+  const trendPoints = sideEffectTrendData.map((d, i) => ({
+    x: Math.round(50 + i * (550 / 6)),
+    y: d.value > 0 ? Math.round(160 - (d.value / maxTrendValue) * 120) : 160,
+    month: d.month,
+    value: d.value
+  }))
+  const polylinePoints = trendPoints.map(pt => `${pt.x},${pt.y}`).join(' ')
+  const polygonPoints = `50,160 ${polylinePoints} 600,160`
 
-  // 14-day adherence data
-  const adherenceBars = [
-    { label: 'จ', height: 0 },
-    { label: 'อ', height: 0 },
-    { label: 'พ', height: 0 },
-    { label: 'พฤ', height: 0 },
-    { label: 'ศ', height: 0 },
-    { label: 'ส', height: 0 },
-    { label: 'อา', height: 0 },
-    { label: 'จ', height: 0 },
-    { label: 'อ', height: 0 },
-    { label: 'พ', height: 0 },
-    { label: 'พฤ', height: 0 },
-    { label: 'ศ', height: 0 },
-    { label: 'ส', height: 0 },
-    { label: 'อา', height: 0, active: true }
-  ]
+  // 14-day daily adherence data (real Supabase data)
+  const adherenceBars = stats?.adherenceBars || buildDefaultAdherenceBars()
+
+  // Donut chart arc calculations (circumference = 2 * pi * 56 ≈ 351.86)
+  const circumference = 351.86
+  const tabletPct = stats?.drugTypeDistribution?.tablet || 0
+  const capsulePct = stats?.drugTypeDistribution?.capsule || 0
+  const liquidPct = stats?.drugTypeDistribution?.liquid || 0
+  const tabletArc = (tabletPct / 100) * circumference
+  const capsuleArc = (capsulePct / 100) * circumference
+  const liquidArc = (liquidPct / 100) * circumference
+
+  const getActivityBadgeStyle = (tone) => {
+    if (tone === 'success') {
+      return {
+        backgroundColor: 'var(--color-success-50)',
+        color: 'var(--color-success-700)',
+        border: '1px solid var(--color-success-100)'
+      }
+    }
+    if (tone === 'danger') {
+      return {
+        backgroundColor: 'var(--color-danger-50)',
+        color: 'var(--color-danger-700)',
+        border: '1px solid var(--color-danger-100)'
+      }
+    }
+    if (tone === 'warning') {
+      return {
+        backgroundColor: 'var(--color-warning-50)',
+        color: 'var(--color-warning-700)',
+        border: '1px solid var(--color-warning-100)'
+      }
+    }
+    return {
+      backgroundColor: 'var(--color-primary-50)',
+      color: 'var(--color-primary-700)',
+      border: '1px solid var(--color-primary-200)'
+    }
+  }
 
   return (
     <div>
@@ -71,58 +127,58 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* 6 Stat Cards in 2 Rows */}
+      {/* 6 Pharmacist KPI Stat Cards in 2 Rows */}
       <div className="stat-cards-grid">
-        {/* Card 1 */}
-        <div className="stat-card">
-          <div className="stat-value">{stats?.totalUsers || '0'}</div>
-          <div className="stat-label">ผู้ใช้ทั้งหมด</div>
-          <div className="stat-sub">{stats?.totalUsersGrowth || '0 คนในระบบ'}</div>
-        </div>
-
-        {/* Card 2 */}
+        {/* Card 1: Medications & Supplements */}
         <div className="stat-card">
           <div className="stat-value">{stats?.medicationsCount || '0'}</div>
-          <div className="stat-label">ยาในระบบ</div>
-          <div className="stat-sub">{stats?.medicationsGrowth || '0 รายการในระบบ'}</div>
+          <div className="stat-label">ยาและอาหารเสริมในระบบ</div>
+          <div className="stat-sub">{stats?.medicationsSub || 'ยังไม่มีรายการยาในคลัง'}</div>
         </div>
 
-        {/* Card 3 */}
-        <div className="stat-card">
-          <div className="stat-value">{stats?.activeSchedules || '0'}</div>
-          <div className="stat-label">ตารางยาที่ใช้งาน</div>
-          <div className="stat-sub">{stats?.activeSchedulesGrowth || '0 ตารางใหม่'}</div>
-        </div>
-
-        {/* Card 4 */}
-        <div className="stat-card">
-          <div className="stat-value">{stats?.todayAppointments || '0'}</div>
-          <div className="stat-label">นัดหมายวันนี้</div>
-          <div className="stat-sub">{stats?.todayAppointmentsSub || 'ไม่มีนัดหมายวันนี้'}</div>
-        </div>
-
-        {/* Card 5 */}
-        <div className="stat-card">
-          <div className="stat-value">{stats?.sideEffectsCount || '0'}</div>
-          <div className="stat-label">บันทึกผลข้างเคียง</div>
-          <div className="stat-sub">{stats?.sideEffectsSub || 'สะสมเดือนนี้'}</div>
-        </div>
-
-        {/* Card 6 */}
+        {/* Card 2: Total Drug-Food Interactions */}
         <div className="stat-card">
           <div className="stat-value">{stats?.interactionsCount || '0'}</div>
-          <div className="stat-label">ปฏิสัมพันธ์ยา-อาหาร</div>
-          <div className="stat-sub">{stats?.interactionsSub || 'รายการในฐานข้อมูล'}</div>
+          <div className="stat-label">ปฏิสัมพันธ์ยา-อาหารทั้งหมด</div>
+          <div className="stat-sub">{stats?.interactionsSub || 'ยังไม่มีข้อมูลในฐานข้อมูล'}</div>
+        </div>
+
+        {/* Card 3: High-Severity Interactions */}
+        <div className="stat-card">
+          <div className="stat-value">{stats?.highSeverityInteractionsCount || '0'}</div>
+          <div className="stat-label">ปฏิสัมพันธ์ระดับรุนแรงสูง</div>
+          <div className="stat-sub">{stats?.highSeverityInteractionsSub || 'ไม่มีรายการความรุนแรงสูง'}</div>
+        </div>
+
+        {/* Card 4: Side Effect / ADR Reports */}
+        <div className="stat-card">
+          <div className="stat-value">{stats?.sideEffectsCount || '0'}</div>
+          <div className="stat-label">รายงานผลข้างเคียง (ADR)</div>
+          <div className="stat-sub">{stats?.sideEffectsSub || 'ยังไม่มีรายงานผลข้างเคียง'}</div>
+        </div>
+
+        {/* Card 5: Medication Adherence Rate */}
+        <div className="stat-card">
+          <div className="stat-value">{stats?.adherenceRate || '0%'}</div>
+          <div className="stat-label">อัตราการกินยาตรงเวลา</div>
+          <div className="stat-sub">{stats?.adherenceSub || 'ยังไม่มีประวัติการกินยา'}</div>
+        </div>
+
+        {/* Card 6: Patients in System */}
+        <div className="stat-card">
+          <div className="stat-value">{stats?.totalPatients || '0'}</div>
+          <div className="stat-label">ผู้ป่วยในระบบ</div>
+          <div className="stat-sub">{stats?.totalPatientsSub || 'ยังไม่มีผู้ป่วยในระบบ'}</div>
         </div>
       </div>
 
-      {/* Middle Section: User Growth Chart & Drug Type Donut */}
+      {/* Middle Section: ADR Trend + Adherence Chart & Drug Type Donut */}
       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '20px', marginBottom: '20px' }}>
         
         {/* Left: Charts Container */}
         <div className="card" style={{ padding: '24px 28px' }}>
           <div style={{ fontSize: '14.5px', fontWeight: 600, color: 'var(--color-neutral-800)', marginBottom: '20px' }}>
-            การเติบโตของผู้ใช้ (7 เดือนล่าสุด)
+            แนวโน้มรายงานผลข้างเคียง (7 เดือนล่าสุด)
           </div>
 
           {/* SVG Line Chart */}
@@ -139,7 +195,7 @@ export default function DashboardPage() {
 
               {/* Area fill */}
               <polygon
-                points="50,160 50,160 140,160 230,160 320,160 410,160 500,160 600,160 600,160"
+                points={polygonPoints}
                 fill="url(#lineGrad)"
               />
 
@@ -150,34 +206,43 @@ export default function DashboardPage() {
                 strokeWidth="2.5"
                 strokeLinecap="round"
                 strokeLinejoin="round"
-                points="50,160 140,160 230,160 320,160 410,160 500,160 600,160"
+                points={polylinePoints}
               />
 
-              {/* Data Dots */}
-              {[
-                { x: 50, y: 160 },
-                { x: 140, y: 160 },
-                { x: 230, y: 160 },
-                { x: 320, y: 160 },
-                { x: 410, y: 160 },
-                { x: 500, y: 160 },
-                { x: 600, y: 160 }
-              ].map((pt, i) => (
-                <circle key={i} cx={pt.x} cy={pt.y} r="4" fill="var(--color-primary-500)" stroke="#ffffff" strokeWidth="2" />
+              {/* Data Dots & Value Labels */}
+              {trendPoints.map((pt, i) => (
+                <g key={i}>
+                  <circle cx={pt.x} cy={pt.y} r="4" fill="var(--color-primary-500)" stroke="#ffffff" strokeWidth="2">
+                    <title>{`${pt.month}: ${pt.value} รายการ`}</title>
+                  </circle>
+                  {pt.value > 0 && (
+                    <text
+                      x={pt.x}
+                      y={pt.y - 10}
+                      textAnchor="middle"
+                      fill="var(--color-primary-700)"
+                      fontSize="11"
+                      fontWeight="600"
+                      fontFamily="inherit"
+                    >
+                      {pt.value}
+                    </text>
+                  )}
+                </g>
               ))}
 
               {/* X Axis Labels */}
-              {userGrowthData.map((d, i) => (
+              {trendPoints.map((pt, i) => (
                 <text 
                   key={i} 
-                  x={50 + i * 91.6} 
+                  x={pt.x} 
                   y="185" 
                   textAnchor="middle" 
                   fill="var(--color-neutral-400)" 
                   fontSize="12" 
                   fontFamily="inherit"
                 >
-                  {d.month}
+                  {pt.month}
                 </text>
               ))}
             </svg>
@@ -190,12 +255,13 @@ export default function DashboardPage() {
             </div>
             <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', height: '60px', gap: '6px' }}>
               {adherenceBars.map((bar, i) => (
-                <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+                <div key={i} style={{ flex: 1, height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
                   <div 
+                    title={bar.dateLabel ? `${bar.dateLabel}: ${bar.rate}% (${bar.taken}/${bar.total} มื้อ)` : `${bar.label}: ${bar.rate}%`}
                     style={{
                       width: '100%',
                       height: `${Math.max(bar.height, 4)}%`,
-                      backgroundColor: bar.active ? 'var(--color-primary-500)' : 'var(--color-neutral-100)',
+                      backgroundColor: bar.active ? 'var(--color-primary-500)' : bar.hasData ? 'var(--color-primary-300)' : 'var(--color-neutral-100)',
                       borderRadius: '4px 4px 0 0',
                       transition: 'height 0.3s ease'
                     }}
@@ -220,7 +286,7 @@ export default function DashboardPage() {
                 stroke="var(--color-neutral-100)"
                 strokeWidth="24"
               />
-              {stats?.drugTypeDistribution?.tablet > 0 && (
+              {tabletPct > 0 && (
                 <circle
                   r="56"
                   cx="80"
@@ -228,8 +294,34 @@ export default function DashboardPage() {
                   fill="transparent"
                   stroke="var(--color-primary-500)"
                   strokeWidth="24"
-                  strokeDasharray={`${(stats.drugTypeDistribution.tablet / 100) * 352} 352`}
+                  strokeDasharray={`${tabletArc} ${circumference}`}
                   strokeDashoffset="0"
+                  transform="rotate(-90 80 80)"
+                />
+              )}
+              {capsulePct > 0 && (
+                <circle
+                  r="56"
+                  cx="80"
+                  cy="80"
+                  fill="transparent"
+                  stroke="var(--color-primary-300)"
+                  strokeWidth="24"
+                  strokeDasharray={`${capsuleArc} ${circumference}`}
+                  strokeDashoffset={-tabletArc}
+                  transform="rotate(-90 80 80)"
+                />
+              )}
+              {liquidPct > 0 && (
+                <circle
+                  r="56"
+                  cx="80"
+                  cy="80"
+                  fill="transparent"
+                  stroke="var(--color-primary-200)"
+                  strokeWidth="24"
+                  strokeDasharray={`${liquidArc} ${circumference}`}
+                  strokeDashoffset={-(tabletArc + capsuleArc)}
                   transform="rotate(-90 80 80)"
                 />
               )}
@@ -250,15 +342,15 @@ export default function DashboardPage() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '12.5px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--color-neutral-600)' }}>
                 <span>เม็ด (Tablet)</span>
-                <span style={{ fontWeight: 600, color: 'var(--color-primary-700)' }}>{stats?.drugTypeDistribution?.tablet || 0}%</span>
+                <span style={{ fontWeight: 600, color: 'var(--color-primary-700)' }}>{tabletPct}%</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--color-neutral-600)' }}>
                 <span>แคปซูล (Capsule)</span>
-                <span style={{ fontWeight: 600, color: 'var(--color-primary-700)' }}>{stats?.drugTypeDistribution?.capsule || 0}%</span>
+                <span style={{ fontWeight: 600, color: 'var(--color-primary-700)' }}>{capsulePct}%</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--color-neutral-600)' }}>
                 <span>อื่นๆ (Liquid)</span>
-                <span style={{ fontWeight: 600, color: 'var(--color-primary-700)' }}>{stats?.drugTypeDistribution?.liquid || 0}%</span>
+                <span style={{ fontWeight: 600, color: 'var(--color-primary-700)' }}>{liquidPct}%</span>
               </div>
             </div>
           </div>
@@ -266,18 +358,18 @@ export default function DashboardPage() {
 
       </div>
 
-      {/* Bottom Row: Recent Activities & Top Medications */}
+      {/* Bottom Row: Clinical Medication Logs & Top Medications */}
       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '20px' }}>
         
-        {/* Left: กิจกรรมล่าสุด */}
+        {/* Left: ติดตามการใช้ยาและผลข้างเคียงล่าสุด */}
         <div className="card" style={{ padding: '24px' }}>
-          <div className="card-title">กิจกรรมล่าสุด</div>
+          <div className="card-title">ติดตามการใช้ยาและผลข้างเคียงล่าสุด</div>
           <table className="data-table">
             <thead>
               <tr>
                 <th style={{ width: '80px' }}>เวลา</th>
-                <th style={{ width: '130px' }}>ผู้ใช้</th>
-                <th style={{ width: '130px' }}>กิจกรรม</th>
+                <th style={{ width: '130px' }}>ผู้ป่วย</th>
+                <th style={{ width: '140px' }}>กิจกรรม</th>
                 <th>รายละเอียด</th>
               </tr>
             </thead>
@@ -285,7 +377,7 @@ export default function DashboardPage() {
               {activities.length === 0 ? (
                 <tr>
                   <td colSpan="4" style={{ textAlign: 'center', padding: '28px', color: 'var(--color-neutral-400)' }}>
-                    ยังไม่มีบันทึกกิจกรรมในระบบ
+                    ยังไม่มีบันทึกการใช้ยาหรือผลข้างเคียงในระบบ
                   </td>
                 </tr>
               ) : (
@@ -300,9 +392,8 @@ export default function DashboardPage() {
                           fontWeight: 500,
                           padding: '3px 10px',
                           borderRadius: 'var(--radius-pill)',
-                          backgroundColor: act.activity === 'ยืนยันกินยา' ? 'var(--color-success-50)' : act.activity === 'ข้ามยา' ? 'var(--color-danger-50)' : 'var(--color-primary-50)',
-                          color: act.activity === 'ยืนยันกินยา' ? 'var(--color-success-700)' : act.activity === 'ข้ามยา' ? 'var(--color-danger-700)' : 'var(--color-primary-700)',
-                          border: act.activity === 'ยืนยันกินยา' ? '1px solid var(--color-success-100)' : act.activity === 'ข้ามยา' ? '1px solid var(--color-danger-100)' : '1px solid var(--color-primary-200)'
+                          whiteSpace: 'nowrap',
+                          ...getActivityBadgeStyle(act.tone)
                         }}
                       >
                         {act.activity}
@@ -319,23 +410,23 @@ export default function DashboardPage() {
         {/* Right: ยาที่ใช้มากที่สุด */}
         <div className="card" style={{ padding: '24px' }}>
           <div className="card-title">ยาที่ใช้มากที่สุด</div>
-          {stats?.topMedications?.length === 0 ? (
+          {!stats?.topMedications || stats.topMedications.length === 0 ? (
             <div style={{ padding: '28px 0', textAlign: 'center', color: 'var(--color-neutral-400)', fontSize: '13px' }}>
               ยังไม่มีข้อมูลยาในระบบ
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '12px' }}>
-              {stats?.topMedications?.map((item, idx) => (
+              {stats.topMedications.map((item, idx) => (
                 <div key={idx}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13.5px', marginBottom: '6px' }}>
                     <span style={{ fontWeight: 600, color: 'var(--color-neutral-800)' }}>{item.name}</span>
-                    <span style={{ color: 'var(--color-neutral-500)', fontSize: '12px' }}>{item.count}</span>
+                    <span style={{ color: 'var(--color-neutral-500)', fontSize: '12px' }}>{item.countLabel ?? item.count}</span>
                   </div>
                   <div style={{ width: '100%', height: '8px', backgroundColor: 'var(--color-neutral-100)', borderRadius: 'var(--radius-pill)', overflow: 'hidden' }}>
                     <div 
                       style={{
                         height: '100%',
-                        width: `${(item.count / item.max) * 100}%`,
+                        width: `${item.max > 0 ? Math.min(100, (item.count / item.max) * 100) : 0}%`,
                         background: 'linear-gradient(135deg, var(--color-primary-400) 0%, var(--color-primary-500) 100%)',
                         borderRadius: 'var(--radius-pill)'
                       }}

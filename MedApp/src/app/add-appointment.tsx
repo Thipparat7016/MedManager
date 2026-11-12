@@ -357,16 +357,16 @@ export default function AddAppointmentScreen() {
 
                   <View style={styles.doctorCardActions}>
                     <TouchableOpacity
-                      style={styles.doctorActionBtn}
+                      style={[styles.doctorActionBtn, styles.doctorActionBtnEdit]}
                       onPress={() => handleOpenEditDoc(doc)}
                       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                       activeOpacity={0.7}
                     >
-                      <Feather name="edit-2" size={14} color="#64748B" />
+                      <Feather name="edit-2" size={14} color="#B87108" />
                     </TouchableOpacity>
 
                     <TouchableOpacity
-                      style={styles.doctorActionBtn}
+                      style={[styles.doctorActionBtn, styles.doctorActionBtnDelete]}
                       onPress={() => handleDeleteFavoriteDoctor(doc)}
                       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                       activeOpacity={0.7}
@@ -570,6 +570,7 @@ export default function AddAppointmentScreen() {
         onSelectDate={setDate}
         initialDate={date}
         title="เลือกวันที่นัดหมาย"
+        theme="sage"
       />
 
       {/* ========================================================================= */}
@@ -846,11 +847,17 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 8,
-    backgroundColor: '#F8FAFC',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  doctorActionBtnEdit: {
+    backgroundColor: '#FFF7ED',
+    borderColor: '#FDBA74',
+  },
+  doctorActionBtnDelete: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FCA5A5',
   },
 
   // Add New Doctor Dashed Card

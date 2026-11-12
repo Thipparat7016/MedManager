@@ -323,17 +323,7 @@ export default function SettingsPage() {
                 />
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px' }}>
-                <button 
-                  type="button" 
-                  className="btn btn-delete"
-                  onClick={handleLogout}
-                  style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '10px 18px' }}
-                >
-                  <LogOut size={16} />
-                  <span>ออกจากระบบ</span>
-                </button>
-
+              <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginTop: '10px' }}>
                 <button 
                   type="submit" 
                   className="btn btn-primary"

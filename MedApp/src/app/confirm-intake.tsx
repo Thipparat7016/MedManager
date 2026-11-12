@@ -57,7 +57,17 @@ export default function ConfirmIntakeScreen() {
 
   const handlePostpone = async () => {
     if (targetItem && !targetItem.isTaken) {
-      await postponeSchedule(targetItem.id, 30);
+      const newTime = await postponeSchedule(targetItem.id, 30);
+      if (Platform.OS === 'web') {
+        router.replace('/(tabs)' as any);
+        return;
+      }
+      Alert.alert(
+        'เลื่อนเวลาสำเร็จ',
+        `ระบบเลื่อนการรับประทานยาออกไป 30 นาที และจะแจ้งเตือนอีกครั้งเวลา ${newTime || ''}`.trim(),
+        [{ text: 'ตกลง', onPress: () => router.replace('/(tabs)' as any) }]
+      );
+      return;
     }
     if (Platform.OS === 'web') {
       router.replace('/(tabs)' as any);

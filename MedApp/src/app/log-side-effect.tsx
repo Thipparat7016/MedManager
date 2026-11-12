@@ -213,21 +213,15 @@ export default function LogSideEffectScreen() {
         {/* ========================================================================= */}
         <View style={styles.recommendSectionCard}>
           <View style={styles.recommendHeaderRow}>
-            <MaterialCommunityIcons name="shield-alert-outline" size={20} color="#EA580C" />
             <Text style={styles.recommendHeaderTitle}>
-              ผลข้างเคียงที่อาจพบได้
+              {selectedDrug
+                ? `ผลข้างเคียงที่อาจพบ • ${formatCleanDrugName(selectedDrug)}`
+                : 'ผลข้างเคียงที่อาจพบได้'}
             </Text>
           </View>
 
           {selectedDrug ? (
             <View style={styles.recommendBody}>
-              <View style={styles.currentDrugBadge}>
-                <MaterialCommunityIcons name="pill" size={13} color="#C2410C" />
-                <Text style={styles.currentDrugBadgeText} numberOfLines={1}>
-                  ยาที่ตรวจสอบ: {formatCleanDrugName(selectedDrug)}
-                </Text>
-              </View>
-
               {backendDrugInfo?.precautions ? (
                 <Text style={styles.recommendPrecautionText}>
                   {backendDrugInfo.precautions}
@@ -243,13 +237,11 @@ export default function LogSideEffectScreen() {
                 <Text style={styles.suggestionTitle}>
                   ผลข้างเคียงที่อาจเกิดขึ้น:
                 </Text>
-                <View style={styles.suggestionChipsWrap}>
+                <View style={styles.suggestionBulletList}>
                   {suggestedSymptomsForDrug.map(sym => (
-                    <View key={sym} style={styles.suggestBadge}>
-                      <Text style={styles.suggestBadgeText}>
-                        • {sym}
-                      </Text>
-                    </View>
+                    <Text key={sym} style={styles.suggestionBulletText}>
+                      • {sym}
+                    </Text>
                   ))}
                 </View>
               </View>
@@ -273,7 +265,14 @@ export default function LogSideEffectScreen() {
               onPress={() => setShowCalendar(true)}
               activeOpacity={0.7}
             >
-              <Text style={styles.pickerInputText}>{date}</Text>
+              <Text
+                style={[
+                  styles.pickerInputText,
+                  date ? styles.pickerInputTextFilled : null,
+                ]}
+              >
+                {date}
+              </Text>
               <Feather name="calendar" size={18} color="#F87171" />
             </TouchableOpacity>
           </View>
@@ -293,7 +292,14 @@ export default function LogSideEffectScreen() {
               }}
               activeOpacity={0.7}
             >
-              <Text style={styles.pickerInputText}>{time}</Text>
+              <Text
+                style={[
+                  styles.pickerInputText,
+                  time ? styles.pickerInputTextFilled : null,
+                ]}
+              >
+                {time}
+              </Text>
               <Feather name="clock" size={18} color="#F87171" />
             </TouchableOpacity>
           </View>
@@ -303,22 +309,26 @@ export default function LogSideEffectScreen() {
         {/* ยาที่เกี่ยวข้อง (Dropdown Selector - styled like add-medication without icon) */}
         {/* ========================================================================= */}
         <Text style={styles.sectionLabel}>ยาที่เกี่ยวข้อง *</Text>
-        <TouchableOpacity
+        <View
           style={[
             styles.dropdownTrigger,
             showDrugDropdown && styles.dropdownTriggerActive,
           ]}
-          onPress={() => {
-            setShowDrugDropdown(!showDrugDropdown);
-            setShowSymptomDropdown(false);
-          }}
-          activeOpacity={0.7}
         >
-          <View style={styles.dropdownTriggerLeft}>
+          <TouchableOpacity
+            style={styles.dropdownTriggerLeft}
+            onPress={() => {
+              setShowDrugDropdown(!showDrugDropdown);
+              setShowSymptomDropdown(false);
+            }}
+            activeOpacity={0.7}
+          >
             <Text
               style={[
                 styles.dropdownValueText,
-                !selectedDrug && styles.dropdownPlaceholder,
+                selectedDrug
+                  ? styles.dropdownValueTextFilled
+                  : styles.dropdownPlaceholder,
               ]}
               numberOfLines={1}
             >
@@ -326,13 +336,30 @@ export default function LogSideEffectScreen() {
                 ? formatCleanDrugName(selectedDrug)
                 : 'เลือกยาที่เกี่ยวข้อง...'}
             </Text>
-          </View>
-          <Feather
-            name={showDrugDropdown ? 'chevron-up' : 'chevron-down'}
-            size={18}
-            color="#64748B"
-          />
-        </TouchableOpacity>
+          </TouchableOpacity>
+          {selectedDrug ? (
+            <TouchableOpacity
+              onPress={() => setSelectedDrug('')}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              style={styles.clearBtn}
+            >
+              <Feather name="x" size={16} color="#94A3B8" />
+            </TouchableOpacity>
+          ) : null}
+          <TouchableOpacity
+            onPress={() => {
+              setShowDrugDropdown(!showDrugDropdown);
+              setShowSymptomDropdown(false);
+            }}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Feather
+              name={showDrugDropdown ? 'chevron-up' : 'chevron-down'}
+              size={18}
+              color="#F87171" // <-- เปลี่ยนจาก "#64748B" เป็น "#F87171"
+            />
+          </TouchableOpacity>
+        </View>
 
         {/* Dropdown Menu List for Drugs (Card style like add-medication, no icon) */}
         {showDrugDropdown && (
@@ -360,6 +387,7 @@ export default function LogSideEffectScreen() {
               >
                 {userDrugList.map((item, idx) => {
                   const isSelected = selectedDrug === item.name;
+                  const isSupplement = item.category === 'อาหารเสริม';
                   return (
                     <TouchableOpacity
                       key={item.id || item.name + idx}
@@ -368,7 +396,11 @@ export default function LogSideEffectScreen() {
                         isSelected && styles.masterItemCardActive,
                       ]}
                       onPress={() => {
-                        setSelectedDrug(item.name);
+                        if (isSelected) {
+                          setSelectedDrug('');
+                        } else {
+                          setSelectedDrug(item.name);
+                        }
                         setShowDrugDropdown(false);
                       }}
                       activeOpacity={0.7}
@@ -385,12 +417,26 @@ export default function LogSideEffectScreen() {
 
                       {isSelected ? (
                         <View style={styles.selectedCheckBadge}>
-                          <Ionicons name="checkmark" size={14} color="#EF4444" />
+                          <Ionicons name="checkmark" size={14} color="#0284C7" />
                         </View>
                       ) : (
-                        <View style={styles.masterItemCategoryBadge}>
-                          <Text style={styles.masterItemCategoryText}>
-                            {item.category || 'ยา'}
+                        <View
+                          style={[
+                            styles.categoryBadgeBase,
+                            isSupplement
+                              ? styles.categoryBadgeSupplement
+                              : styles.categoryBadgeDrug,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.categoryBadgeTextBase,
+                              isSupplement
+                                ? styles.categoryTextSupplement
+                                : styles.categoryTextDrug,
+                            ]}
+                          >
+                            {isSupplement ? 'อาหารเสริม' : 'ยา'}
                           </Text>
                         </View>
                       )}
@@ -417,7 +463,7 @@ export default function LogSideEffectScreen() {
                   onPress={() => toggleSymptom(sym)}
                   hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
                 >
-                  <Feather name="x" size={13} color="#EF4444" style={{ marginLeft: 4 }} />
+                  <Feather name="x" size={13} color="#FB7185" style={{ marginLeft: 4 }} />
                 </TouchableOpacity>
               </View>
             ))}
@@ -440,7 +486,9 @@ export default function LogSideEffectScreen() {
             <Text
               style={[
                 styles.dropdownValueText,
-                selectedSymptoms.length === 0 && styles.dropdownPlaceholder,
+                selectedSymptoms.length > 0
+                  ? styles.dropdownValueTextFilled
+                  : styles.dropdownPlaceholder,
               ]}
               numberOfLines={1}
             >
@@ -452,7 +500,7 @@ export default function LogSideEffectScreen() {
           <Feather
             name={showSymptomDropdown ? 'chevron-up' : 'chevron-down'}
             size={18}
-            color="#64748B"
+            color="#F87171" // <-- เปลี่ยนจาก "#64748B" เป็น "#F87171"
           />
         </TouchableOpacity>
 
@@ -480,7 +528,7 @@ export default function LogSideEffectScreen() {
                     key={sym}
                     style={[
                       styles.masterItemCard,
-                      isSelected && styles.masterItemCardActive,
+                      isSelected && styles.symptomItemCardActive,
                     ]}
                     onPress={() => toggleSymptom(sym)}
                     activeOpacity={0.7}
@@ -488,7 +536,7 @@ export default function LogSideEffectScreen() {
                     <Text
                       style={[
                         styles.masterItemName,
-                        isSelected && { color: '#DC2626' },
+                        isSelected && styles.symptomItemNameActive,
                       ]}
                     >
                       {sym}
@@ -553,47 +601,60 @@ export default function LogSideEffectScreen() {
         {/* ========================================================================= */}
         <Text style={[styles.sectionLabel, { marginTop: 16 }]}>ความรุนแรง</Text>
         <View style={styles.severityRow}>
+          {/* ปุ่ม สูง */}
           <TouchableOpacity
-            style={[styles.severityBtn, severity === 'สูง' && styles.severityHighActive]}
+            style={[
+              styles.severityBtn,
+              styles.btnHigh, // <-- เพิ่มขอบสีแดงตอนยังไม่กด
+              severity === 'สูง' && styles.severityHighActive,
+            ]}
             onPress={() => setSeverity(severity === 'สูง' ? null : 'สูง')}
             activeOpacity={0.7}
           >
             <Text
               style={[
                 styles.severityText,
-                { color: '#EF4444' },
+                { color: '#EF4444' }, // สีฟอนต์แดง
                 severity === 'สูง' && styles.severityTextActive,
               ]}
             >
               สูง
             </Text>
           </TouchableOpacity>
-
+          {/* ปุ่ม กลาง */}
           <TouchableOpacity
-            style={[styles.severityBtn, severity === 'กลาง' && styles.severityMedActive]}
+            style={[
+              styles.severityBtn,
+              styles.btnMed, // <-- เพิ่มขอบสีส้มตอนยังไม่กด
+              severity === 'กลาง' && styles.severityMedActive,
+            ]}
             onPress={() => setSeverity(severity === 'กลาง' ? null : 'กลาง')}
             activeOpacity={0.7}
           >
             <Text
               style={[
                 styles.severityText,
-                { color: '#EA580C' },
+                { color: '#EA580C' }, // สีฟอนต์ส้ม
                 severity === 'กลาง' && styles.severityTextActive,
               ]}
             >
               กลาง
             </Text>
           </TouchableOpacity>
-
+          {/* ปุ่ม ต่ำ */}
           <TouchableOpacity
-            style={[styles.severityBtn, severity === 'ต่ำ' && styles.severityLowActive]}
+            style={[
+              styles.severityBtn,
+              styles.btnLow, // <-- เพิ่มขอบสีเหลืองตอนยังไม่กด
+              severity === 'ต่ำ' && styles.severityLowActive,
+            ]}
             onPress={() => setSeverity(severity === 'ต่ำ' ? null : 'ต่ำ')}
             activeOpacity={0.7}
           >
             <Text
               style={[
                 styles.severityText,
-                { color: '#CA8A04' },
+                { color: '#CA8A04' }, // สีฟอนต์เหลือง
                 severity === 'ต่ำ' && styles.severityTextActive,
               ]}
             >
@@ -605,9 +666,10 @@ export default function LogSideEffectScreen() {
         {/* ========================================================================= */}
         {/* Notes Details Textarea                                                    */}
         {/* ========================================================================= */}
+        {/* รายละเอียดเพิ่มเติม */}
         <Text style={styles.sectionLabel}>รายละเอียดเพิ่มเติม</Text>
         <TextInput
-          style={styles.textArea}
+          style={[styles.textArea, details ? styles.textAreaFilled : null]}
           multiline
           numberOfLines={4}
           placeholder="อธิบายอาการ เริ่มเมื่อไร นานแค่ไหน สิ่งที่ทำให้ดีขึ้น/แย่ลง..."
@@ -641,20 +703,22 @@ export default function LogSideEffectScreen() {
           sideEffects.map(item => (
             <View key={item.id} style={styles.historyCard}>
               <View style={styles.historyHeader}>
-                <Text style={styles.historyDrug}>
+                <Text style={styles.historyDrug} numberOfLines={1}>
                   {item.date} {item.time ? `• ${item.time}` : ''} • {formatCleanDrugName(item.medicationName)}
                 </Text>
-                <StatusBadge
-                  label={item.severity}
-                  variant={
-                    item.severity === 'สูง'
-                      ? 'high'
-                      : item.severity === 'กลาง'
-                        ? 'medium'
-                        : 'low'
-                  }
-                  size="sm"
-                />
+                <View style={styles.badgeWrap}>
+                  <StatusBadge
+                    label={item.severity}
+                    variant={
+                      item.severity === 'สูง'
+                        ? 'high'
+                        : item.severity === 'กลาง'
+                          ? 'medium'
+                          : 'low'
+                    }
+                    size="sm"
+                  />
+                </View>
               </View>
               <Text style={styles.historySymptoms}>{item.symptoms.join(', ')}</Text>
               {item.details ? (
@@ -677,6 +741,7 @@ export default function LogSideEffectScreen() {
         }}
         initialDate={date}
         title="เลือกวันที่เกิดผลข้างเคียง"
+        theme="coral"
       />
 
       {/* ========================================================================= */}
@@ -822,13 +887,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
   },
   scrollContent: {
-    paddingHorizontal: 20,
-    paddingTop: 16,
+    paddingHorizontal: 18,
+    paddingTop: 12,
     paddingBottom: 40,
   },
   subtitle: {
-    fontSize: 13,
-    color: '#64748B',
+    fontSize: 12,
+    color: '#6B7280',
     lineHeight: 18,
     marginBottom: 16,
   },
@@ -850,37 +915,21 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '800',
     color: '#9A3412',
-    marginLeft: 6,
+    marginLeft: 2,
   },
   recommendBody: {
     marginTop: 2,
   },
-  currentDrugBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFEDD5',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-    alignSelf: 'flex-start',
-    marginBottom: 6,
-  },
-  currentDrugBadgeText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#9A3412',
-    marginLeft: 4,
-  },
   recommendPrecautionText: {
     fontSize: 12,
     color: '#7C2D12',
-    lineHeight: 17,
+    lineHeight: 18,
     marginBottom: 8,
   },
   recommendEmptyText: {
     fontSize: 12,
     color: '#9A3412',
-    lineHeight: 17,
+    lineHeight: 18,
   },
   suggestionBox: {
     marginTop: 6,
@@ -889,99 +938,74 @@ const styles = StyleSheet.create({
     paddingTop: 6,
   },
   suggestionTitle: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     color: '#C2410C',
     marginBottom: 6,
   },
-  suggestionChipsWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
+  suggestionBulletList: {
+    marginTop: 2,
+    gap: 4,
   },
-  suggestBadge: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#FED7AA',
-    borderRadius: 14,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
-  suggestBadgeText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#C2410C',
-  },
-  suggestChip: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#FDBA74',
-    borderRadius: 14,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
-  suggestChipActive: {
-    backgroundColor: '#F97316',
-    borderColor: '#F97316',
-  },
-  suggestChipText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#C2410C',
-  },
-  suggestChipTextActive: {
-    color: '#FFFFFF',
+  suggestionBulletText: {
+    fontSize: 12,
+    color: '#7C2D12',
+    lineHeight: 18,
   },
 
   // Date & Time Inputs
   rowInputs: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 16,
+    flexDirection: 'row', 
+    gap: 8, 
+    marginBottom: 18,
   },
   halfInput: {
     flex: 1,
   },
   inputLabel: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
-    color: '#1E293B',
-    marginBottom: 8,
+    color: '#111827',
+    marginBottom: 10,
   },
   pickerInputBox: {
-    height: 52,
-    borderWidth: 1.5,
-    borderColor: '#E2E8F0',
-    borderRadius: 14,
-    paddingHorizontal: 16,
+    height: 40,
+    borderWidth: 1,
+    borderColor: '#FA969D',
+    borderRadius: 9,
+    paddingHorizontal: 10,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#FAFAFC',
+    backgroundColor: '#F9FBFC',
   },
   pickerInputText: {
-    fontSize: 14,
+    fontSize: 13, 
+    color: '#94A3B8', 
+    fontWeight: '500',
+  },
+  pickerInputTextFilled: {
     color: '#0F172A',
     fontWeight: '600',
   },
   sectionLabel: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#0F172A',
-    marginBottom: 8,
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 10,
   },
 
   // Dropdown Trigger (styled like input in add-medication)
   dropdownTrigger: {
-    height: 52,
-    borderWidth: 1.5,
-    borderColor: '#E2E8F0',
-    borderRadius: 14,
-    paddingHorizontal: 16,
+    height: 45,               // ความสูง (เดิม 52 -> ปรับเป็น 36 เหมือนวันที่และเวลา)
+    borderWidth: 1,           // ความหนาขอบ (เดิม 1.5 -> ปรับเป็น 1)
+    borderColor: '#FA969D',   // สีขอบ (เดิม #E2E8F0 -> ปรับเป็นสีชมพู/ส้มโอรสตามวันที่และเวลา)
+    borderRadius: 9,          // ความโค้งมน (เดิม 14 -> ปรับเป็น 9)
+    paddingHorizontal: 10,    // ระยะขอบซ้ายขวาด้านใน (เดิม 16 -> ปรับเป็น 10)
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#FAFAFC',
+    backgroundColor: '#F9FBFC', // สีพื้นหลัง (เหมือนวันที่และเวลา)
     marginBottom: 8,
   },
   dropdownTriggerActive: {
@@ -995,14 +1019,23 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   dropdownValueText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#0F172A',
+    fontSize: 13,             // ขนาดฟอนต์ (เดิม 14 -> ปรับเป็น 12 เหมือนวันที่และเวลา)
+    fontWeight: '500',        // น้ำหนักฟอนต์ (เดิม '600' -> ปรับเป็น '500')
+    color: '#94A3B8',         // สีฟอนต์ค่าเริ่มต้น
     flex: 1,
   },
+  dropdownValueTextFilled: {
+    color: '#0F172A',         // สีฟอนต์เข้มขึ้นเมื่อเลือกหรือกรอกข้อมูล
+    fontWeight: '600',
+  },
   dropdownPlaceholder: {
-    color: '#94A3B8',
-    fontWeight: '400',
+    color: '#94A3B8',         // สีฟอนต์ Placeholder
+    fontWeight: '500',
+  },
+  clearBtn: {
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    marginRight: 2,
   },
 
   // Master Catalog Dropdown Style (Exact match of add-medication.tsx without icons)
@@ -1056,22 +1089,46 @@ const styles = StyleSheet.create({
     color: '#64748B',
     marginTop: 2,
   },
-  masterItemCategoryBadge: {
-    backgroundColor: '#F1F5F9',
+  // Category Badges styled to match AdminMed
+  categoryBadgeBase: {
     paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  masterItemCategoryText: {
+  categoryBadgeSupplement: {
+    backgroundColor: '#E8E4FB', // สีม่วงพาสเทลอ่อน (AdminMed)
+    borderColor: '#C9C3EE',
+  },
+  categoryBadgeTextBase: {
     fontSize: 11,
     fontWeight: '600',
-    color: '#475569',
+  },
+  categoryTextSupplement: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#7C6CD8', // สีม่วง AdminMed
+  },
+  categoryBadgeDrug: {
+    backgroundColor: '#E0F2FE',
+    borderColor: '#B9E2FE',
+  },
+  categoryTextDrug: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#0284C7',
   },
   selectedCheckBadge: {
-    backgroundColor: '#FEE2E2',
+    backgroundColor: '#E0F2FE',
+    borderWidth: 1,
+    borderColor: '#B9E2FE',
     paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   masterItemCardDashed: {
     flexDirection: 'row',
@@ -1087,8 +1144,8 @@ const styles = StyleSheet.create({
   },
   dashedOptionText: {
     fontSize: 13,
-    fontWeight: '700',
-    color: '#EF4444',
+    fontWeight: '600',
+    color: '#E11D48',
   },
   dropdownEmptyBox: {
     paddingVertical: 18,
@@ -1108,7 +1165,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
 
-  // Symptoms Selection & Chips
+  // Symptoms Selection & Chips (Soft pastel rose palette)
   selectedSymptomsWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1118,17 +1175,25 @@ const styles = StyleSheet.create({
   selectedSymptomChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FEE2E2',
+    backgroundColor: '#FFF1F2',
     borderWidth: 1,
-    borderColor: '#FCA5A5',
+    borderColor: '#FECDD3',
     borderRadius: 14,
     paddingHorizontal: 10,
     paddingVertical: 5,
   },
   selectedSymptomChipText: {
     fontSize: 12,
-    fontWeight: '700',
-    color: '#DC2626',
+    fontWeight: '600',
+    color: '#E11D48',
+  },
+  symptomItemCardActive: {
+    borderColor: '#FECDD3',
+    backgroundColor: '#FFF5F5',
+  },
+  symptomItemNameActive: {
+    color: '#E11D48',
+    fontWeight: '600',
   },
   multiCheckCircle: {
     width: 20,
@@ -1141,8 +1206,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
   },
   multiCheckCircleActive: {
-    backgroundColor: '#F87171',
-    borderColor: '#F87171',
+    backgroundColor: '#FB7185',
+    borderColor: '#FB7185',
   },
   customSymptomInputCard: {
     marginTop: 8,
@@ -1183,31 +1248,41 @@ const styles = StyleSheet.create({
 
   // Severity Selection
   severityRow: {
-    flexDirection: 'row',
-    gap: 10,
+    flexDirection: 'row', 
+    gap: 5, 
     marginBottom: 18,
   },
-  severityBtn: {
+   severityBtn: {
     flex: 1,
-    height: 44,
-    borderRadius: 22,
-    borderWidth: 1.5,
-    borderColor: '#E2E8F0',
-    backgroundColor: '#FFFFFF',
+    height: 36,
+    borderRadius: 15,
+    borderWidth: 1,
+    backgroundColor: '#FFFFFF', // พื้นหลังสีขาวตอนยังไม่กด
     alignItems: 'center',
     justifyContent: 'center',
   },
+  // ขอบของแต่ละปุ่มตอนยังไม่กด (พื้นหลังยังคงเป็นสีขาว)
+  btnHigh: {
+    borderColor: '#FCA5A5', // ขอบแดงอ่อน
+  },
+  btnMed: {
+    borderColor: '#FDBA74', // ขอบส้มอ่อน
+  },
+  btnLow: {
+    borderColor: '#FDE047', // ขอบเหลืองอ่อน
+  },
+   // พอกดเลือก: สีพื้นหลังจะเปลี่ยนตามปุ่ม และขอบจะเข้มขึ้น
   severityHighActive: {
-    backgroundColor: '#FEE2E2',
-    borderColor: '#EF4444',
+    backgroundColor: '#FEE2E2', // พื้นหลังแดงอ่อน
+    borderColor: '#FEE2E2',     // ขอบแดงเข้ม
   },
   severityMedActive: {
-    backgroundColor: '#FFEDD5',
-    borderColor: '#F97316',
+    backgroundColor: '#FFEDD5', // พื้นหลังส้มอ่อน
+    borderColor: '#FFEDD5',     // ขอบส้มเข้ม
   },
   severityLowActive: {
-    backgroundColor: '#FEF9C3',
-    borderColor: '#EAB308',
+    backgroundColor: '#fcefbaff', // พื้นหลังเหลืองอ่อน
+    borderColor: '#fcefbaff',     // ขอบเหลืองเข้ม
   },
   severityText: {
     fontSize: 14,
@@ -1217,15 +1292,19 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   textArea: {
-    borderWidth: 1.5,
-    borderColor: '#E2E8F0',
-    borderRadius: 16,
-    padding: 14,
-    fontSize: 14,
-    color: '#0F172A',
-    height: 100,
+    borderWidth: 1,             // ความหนาขอบ (เดิม 1.5 -> ปรับเป็น 1 เหมือนวันที่/เวลา)
+    borderColor: '#FA969D',     // สีขอบ (เดิม #E2E8F0 -> ปรับเป็นสีชมพู/ส้มโอรส #FA969D)
+    borderRadius: 12,           // ความโค้งมน (เดิม 16 -> ปรับให้รับกับช่องด้านบน)
+    padding: 12,
+    fontSize: 12,               // ขนาดฟอนต์ (เดิม 14 -> ปรับเป็น 12 เหมือนวันที่/เวลา)
+    fontWeight: '500',          // น้ำหนักฟอนต์ (เดิมค่าปกติ -> ปรับเป็น '500')
+    color: '#0F172A',           // สีฟอนต์เวลาพิมพ์ เปลี่ยนเป็นสีเข้ม
+    height: 100,                // ความสูงกล่องข้อความ (คงไว้ที่ 100)
     marginBottom: 20,
-    backgroundColor: '#FAFAFC',
+    backgroundColor: '#F9FBFC',   // สีพื้นหลัง (เดิม #FAFAFC -> ปรับเป็น #F9FBFC เหมือนวันที่/เวลา)
+  },
+  textAreaFilled: {
+    color: '#0F172A',
   },
   submitBtn: {
     height: 52,
@@ -1252,7 +1331,10 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1.5,
     borderColor: '#FED7AA',
-    padding: 16,
+    paddingTop: 14,
+    paddingBottom: 14,
+    paddingLeft: 14,
+    paddingRight: 8,
     marginBottom: 10,
   },
   historyHeader: {
@@ -1262,9 +1344,14 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   historyDrug: {
-    fontSize: 14,
+    flex: 1,
+    fontSize: 13.5,
     fontWeight: '700',
     color: '#0F172A',
+    marginRight: 8,
+  },
+  badgeWrap: {
+    flexShrink: 0,
   },
   historySymptoms: {
     fontSize: 13,

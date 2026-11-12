@@ -40,6 +40,7 @@ interface AppContextType {
   isLoading: boolean;
   isAuthenticated: boolean;
   login: (email: string, pass: string) => Promise<{ success: boolean; error?: string }>;
+  loginWithGoogle: (email: string, fullName?: string) => Promise<{ success: boolean; error?: string }>;
   register: (data: { name: string; email: string; phone?: string; password: string }) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
   refreshData: () => Promise<void>;
@@ -47,7 +48,7 @@ interface AppContextType {
   toggleChecklist: (scheduleId: string, isChecked: boolean, dateStr?: string) => Promise<void>;
   confirmCheckedIntake: (scheduleIds: string[], dateStr?: string) => Promise<void>;
   markTaken: (scheduleId: string, isTaken?: boolean, dateStr?: string) => Promise<void>;
-  postponeSchedule: (scheduleId: string, minutes?: number) => Promise<void>;
+  postponeSchedule: (scheduleId: string, minutes?: number) => Promise<string | undefined>;
   skipSchedule: (scheduleId: string) => Promise<void>;
   saveMedication: (med: Medication) => Promise<Medication>;
   deleteMedication: (id: string) => Promise<void>;
@@ -106,7 +107,15 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
       // 1A. Upcoming medication reminders for items in the next upcoming meal
       const now = new Date();
+      const nowMs = now.getTime();
       const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+      // ตรวจสอบว่ารายการยานี้ติดสถานะเลื่อนเวลา (Snoozed) อยู่หรือไม่
+      const isSnoozed = (s: ScheduleItem) => {
+        if (!s.postponedUntil) return false;
+        return nowMs < s.postponedUntil;
+      };
+
       const upcomingPending = sched.find(s => {
         if (s.isTaken || s.isSkipped) return false;
         const match = s.time.match(/(\d+):(\d+)/);
@@ -126,7 +135,10 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
         const emittedFoodKeys = new Set<string>();
 
-        nextMealPendingItems.forEach(pendingItem => {
+        // กรองเฉพาะรายการที่ไม่ได้ติดสถานะ Snooze (เลื่อนเวลา) อยู่ในขณะนี้
+        const activeAlertItems = nextMealPendingItems.filter(s => !isSnoozed(s));
+
+        activeAlertItems.forEach(pendingItem => {
           const cleanName = formatCleanDrugName(pendingItem.medicationName);
           const detailRight = [
             `${pendingItem.doseCount || 1} ${pendingItem.type}`,
@@ -310,6 +322,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     loadAllData(true);
 
+    // ตรวจสอบและรีเฟรชข้อมูลทุก 30 วินาที เพื่อปลดล็อครายการที่หมดเวลา Snooze อัตโนมัติ
+    const interval = setInterval(() => {
+      loadAllData(false);
+    }, 30000);
+
     // Supabase Realtime Subscription for Live Sync with AdminMed
     if (supabase) {
       const channel = supabase
@@ -341,9 +358,14 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         .subscribe();
 
       return () => {
+        clearInterval(interval);
         supabase?.removeChannel(channel);
       };
     }
+
+    return () => {
+      clearInterval(interval);
+    };
   }, []);
 
   const login = async (email: string, pass: string): Promise<{ success: boolean; error?: string }> => {
@@ -357,6 +379,22 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     } catch (e: any) {
       console.warn('Login error:', e);
       return { success: false, error: e?.message || 'เข้าสู่ระบบไม่สำเร็จ' };
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const loginWithGoogle = async (email: string, fullName?: string): Promise<{ success: boolean; error?: string }> => {
+    try {
+      setIsLoading(true);
+      const profile = await medService.loginWithGoogleUser(email, fullName);
+      setUser(profile);
+      setIsAuthenticated(true);
+      await loadAllData();
+      return { success: true };
+    } catch (e: any) {
+      console.warn('Google login error:', e);
+      return { success: false, error: e?.message || 'เข้าสู่ระบบด้วย Google ไม่สำเร็จ' };
     } finally {
       setIsLoading(false);
     }
@@ -398,23 +436,50 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const toggleChecklist = async (scheduleId: string, isChecked: boolean, dateStr?: string) => {
+    // 1. อัปเดต state ทันที (Optimistic update) ให้การติ๊กเช็กลิสต์ตอบสนองทันทีแบบสมูท
+    setTodaySchedule(prev =>
+      prev.map(item =>
+        item.id === scheduleId ? { ...item, isChecked } : item
+      )
+    );
+    // 2. บันทึกข้อมูลลง storage ในเบื้องหลัง (ไม่ต้องเรียก loadAllData ซ้ำ เพื่อป้องกัน race condition ที่ทำให้สถานะเด้งไปมา)
     await medService.toggleScheduleChecked(scheduleId, isChecked, dateStr);
-    await loadAllData(false);
   };
 
   const confirmCheckedIntake = async (scheduleIds: string[], dateStr?: string) => {
+    // Optimistic update ทันที
+    setTodaySchedule(prev =>
+      prev.map(item =>
+        scheduleIds.includes(item.id)
+          ? { ...item, isTaken: true, takenAt: new Date().toISOString() }
+          : item
+      )
+    );
     await medService.confirmCheckedSchedules(scheduleIds, dateStr);
     await loadAllData(false);
   };
 
   const markTaken = async (scheduleId: string, isTaken: boolean = true, dateStr?: string) => {
+    setTodaySchedule(prev =>
+      prev.map(item =>
+        item.id === scheduleId
+          ? { ...item, isTaken, takenAt: isTaken ? new Date().toISOString() : undefined }
+          : item
+      )
+    );
     await medService.markScheduleTaken(scheduleId, isTaken, dateStr);
     await loadAllData(false);
   };
 
-  const postponeSchedule = async (scheduleId: string, minutes: number = 30) => {
-    await medService.postponeSchedule(scheduleId, minutes);
+  const postponeSchedule = async (scheduleId: string, minutes: number = 30): Promise<string | undefined> => {
+    // ซ่อนการ์ดแจ้งเตือนของยานี้และการ์ดอาหารที่ต้องเลี่ยงออกจากหน้าจอทันที
+    setNotifications(prev =>
+      prev.filter(n => n.scheduleId !== scheduleId && !n.id.includes(scheduleId))
+    );
+    const updated = await medService.postponeSchedule(scheduleId, minutes);
     await loadAllData(false);
+    const target = updated.find(i => i.id === scheduleId);
+    return target?.time;
   };
 
   const skipSchedule = async (scheduleId: string) => {
@@ -482,6 +547,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         isLoading,
         isAuthenticated,
         login,
+        loginWithGoogle,
         register,
         logout,
         refreshData,

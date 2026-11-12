@@ -239,7 +239,7 @@ export default function MedicationsScreen() {
                       onPress={() => router.push('/schedule')}
                       activeOpacity={0.7}
                     >
-                      <Text style={styles.actionBtnScheduleText}>ตาราง</Text>
+                      <Text style={styles.actionBtnScheduleText}>ตารางทานยา</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
@@ -503,30 +503,30 @@ const styles = StyleSheet.create({
     height: 40,
     borderRadius: 12,
     borderWidth: 1.5,
-    borderColor: '#C7D2FE',
-    backgroundColor: '#F5F6FF',
+    borderColor: '#DBD0F8',
+    backgroundColor: '#f5f3fbff',
     alignItems: 'center',
     justifyContent: 'center',
   },
   actionBtnEditText: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#4F46E5',
+    color: '#6e68ebff',
   },
   actionBtnSchedule: {
     flex: 1,
     height: 40,
     borderRadius: 12,
     borderWidth: 1.5,
-    borderColor: '#BBF7D0',
-    backgroundColor: '#F0FDF4',
+    borderColor: '#C3DECB',
+    backgroundColor: '#F0FBF3',
     alignItems: 'center',
     justifyContent: 'center',
   },
   actionBtnScheduleText: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#16A34A',
+    color: '#62A759',
   },
   actionBtnDelete: {
     width: 44,

@@ -1131,6 +1131,7 @@ export default function AddMedicationScreen() {
         }}
         initialDate={expiryDate}
         title="เลือกวันหมดอายุ"
+        theme="purple"
       />
 
       {/* ========================================================================= */}

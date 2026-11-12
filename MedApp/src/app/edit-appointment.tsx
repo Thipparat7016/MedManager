@@ -285,6 +285,7 @@ export default function EditAppointmentScreen() {
         onSelectDate={setDate}
         initialDate={date}
         title="เลือกวันที่นัดหมาย"
+        theme="sage"
       />
 
       {/* Time Picker Modal */}

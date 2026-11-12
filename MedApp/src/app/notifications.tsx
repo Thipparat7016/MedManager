@@ -83,10 +83,16 @@ export default function NotificationsScreen() {
 
   const handlePostpone = async (notif: AppNotification) => {
     const pendingItem = findScheduleItemForNotif(notif);
-    if (pendingItem && !pendingItem.isTaken) {
-      await postponeSchedule(pendingItem.id, 30);
+    const targetId = pendingItem?.id || notif.scheduleId || notif.id.replace('notif-remind-', '');
+    if (targetId) {
+      const newTime = await postponeSchedule(targetId, 30);
+      Alert.alert(
+        'เลื่อนเวลาสำเร็จ',
+        `ระบบเลื่อนการรับประทานยาออกไป 30 นาที และจะแจ้งเตือนอีกครั้งเวลา ${newTime || ''}`.trim()
+      );
+    } else {
+      Alert.alert('เลื่อนเวลา', 'เลื่อนการแจ้งเตือนออกไป 30 นาทีแล้ว');
     }
-    Alert.alert('เลื่อนเวลา', 'เลื่อนการแจ้งเตือนออกไป 30 นาทีแล้ว');
   };
 
   const handleClearAll = () => {

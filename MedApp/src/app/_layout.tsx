@@ -2,7 +2,18 @@ import React, { useEffect } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { useFonts } from 'expo-font';
+import {
+  Ionicons,
+  MaterialCommunityIcons,
+  Feather,
+  AntDesign,
+  FontAwesome5,
+} from '@expo/vector-icons';
+import * as SplashScreen from 'expo-splash-screen';
 import { AppProvider, useApp } from '@/context/AppContext';
+
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 function RootNavigation() {
   const { isAuthenticated, isLoading } = useApp();
@@ -53,6 +64,24 @@ function RootNavigation() {
 }
 
 export default function RootLayout() {
+  const [fontsLoaded, fontError] = useFonts({
+    ...Ionicons.font,
+    ...MaterialCommunityIcons.font,
+    ...Feather.font,
+    ...AntDesign.font,
+    ...FontAwesome5.font,
+  });
+
+  useEffect(() => {
+    if (fontsLoaded || fontError) {
+      SplashScreen.hideAsync().catch(() => {});
+    }
+  }, [fontsLoaded, fontError]);
+
+  if (!fontsLoaded && !fontError) {
+    return null;
+  }
+
   return (
     <SafeAreaProvider>
       <AppProvider>

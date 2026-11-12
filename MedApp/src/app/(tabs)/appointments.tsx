@@ -376,7 +376,7 @@ export default function AppointmentsScreen() {
         <Text style={styles.sectionTitle}>นัดหมายที่กำลังจะมาถึง</Text>
         {selectedDateApts.length === 0 ? (
           <View style={styles.emptyCard}>
-            <Feather name="calendar" size={32} color="#CBD5E1" style={{ marginBottom: 8 }} />
+            <Feather name="calendar" size={32} color="#6FA07E" style={{ marginBottom: 8 }} />
             <Text style={styles.emptyText}>ไม่มีนัดหมายในวันที่เลือก</Text>
             <Text style={styles.emptySubtext}>กดปุ่ม "+ เพิ่ม" เพื่อบันทึกนัดหมายแพทย์ใหม่</Text>
           </View>
@@ -467,15 +467,15 @@ const styles = StyleSheet.create({
     color: '#0F172A',
   },
   addAptButton: {
-    backgroundColor: '#EEF0FF',
+    backgroundColor: '#F0FDF4',
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#C7D2FE',
+    borderColor: '#D1E7DD',
   },
   addAptButtonText: {
-    color: '#6366F1',
+    color: '#3D7B54',
     fontWeight: '700',
     fontSize: 13,
   },
@@ -483,7 +483,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderRadius: 20,
     borderWidth: 1.5,
-    borderColor: '#E2E8F0',
+    borderColor: '#D1E7DD',
     padding: 16,
     marginBottom: 20,
   },
@@ -539,9 +539,12 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
   dayCellSelected: {
-    backgroundColor: '#8B95F6',
+    backgroundColor: '#6FA07E',
+    borderRadius: 18,
+    overflow: 'hidden',
   },
   dayNumber: {
     fontSize: 13,
@@ -554,13 +557,13 @@ const styles = StyleSheet.create({
   },
   dayNumberBold: {
     fontWeight: '800',
-    color: '#6366F1',
+    color: '#3D7B54',
   },
   aptDot: {
     width: 4,
     height: 4,
     borderRadius: 2,
-    backgroundColor: '#6366F1',
+    backgroundColor: '#B91C1C',
     position: 'absolute',
     bottom: 4,
   },
@@ -585,8 +588,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   selectorChipSelected: {
-    backgroundColor: '#8B95F6',
-    borderColor: '#8B95F6',
+    backgroundColor: '#6FA07E',
+    borderColor: '#6FA07E',
   },
   selectorChipText: {
     fontSize: 13,
@@ -607,7 +610,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8FAFC',
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#D1E7DD',
     padding: 24,
     alignItems: 'center',
     justifyContent: 'center',
@@ -628,7 +631,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderRadius: 18,
     borderWidth: 1.5,
-    borderColor: '#E2E8F0',
+    borderColor: '#D1E7DD',
     padding: 16,
     marginBottom: 12,
   },
@@ -642,6 +645,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '800',
     color: '#0F172A',
+    flex: 1,
+    marginRight: 8,
   },
   doctorDept: {
     fontSize: 13,
@@ -651,18 +656,18 @@ const styles = StyleSheet.create({
   aptTimeText: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#6366F1',
+    color: '#3D7B54',
     marginBottom: 10,
   },
   notesBox: {
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#F0FBF3',
     borderRadius: 10,
     padding: 10,
     marginBottom: 12,
   },
   notesText: {
     fontSize: 12,
-    color: '#64748B',
+    color: '#334155',
     lineHeight: 16,
   },
   cardActionsRow: {
@@ -673,14 +678,16 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 36,
     borderRadius: 10,
-    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#C8EBD2',
+    backgroundColor: '#F0FBF3',
     alignItems: 'center',
     justifyContent: 'center',
   },
   actionBtnEditText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#475569',
+    color: '#275238',
   },
   actionBtnDelete: {
     flex: 1,
@@ -709,6 +716,8 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: '#64748B',
+    flex: 1,
+    marginRight: 8,
   },
   pastMeta: {
     fontSize: 12,

@@ -732,10 +732,14 @@ export const dataService = {
   // --------------------------------------------------------------------------
   // Activity Logs (activity_logs table)
   // --------------------------------------------------------------------------
-  async getActivityLogs() {
+  async getActivityLogs(limit = 10) {
     if (!supabase) return []
     try {
-      const { data, error } = await supabase.from('activity_logs').select('*').order('created_at', { ascending: false }).limit(10)
+      const { data, error } = await supabase
+        .from('activity_logs')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(limit)
       if (error) {
         console.error('Error fetching activity_logs:', error)
         return []
@@ -748,18 +752,314 @@ export const dataService = {
   },
 
   // --------------------------------------------------------------------------
-  // Dashboard Stats (Calculated purely from real Supabase rows)
+  // Side Effects / ADR Logs (side_effects table)
+  // --------------------------------------------------------------------------
+  async getSideEffects() {
+    if (!supabase) return []
+    try {
+      const { data, error } = await supabase
+        .from('side_effects')
+        .select('*')
+        .order('created_at', { ascending: false })
+      if (error) {
+        console.warn('Error fetching side_effects:', error)
+        return []
+      }
+      return data || []
+    } catch (err) {
+      console.warn('getSideEffects error:', err)
+      return []
+    }
+  },
+
+  // --------------------------------------------------------------------------
+  // Patient Medication Schedules (user_schedules table)
+  // --------------------------------------------------------------------------
+  async getUserSchedules() {
+    if (!supabase) return []
+    try {
+      const { data, error } = await supabase
+        .from('user_schedules')
+        .select('*')
+        .order('created_at', { ascending: false })
+      if (error) {
+        console.warn('Error fetching user_schedules:', error)
+        return []
+      }
+      return data || []
+    } catch (err) {
+      console.warn('getUserSchedules error:', err)
+      return []
+    }
+  },
+
+  // --------------------------------------------------------------------------
+  // Pharmacist-Relevant Activity Feed (filters out login/register/appointments)
+  // --------------------------------------------------------------------------
+  async getPharmacyActivities() {
+    const [rawLogs, sideEffects, users] = await Promise.all([
+      this.getActivityLogs(40),
+      this.getSideEffects(),
+      this.getAppUsers()
+    ])
+
+    const userMap = new Map((users || []).map(u => [String(u.id), u.name]))
+
+    // Exclude non-pharmacy events (auth & doctor clinic appointments)
+    const excludedKeywords = ['เข้าสู่ระบบ', 'สมัครสมาชิก', 'นัดหมาย']
+    const pharmacyLogs = (rawLogs || []).filter(item => {
+      const act = (item.activity || '').trim()
+      return act && !excludedKeywords.some(kw => act.includes(kw))
+    })
+
+    const formatLogRow = (item) => {
+      const rawAct = (item.activity || '').trim()
+      const rawDetails = (item.details || '').trim()
+
+      if (rawAct.startsWith('รับประทานยา') || rawAct === 'ยืนยันกินยา') {
+        const medPart = rawAct.includes(':') ? rawAct.split(':').slice(1).join(':').trim() : ''
+        return {
+          id: item.id,
+          time: item.time || '-',
+          user_name: item.user_name || 'ผู้ป่วย',
+          activity: 'รับประทานยา',
+          tone: 'success',
+          details: medPart ? `${medPart}${rawDetails ? ` • ${rawDetails}` : ''}` : rawDetails
+        }
+      }
+
+      if (rawAct.includes('ผลข้างเคียง')) {
+        const medPart = rawAct.includes(':') ? rawAct.split(':').slice(1).join(':').trim() : ''
+        return {
+          id: item.id,
+          time: item.time || '-',
+          user_name: item.user_name || 'ผู้ป่วย',
+          activity: 'ผลข้างเคียง (ADR)',
+          tone: 'danger',
+          details: medPart ? `${medPart}${rawDetails ? ` • ${rawDetails}` : ''}` : rawDetails
+        }
+      }
+
+      if (rawAct.includes('ข้าม')) {
+        return {
+          id: item.id,
+          time: item.time || '-',
+          user_name: item.user_name || 'ผู้ป่วย',
+          activity: 'ข้ามมื้อยา',
+          tone: 'warning',
+          details: rawDetails || rawAct
+        }
+      }
+
+      if (rawAct.includes('ลบยา')) {
+        return {
+          id: item.id,
+          time: item.time || '-',
+          user_name: item.user_name || 'ผู้ป่วย',
+          activity: 'ลบรายการยา',
+          tone: 'primary',
+          details: rawDetails || rawAct
+        }
+      }
+
+      if (rawAct.includes('บันทึกยา') || rawAct.includes('ยาของฉัน')) {
+        const medPart = rawAct.includes(':') ? rawAct.split(':').slice(1).join(':').trim() : ''
+        return {
+          id: item.id,
+          time: item.time || '-',
+          user_name: item.user_name || 'ผู้ป่วย',
+          activity: 'เพิ่มรายการยา',
+          tone: 'primary',
+          details: medPart ? `${medPart}${rawDetails ? ` • ${rawDetails}` : ''}` : rawDetails
+        }
+      }
+
+      return {
+        id: item.id,
+        time: item.time || '-',
+        user_name: item.user_name || 'ผู้ป่วย',
+        activity: rawAct,
+        tone: 'primary',
+        details: rawDetails
+      }
+    }
+
+    const formatted = pharmacyLogs.map(formatLogRow)
+
+    // Fallback: if activity_logs has no pharmacy rows yet, surface any recorded side_effects
+    if (formatted.length === 0 && sideEffects.length > 0) {
+      return sideEffects.slice(0, 10).map(se => {
+        const symptomText = Array.isArray(se.symptoms) && se.symptoms.length > 0
+          ? se.symptoms.join(', ')
+          : se.details || '-'
+        return {
+          id: `se-${se.id}`,
+          time: se.log_time || '-',
+          user_name: (se.user_id && userMap.get(String(se.user_id))) || 'ผู้ป่วยในระบบ',
+          activity: 'ผลข้างเคียง (ADR)',
+          tone: 'danger',
+          details: `${se.medication_name || 'ไม่ระบุยา'} • อาการ: ${symptomText} (ระดับ${se.severity || 'กลาง'})`
+        }
+      })
+    }
+
+    return formatted.slice(0, 10)
+  },
+
+  // --------------------------------------------------------------------------
+  // Dashboard Stats (Pharmacist KPIs calculated purely from real Supabase rows)
   // --------------------------------------------------------------------------
   async getDashboardStats() {
-    const [medications, interactions, users, activities] = await Promise.all([
+    const [medications, interactions, users, sideEffects, schedules] = await Promise.all([
       this.getMedications(),
       this.getInteractions(),
       this.getAppUsers(),
-      this.getActivityLogs()
+      this.getSideEffects(),
+      this.getUserSchedules()
     ])
 
-    // Calculate real drug type breakdown
+    const THAI_MONTH_MAP = {
+      'มกราคม': 0, 'ม.ค.': 0, 'ม.ค': 0,
+      'กุมภาพันธ์': 1, 'ก.พ.': 1, 'ก.พ': 1,
+      'มีนาคม': 2, 'มี.ค.': 2, 'มี.ค': 2,
+      'เมษายน': 3, 'เม.ย.': 3, 'เม.ย': 3,
+      'พฤษภาคม': 4, 'พ.ค.': 4, 'พ.ค': 4,
+      'มิถุนายน': 5, 'มิ.ย.': 5, 'มิ.ย': 5,
+      'กรกฎาคม': 6, 'ก.ค.': 6, 'ก.ค': 6,
+      'สิงหาคม': 7, 'ส.ค.': 7, 'ส.ค': 7,
+      'กันยายน': 8, 'ก.ย.': 8, 'ก.ย': 8,
+      'ตุลาคม': 9, 'ต.ค.': 9, 'ต.ค': 9,
+      'พฤศจิกายน': 10, 'พ.ย.': 10, 'พ.ย': 10,
+      'ธันวาคม': 11, 'ธ.ค.': 11, 'ธ.ค': 11
+    }
+    const THAI_SHORT_MONTHS = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.']
+    const THAI_SHORT_DAYS = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส']
+
+    const parseDateValue = (rawStr, fallbackIso) => {
+      if (rawStr && typeof rawStr === 'string') {
+        const str = rawStr.trim()
+        const isoMatch = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)
+        if (isoMatch) {
+          let y = parseInt(isoMatch[1], 10)
+          const m = parseInt(isoMatch[2], 10) - 1
+          const d = parseInt(isoMatch[3], 10)
+          if (y > 2400) y -= 543
+          return new Date(y, m, d)
+        }
+        const slashMatch = str.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})/)
+        if (slashMatch) {
+          const d = parseInt(slashMatch[1], 10)
+          const m = parseInt(slashMatch[2], 10) - 1
+          let y = parseInt(slashMatch[3], 10)
+          if (y > 2400) y -= 543
+          else if (y < 100) y += 2000
+          return new Date(y, m, d)
+        }
+        const thaiMatch = str.match(/^(\d{1,2})\s+([^\s\d]+)\s+(\d{2,4})/)
+        if (thaiMatch) {
+          const d = parseInt(thaiMatch[1], 10)
+          const m = THAI_MONTH_MAP[thaiMatch[2]]
+          let y = parseInt(thaiMatch[3], 10)
+          if (y > 2400) y -= 543
+          if (m !== undefined) return new Date(y, m, d)
+        }
+      }
+      if (fallbackIso) {
+        const fallback = new Date(fallbackIso)
+        if (!isNaN(fallback.getTime())) {
+          return new Date(fallback.getFullYear(), fallback.getMonth(), fallback.getDate())
+        }
+      }
+      return null
+    }
+
+    const toDateKey = (d) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+    const parseTimeMinutes = (timeStr) => {
+      if (!timeStr || typeof timeStr !== 'string') return 0
+      const clean = timeStr.replace('น.', '').trim()
+      const parts = clean.split(':')
+      const h = parseInt(parts[0], 10)
+      const m = parseInt(parts[1] || '0', 10)
+      if (isNaN(h)) return 0
+      return h * 60 + (isNaN(m) ? 0 : m)
+    }
+
+    const now = new Date()
+    const todayKey = toDateKey(now)
+    const nowMinutes = now.getHours() * 60 + now.getMinutes()
+
+    // 1. Medications & Supplements KPI
     const totalMeds = medications.length
+    const supplementCount = medications.filter(m => (m.category || '').trim() === 'อาหารเสริม').length
+    const drugOnlyCount = totalMeds - supplementCount
+    const medicationsSub = totalMeds > 0
+      ? `ยา ${drugOnlyCount} • อาหารเสริม ${supplementCount} รายการ`
+      : 'ยังไม่มีรายการยาในคลัง'
+
+    // 2. All Drug-Food Interactions KPI
+    const totalInteractions = interactions.length
+    const avoidCount = interactions.filter(i => (i.interaction_type || '').includes('หลีกเลี่ยง')).length
+    const recommendCount = interactions.filter(i => (i.interaction_type || '').includes('แนะนำ')).length
+    const cautionCount = Math.max(0, totalInteractions - avoidCount - recommendCount)
+    let interactionsSub = 'ยังไม่มีข้อมูลในฐานข้อมูล'
+    if (totalInteractions > 0) {
+      interactionsSub = cautionCount > 0
+        ? `หลีกเลี่ยง ${avoidCount} • ระวัง ${cautionCount} • แนะนำ ${recommendCount}`
+        : `หลีกเลี่ยง ${avoidCount} • แนะนำ ${recommendCount} รายการ`
+    }
+
+    // 3. High-Severity Interactions KPI
+    const highSeverityCount = interactions.filter(i => (i.severity || '').trim() === 'สูง').length
+    const highSeverityPct = totalInteractions > 0 ? Math.round((highSeverityCount / totalInteractions) * 100) : 0
+    const highSeverityInteractionsSub = highSeverityCount > 0
+      ? `เฝ้าระวังพิเศษ (${highSeverityPct}% ของทั้งหมด)`
+      : 'ไม่มีรายการความรุนแรงสูง'
+
+    // 4. Side Effects / ADR Reports KPI
+    const totalSideEffects = sideEffects.length
+    const highSideEffectsCount = sideEffects.filter(s => (s.severity || '').trim() === 'สูง').length
+    const thisMonthSideEffectsCount = sideEffects.filter(s => {
+      const d = parseDateValue(s.log_date, s.created_at)
+      return d && d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()
+    }).length
+    let sideEffectsSub = 'ยังไม่มีรายงานผลข้างเคียง'
+    if (totalSideEffects > 0) {
+      sideEffectsSub = highSideEffectsCount > 0
+        ? `รุนแรงสูง ${highSideEffectsCount} • เดือนนี้ ${thisMonthSideEffectsCount} รายการ`
+        : `สะสมเดือนนี้ ${thisMonthSideEffectsCount} รายการ`
+    }
+
+    // 5. Medication Adherence Rate KPI (from user_schedules)
+    const dueSchedules = schedules.filter(s => {
+      if (s.is_taken || s.is_skipped) return true
+      const d = parseDateValue(s.date, s.created_at)
+      if (!d) return true
+      const key = toDateKey(d)
+      if (key < todayKey) return true
+      if (key === todayKey) return parseTimeMinutes(s.time) <= nowMinutes
+      return false
+    })
+    const takenCount = dueSchedules.filter(s => Boolean(s.is_taken)).length
+    const skippedCount = dueSchedules.filter(s => Boolean(s.is_skipped) && !s.is_taken).length
+    const adherencePct = dueSchedules.length > 0 ? Math.round((takenCount / dueSchedules.length) * 100) : 0
+    let adherenceSub = 'ยังไม่มีประวัติการกินยา'
+    if (dueSchedules.length > 0) {
+      adherenceSub = skippedCount > 0
+        ? `กินแล้ว ${takenCount}/${dueSchedules.length} มื้อ • ข้าม ${skippedCount}`
+        : `กินแล้ว ${takenCount} จาก ${dueSchedules.length} มื้อ`
+    } else if (schedules.length > 0) {
+      adherenceSub = `รอถึงเวลากินยา (${schedules.length} มื้อ)`
+    }
+
+    // 6. Patients in System KPI
+    const totalPatients = users.length
+    const totalPatientsSub = totalPatients > 0
+      ? `${totalPatients} คนในระบบ`
+      : 'ยังไม่มีผู้ป่วยในระบบ'
+
+    // 7. Drug Type Breakdown (Donut Chart)
     let tabletCount = 0
     let capsuleCount = 0
     let liquidCount = 0
@@ -773,28 +1073,130 @@ export const dataService = {
 
     const tabletPct = totalMeds > 0 ? Math.round((tabletCount / totalMeds) * 100) : 0
     const capsulePct = totalMeds > 0 ? Math.round((capsuleCount / totalMeds) * 100) : 0
-    const liquidPct = totalMeds > 0 ? 100 - tabletPct - capsulePct : 0
+    const liquidPct = totalMeds > 0 ? Math.max(0, 100 - tabletPct - capsulePct) : 0
 
-    // Top medications list based on real medications
-    const topMeds = medications.slice(0, 5).map((m, idx) => ({
-      name: `${m.name_th} ${m.dosage || ''}${m.unit || ''}`.trim(),
-      count: 0,
-      max: 100
+    // 8. 7-Month Side Effect (ADR) Trend (Line Chart)
+    const sideEffectTrend = []
+    for (let i = 6; i >= 0; i--) {
+      const targetMonthDate = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      const targetYear = targetMonthDate.getFullYear()
+      const targetMonth = targetMonthDate.getMonth()
+      const monthCount = sideEffects.filter(s => {
+        const d = parseDateValue(s.log_date, s.created_at)
+        return d && d.getFullYear() === targetYear && d.getMonth() === targetMonth
+      }).length
+      sideEffectTrend.push({
+        month: THAI_SHORT_MONTHS[targetMonth],
+        value: monthCount
+      })
+    }
+
+    // 9. 14-Day Daily Adherence Rate (Mini Bar Chart)
+    const adherenceBars = []
+    for (let i = 13; i >= 0; i--) {
+      const dayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i)
+      const dayKey = toDateKey(dayDate)
+      const dayRows = schedules.filter(s => {
+        const d = parseDateValue(s.date, s.created_at)
+        return d && toDateKey(d) === dayKey
+      })
+      const dayDueRows = i === 0
+        ? dayRows.filter(s => s.is_taken || s.is_skipped || parseTimeMinutes(s.time) <= nowMinutes)
+        : dayRows
+      const dayTaken = dayDueRows.filter(s => Boolean(s.is_taken)).length
+      const dayTotal = dayDueRows.length
+      const dayRate = dayTotal > 0 ? Math.round((dayTaken / dayTotal) * 100) : 0
+
+      adherenceBars.push({
+        label: THAI_SHORT_DAYS[dayDate.getDay()],
+        dateLabel: `${dayDate.getDate()} ${THAI_SHORT_MONTHS[dayDate.getMonth()]}`,
+        height: dayRate,
+        rate: dayRate,
+        taken: dayTaken,
+        total: dayTotal,
+        hasData: dayTotal > 0,
+        active: i === 0
+      })
+    }
+
+    // 10. Top Used Medications (from real user_schedules, falling back to catalog list with 0)
+    const normalizeName = (str) => (str || '').trim().replace(/\s+/g, ' ').toLowerCase()
+    const usageByMedKey = new Map()
+
+    medications.forEach(m => {
+      usageByMedKey.set(String(m.id), {
+        id: String(m.id),
+        name: `${m.name_th} ${m.dosage || ''}${m.unit || ''}`.trim(),
+        nameThNorm: normalizeName(m.name_th),
+        nameEnNorm: normalizeName(m.name_en),
+        count: 0
+      })
+    })
+
+    schedules.forEach(s => {
+      if (s.is_skipped) return
+      let matchedEntry = null
+      if (s.medication_id && usageByMedKey.has(String(s.medication_id))) {
+        matchedEntry = usageByMedKey.get(String(s.medication_id))
+      } else if (s.medication_name) {
+        const normSched = normalizeName(s.medication_name)
+        for (const entry of usageByMedKey.values()) {
+          if (
+            (entry.nameThNorm && (normSched === entry.nameThNorm || normSched.includes(entry.nameThNorm))) ||
+            (entry.nameEnNorm && (normSched === entry.nameEnNorm || normSched.includes(entry.nameEnNorm)))
+          ) {
+            matchedEntry = entry
+            break
+          }
+        }
+        if (!matchedEntry && normSched) {
+          const customKey = `custom:${normSched}`
+          if (!usageByMedKey.has(customKey)) {
+            usageByMedKey.set(customKey, {
+              id: customKey,
+              name: `${s.medication_name} ${s.dosage || ''}${s.unit || ''}`.trim(),
+              nameThNorm: normSched,
+              nameEnNorm: '',
+              count: 0
+            })
+          }
+          matchedEntry = usageByMedKey.get(customKey)
+        }
+      }
+      if (matchedEntry) {
+        matchedEntry.count += 1
+      }
+    })
+
+    const allMedUsage = Array.from(usageByMedKey.values())
+    const hasAnyUsage = allMedUsage.some(item => item.count > 0)
+    const sortedMedUsage = hasAnyUsage
+      ? [...allMedUsage].sort((a, b) => b.count - a.count)
+      : allMedUsage
+
+    const maxUsage = Math.max(...sortedMedUsage.slice(0, 5).map(i => i.count), 1)
+    const topMeds = sortedMedUsage.slice(0, 5).map(item => ({
+      name: item.name,
+      count: item.count,
+      countLabel: `${item.count} ครั้ง`,
+      max: maxUsage
     }))
 
     return {
-      totalUsers: users.length.toString(),
-      totalUsersGrowth: `${users.length} คนในระบบ`,
       medicationsCount: totalMeds.toString(),
-      medicationsGrowth: `${totalMeds} รายการในระบบ`,
-      activeSchedules: '0',
-      activeSchedulesGrowth: '0 ตาราง',
-      todayAppointments: '0',
-      todayAppointmentsSub: 'ไม่มีนัดหมายวันนี้',
-      sideEffectsCount: '0',
-      sideEffectsSub: 'สะสมเดือนนี้',
-      interactionsCount: interactions.length.toString(),
-      interactionsSub: 'รายการในฐานข้อมูล',
+      medicationsSub,
+      interactionsCount: totalInteractions.toString(),
+      interactionsSub,
+      highSeverityInteractionsCount: highSeverityCount.toString(),
+      highSeverityInteractionsSub,
+      sideEffectsCount: totalSideEffects.toString(),
+      sideEffectsSub,
+      adherenceRate: `${adherencePct}%`,
+      adherenceSub,
+      totalPatients: totalPatients.toString(),
+      totalPatientsSub,
+      sideEffectTrend,
+      adherenceBars,
       drugTypeDistribution: {
         tablet: tabletPct,
         capsule: capsulePct,
