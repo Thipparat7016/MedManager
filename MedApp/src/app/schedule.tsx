@@ -17,7 +17,7 @@ import { useApp } from '@/context/AppContext';
 import {
   ScheduleItem,
   getLocalDateString,
-  isMedicationScheduledForDate,
+  buildScheduleForDateSync,
 } from '@/services/medService';
 import {
   formatCleanDrugName,
@@ -55,8 +55,7 @@ export default function ScheduleScreen() {
     const d = new Date();
     return new Date(d.getFullYear(), d.getMonth(), d.getDate());
   });
-  const [selectedSchedule, setSelectedSchedule] = useState<ScheduleItem[]>([]);
-  const [weekSchedulesMap, setWeekSchedulesMap] = useState<Record<string, ScheduleItem[]>>({});
+  const [storedSchedulesMap, setStoredSchedulesMap] = useState<Record<string, ScheduleItem[]>>({});
   const [previewMedImage, setPreviewMedImage] = useState<{
     uri: string;
     name: string;
@@ -84,9 +83,15 @@ export default function ScheduleScreen() {
     );
   }, [selectedDate, selectedDayOfWeek]);
 
+  // A date gets a red dot ONLY if buildScheduleForDateSync returns at least 1 scheduled dose for that date
   const hasScheduledMedOnDate = useCallback(
-    (d: Date) => medications.some(m => isMedicationScheduledForDate(m, d)),
-    [medications]
+    (d: Date) => {
+      const dStr = getLocalDateString(d);
+      const storedForDay =
+        dStr === todayStr ? todaySchedule : storedSchedulesMap[dStr] || [];
+      return buildScheduleForDateSync(medications, d, storedForDay).length > 0;
+    },
+    [medications, todayStr, todaySchedule, storedSchedulesMap]
   );
 
   const weekDays = useMemo(() => {
@@ -103,6 +108,50 @@ export default function ScheduleScreen() {
       };
     });
   }, [monday, todayStr, hasScheduledMedOnDate]);
+
+  const periodTitle = useMemo(() => {
+    if (viewMode !== 'week' || weekDays.length < 7) {
+      return monthTitle;
+    }
+    const startD = weekDays[0].date;
+    const endD = weekDays[6].date;
+    const startYearBE = startD.getFullYear() + 543;
+    const endYearBE = endD.getFullYear() + 543;
+    if (startD.getMonth() === endD.getMonth() && startD.getFullYear() === endD.getFullYear()) {
+      return `${startD.getDate()} – ${endD.getDate()} ${THAI_MONTHS_FULL[endD.getMonth()]} ${endYearBE}`;
+    }
+    if (startD.getFullYear() === endD.getFullYear()) {
+      return `${startD.getDate()} ${THAI_MONTHS_FULL[startD.getMonth()]} – ${endD.getDate()} ${THAI_MONTHS_FULL[endD.getMonth()]} ${endYearBE}`;
+    }
+    return `${startD.getDate()} ${THAI_MONTHS_FULL[startD.getMonth()]} ${startYearBE} – ${endD.getDate()} ${THAI_MONTHS_FULL[endD.getMonth()]} ${endYearBE}`;
+  }, [viewMode, weekDays, monthTitle]);
+
+  // Synchronously compute schedules for all 7 days of the active week
+  const weekSchedulesMap = useMemo(() => {
+    const map: Record<string, ScheduleItem[]> = {};
+    for (const wd of weekDays) {
+      const storedForDay =
+        wd.dateStr === todayStr
+          ? todaySchedule
+          : storedSchedulesMap[wd.dateStr] || [];
+      map[wd.dateStr] = buildScheduleForDateSync(medications, wd.date, storedForDay);
+    }
+    return map;
+  }, [weekDays, medications, todayStr, todaySchedule, storedSchedulesMap]);
+
+  const weekHasAnyItems = useMemo(
+    () => weekDays.some(wd => (weekSchedulesMap[wd.dateStr] || []).length > 0),
+    [weekDays, weekSchedulesMap]
+  );
+
+  // Put the selected day first at the top so tapping any day in week view immediately updates the top section
+  const orderedWeekDays = useMemo(() => {
+    const selectedWd = weekDays.find(wd => wd.dateStr === selectedDateStr);
+    const otherScheduledWds = weekDays.filter(
+      wd => wd.dateStr !== selectedDateStr && (weekSchedulesMap[wd.dateStr] || []).length > 0
+    );
+    return selectedWd ? [selectedWd, ...otherScheduledWds] : otherScheduledWds;
+  }, [weekDays, selectedDateStr, weekSchedulesMap]);
 
   // Month grid cells (Monday-first to match weekDayLabels)
   const monthCells = useMemo(() => {
@@ -131,12 +180,24 @@ export default function ScheduleScreen() {
     return cells;
   }, [currentYear, currentMonth, hasScheduledMedOnDate]);
 
-  // Load schedule for selectedDate whenever date or medications/todaySchedule changes
+  // Synchronously compute schedule for selectedDate so switching days or adding/editing/deleting meds updates in 0ms
+  const selectedSchedule = useMemo(() => {
+    const storedForDay =
+      selectedDateStr === todayStr
+        ? todaySchedule
+        : storedSchedulesMap[selectedDateStr] || [];
+    return buildScheduleForDateSync(medications, selectedDate, storedForDay);
+  }, [medications, selectedDate, selectedDateStr, todayStr, todaySchedule, storedSchedulesMap]);
+
+  // Load persisted taken/checked status for selectedDate whenever date or medications/todaySchedule changes
   useEffect(() => {
     let active = true;
     getScheduleForDate(selectedDateStr).then(items => {
       if (active) {
-        setSelectedSchedule(items);
+        setStoredSchedulesMap(prev => ({
+          ...prev,
+          [selectedDateStr]: items,
+        }));
       }
     });
     return () => {
@@ -144,7 +205,7 @@ export default function ScheduleScreen() {
     };
   }, [selectedDateStr, medications, todaySchedule, getScheduleForDate]);
 
-  // Load full week schedules when in 'week' view mode
+  // Hydrate persisted taken/checked status for all 7 days in the active week when in week view
   useEffect(() => {
     if (viewMode !== 'week') return;
     let active = true;
@@ -155,17 +216,19 @@ export default function ScheduleScreen() {
       })
     ).then(entries => {
       if (active) {
-        const nextMap: Record<string, ScheduleItem[]> = {};
-        entries.forEach(([k, v]) => {
-          nextMap[k] = v;
+        setStoredSchedulesMap(prev => {
+          const next = { ...prev };
+          entries.forEach(([k, v]) => {
+            next[k] = v;
+          });
+          return next;
         });
-        setWeekSchedulesMap(nextMap);
       }
     });
     return () => {
       active = false;
     };
-  }, [viewMode, weekDays, medications, todaySchedule, getScheduleForDate]);
+  }, [viewMode, monday, medications, todaySchedule, getScheduleForDate]);
 
   const handlePrevPeriod = () => {
     if (viewMode === 'month') {
@@ -174,9 +237,13 @@ export default function ScheduleScreen() {
       setSelectedDate(
         new Date(currentYear, targetMonth, Math.min(selectedDate.getDate(), maxDay))
       );
-    } else {
+    } else if (viewMode === 'week') {
       setSelectedDate(
         new Date(currentYear, currentMonth, selectedDate.getDate() - 7)
+      );
+    } else {
+      setSelectedDate(
+        new Date(currentYear, currentMonth, selectedDate.getDate() - 1)
       );
     }
   };
@@ -188,9 +255,13 @@ export default function ScheduleScreen() {
       setSelectedDate(
         new Date(currentYear, targetMonth, Math.min(selectedDate.getDate(), maxDay))
       );
-    } else {
+    } else if (viewMode === 'week') {
       setSelectedDate(
         new Date(currentYear, currentMonth, selectedDate.getDate() + 7)
+      );
+    } else {
+      setSelectedDate(
+        new Date(currentYear, currentMonth, selectedDate.getDate() + 1)
       );
     }
   };
@@ -278,11 +349,6 @@ export default function ScheduleScreen() {
     );
   };
 
-  const weekHasAnyItems = useMemo(
-    () => weekDays.some(wd => (weekSchedulesMap[wd.dateStr] || []).length > 0),
-    [weekDays, weekSchedulesMap]
-  );
-
   return (
     <SafeAreaView style={styles.safeArea}>
       <AppHeader
@@ -334,7 +400,7 @@ export default function ScheduleScreen() {
           >
             <Ionicons name="chevron-back" size={16} color="#64748B" />
           </TouchableOpacity>
-          <Text style={styles.monthTitle}>{monthTitle}</Text>
+          <Text style={styles.monthTitle}>{periodTitle}</Text>
           <TouchableOpacity
             style={styles.arrowBtn}
             onPress={handleNextPeriod}
@@ -402,7 +468,7 @@ export default function ScheduleScreen() {
           </View>
         )}
 
-        {/* Selected Date Label when viewing non-today or month mode */}
+        {/* Selected Date Label (Day & Month modes) */}
         {viewMode !== 'week' && (
           <Text style={styles.selectedDateBanner}>
             {selectedDateStr === todayStr
@@ -431,26 +497,46 @@ export default function ScheduleScreen() {
               </TouchableOpacity>
             </View>
           ) : (
-            weekDays.map(wd => {
+            orderedWeekDays.map((wd, wdIdx) => {
               const dayItems = weekSchedulesMap[wd.dateStr] || [];
-              if (dayItems.length === 0) return null;
               const daySlots = Array.from(new Set(dayItems.map(s => cleanTime(s.time)))).sort();
+              const isSelectedDay = wd.dateStr === selectedDateStr;
+              const wdYearBE = wd.date.getFullYear() + 543;
+              const bannerText =
+                wd.dateStr === todayStr
+                  ? `วันนี้ • ${wd.date.getDate()} ${THAI_MONTHS_FULL[wd.date.getMonth()]} ${wdYearBE}`
+                  : `${THAI_DAY_NAMES[wd.date.getDay()]}ที่ ${wd.date.getDate()} ${THAI_MONTHS_FULL[wd.date.getMonth()]} ${wdYearBE}`;
+
               return (
                 <View key={wd.dateStr} style={styles.weekDaySection}>
-                  <Text style={styles.selectedDateBanner}>
-                    {wd.dateStr === todayStr
-                      ? `วันนี้ • ${wd.date.getDate()} ${THAI_MONTHS_FULL[wd.date.getMonth()]}`
-                      : `${THAI_DAY_NAMES[wd.date.getDay()]}ที่ ${wd.date.getDate()} ${THAI_MONTHS_FULL[wd.date.getMonth()]}`}
-                  </Text>
-                  {daySlots.map(time => {
-                    const items = dayItems.filter(s => cleanTime(s.time) === time);
-                    return (
-                      <View key={`${wd.dateStr}-${time}`} style={styles.timeGroup}>
-                        <Text style={styles.timeTitle}>{time} น.</Text>
-                        {items.map(renderScheduleCard)}
-                      </View>
-                    );
-                  })}
+                  {wdIdx === 1 && (
+                    <View style={styles.weekOtherDaysDivider}>
+                      <View style={styles.weekOtherDaysLine} />
+                      <Text style={styles.weekOtherDaysLabel}>วันอื่นๆ ในสัปดาห์นี้</Text>
+                      <View style={styles.weekOtherDaysLine} />
+                    </View>
+                  )}
+                  <Text style={styles.selectedDateBanner}>{bannerText}</Text>
+                  {daySlots.length === 0 && isSelectedDay ? (
+                    <View style={styles.weekEmptySelectedCard}>
+                      <Feather name="calendar" size={18} color="#6FA07E" />
+                      <Text style={styles.weekEmptySelectedText}>
+                        {wd.dateStr === todayStr
+                          ? 'ไม่มีตารางยาสำหรับวันนี้'
+                          : `ไม่มีตารางยาสำหรับวันที่ ${wd.date.getDate()} ${THAI_MONTHS_FULL[wd.date.getMonth()]}`}
+                      </Text>
+                    </View>
+                  ) : (
+                    daySlots.map(time => {
+                      const items = dayItems.filter(s => cleanTime(s.time) === time);
+                      return (
+                        <View key={`${wd.dateStr}-${time}`} style={styles.timeGroup}>
+                          <Text style={styles.timeTitle}>{time} น.</Text>
+                          {items.map(renderScheduleCard)}
+                        </View>
+                      );
+                    })
+                  )}
                 </View>
               );
             })
@@ -669,6 +755,40 @@ const styles = StyleSheet.create({
   },
   weekDaySection: {
     marginBottom: 10,
+  },
+  weekOtherDaysDivider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 6,
+    marginBottom: 14,
+  },
+  weekOtherDaysLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#E2EFE6',
+  },
+  weekOtherDaysLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6FA07E',
+    marginHorizontal: 10,
+  },
+  weekEmptySelectedCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#F9FBFC',
+    borderRadius: 11,
+    borderWidth: 1,
+    borderColor: '#D1E7DD',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    marginBottom: 14,
+  },
+  weekEmptySelectedText: {
+    fontSize: 13.5,
+    fontWeight: '600',
+    color: '#64748B',
   },
   emptyContainer: {
     alignItems: 'center',

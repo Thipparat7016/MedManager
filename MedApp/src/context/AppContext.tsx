@@ -372,6 +372,13 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
             }
           }
         )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'user_schedules' },
+          () => {
+            loadAllData(false);
+          }
+        )
         .subscribe();
 
       return () => {
@@ -519,11 +526,22 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   const saveMedication = async (med: Medication) => {
     const saved = await medService.saveMedication(med);
+    setMedications(prev => {
+      const idx = prev.findIndex(m => m.id === saved.id || m.id === med.id);
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = saved;
+        return next;
+      }
+      return [saved, ...prev];
+    });
     await loadAllData(false);
     return saved;
   };
 
   const deleteMedication = async (id: string) => {
+    setMedications(prev => prev.filter(m => m.id !== id));
+    setTodaySchedule(prev => prev.filter(s => s.medicationId !== id));
     await medService.deleteMedication(id);
     await loadAllData(false);
   };

@@ -173,7 +173,9 @@ export function parseLocalDateString(dateStr: string): Date {
 }
 
 export function getMedicationDurationMode(med: Medication): 'ทุกวัน' | 'กำหนดเอง' | null {
-  if (med.durationMode) return med.durationMode;
+  if (med.customDays && Array.isArray(med.customDays) && med.customDays.length > 0) {
+    return 'กำหนดเอง';
+  }
   if (med.instructions) {
     if (med.instructions.startsWith('วันที่ ') || med.instructions === 'กำหนดวันเอง') {
       return 'กำหนดเอง';
@@ -182,12 +184,15 @@ export function getMedicationDurationMode(med: Medication): 'ทุกวัน'
       return 'ทุกวัน';
     }
   }
+  if (med.durationMode) return med.durationMode;
   return null;
 }
 
 export function extractCustomDaysFromMedication(med: Medication): number[] {
   if (med.customDays && Array.isArray(med.customDays) && med.customDays.length > 0) {
-    return med.customDays;
+    return med.customDays
+      .map(n => Number(n))
+      .filter(n => !isNaN(n) && n >= 1 && n <= 31);
   }
   if (med.instructions && med.instructions.startsWith('วันที่ ')) {
     const matches = med.instructions.match(/\d+/g) || [];
@@ -221,10 +226,19 @@ export function parseFlexibleDate(raw?: string | null): Date | null {
   // Remove common prefix text
   str = str.replace(/^(เริ่มต้น|ตั้งแต่วันที่|เริ่ม|วันที่)\s*/, '');
 
-  // 1. ISO or YYYY-MM-DD
-  const isoMatch = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  // 1. Full ISO datetime string with 'T' (e.g. "2026-11-13T17:30:00.000Z") -> convert to LOCAL date
+  if (str.includes('T')) {
+    const parsedIso = new Date(str);
+    if (!isNaN(parsedIso.getTime())) {
+      return new Date(parsedIso.getFullYear(), parsedIso.getMonth(), parsedIso.getDate());
+    }
+  }
+
+  // 2. Date-only YYYY-MM-DD
+  const isoMatch = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
   if (isoMatch) {
-    const y = parseInt(isoMatch[1], 10);
+    let y = parseInt(isoMatch[1], 10);
+    if (y > 2400) y -= 543;
     const m = parseInt(isoMatch[2], 10) - 1;
     const d = parseInt(isoMatch[3], 10);
     if (!isNaN(y) && !isNaN(m) && !isNaN(d)) {
@@ -232,7 +246,7 @@ export function parseFlexibleDate(raw?: string | null): Date | null {
     }
   }
 
-  // 2. Thai text like '2 พฤศจิกายน 2569' or '2 พ.ย. 2569'
+  // 3. Thai text like '2 พฤศจิกายน 2569' or '2 พ.ย. 2569'
   const thaiMatch = str.match(/^(\d{1,2})\s+([^\s\d]+)\s+(\d{2,4})$/);
   if (thaiMatch) {
     const d = parseInt(thaiMatch[1], 10);
@@ -246,7 +260,7 @@ export function parseFlexibleDate(raw?: string | null): Date | null {
     }
   }
 
-  // 3. DD/MM/YYYY or DD-MM-YYYY (or BE year)
+  // 4. DD/MM/YYYY or DD-MM-YYYY (or BE year)
   const slashMatch = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
   if (slashMatch) {
     const d = parseInt(slashMatch[1], 10);
@@ -267,21 +281,29 @@ export function parseFlexibleDate(raw?: string | null): Date | null {
   return null;
 }
 
-export function getMedicationStartDate(med: Medication): Date | null {
-  if (med.startDate) {
-    const parsed = parseFlexibleDate(med.startDate);
-    if (parsed) return parsed;
-  }
+export function getMedicationCreatedDateTime(med: Medication): Date | null {
   if (med.createdAt) {
-    const parsed = parseFlexibleDate(med.createdAt);
-    if (parsed) return parsed;
+    const d = new Date(med.createdAt);
+    if (!isNaN(d.getTime())) return d;
   }
   if (med.id && med.id.startsWith('med-')) {
     const ts = parseInt(med.id.replace('med-', ''), 10);
     if (!isNaN(ts) && ts > 1000000000) {
       const d = new Date(ts);
-      return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+      if (!isNaN(d.getTime())) return d;
     }
+  }
+  return null;
+}
+
+export function getMedicationStartDate(med: Medication): Date | null {
+  if (med.startDate) {
+    const parsed = parseFlexibleDate(med.startDate);
+    if (parsed) return parsed;
+  }
+  const createdDt = getMedicationCreatedDateTime(med);
+  if (createdDt) {
+    return new Date(createdDt.getFullYear(), createdDt.getMonth(), createdDt.getDate());
   }
   return null;
 }
@@ -291,24 +313,20 @@ export function getMedicationEndDate(med: Medication): Date | null {
     const parsed = parseFlexibleDate(med.endDate);
     if (parsed) return parsed;
   }
+  if (med.expiryDate) {
+    const parsedExp = parseFlexibleDate(med.expiryDate);
+    if (parsedExp) return parsedExp;
+  }
   return null;
 }
 
 export function isMedicationScheduledForDate(med: Medication, targetDate: Date): boolean {
-  if (med.status !== 'active') return false;
+  if (!med || med.status !== 'active') return false;
 
   const targetDateStr = getLocalDateString(targetDate);
-
-  // Check start date boundary: Cannot be scheduled before medication starts
   const startDate = getMedicationStartDate(med);
-  if (startDate) {
-    const startDateStr = getLocalDateString(startDate);
-    if (targetDateStr < startDateStr) {
-      return false;
-    }
-  }
 
-  // Check end date boundary: Cannot be scheduled after medication ends
+  // Check end date boundary: Cannot be scheduled after medication ends or expires
   const endDate = getMedicationEndDate(med);
   if (endDate) {
     const endDateStr = getLocalDateString(endDate);
@@ -323,9 +341,11 @@ export function isMedicationScheduledForDate(med: Medication, targetDate: Date):
     if (days.length === 0) return false;
     if (!days.includes(targetDate.getDate())) return false;
 
+    let matchedInstructionMonth = false;
     if (med.instructions && med.instructions.includes('ในเดือน')) {
       for (const [mName, mIdx] of Object.entries(THAI_MONTH_NAMES_MAP)) {
         if (mName.length > 3 && med.instructions.includes(mName)) {
+          matchedInstructionMonth = true;
           if (targetDate.getMonth() !== mIdx) {
             return false;
           }
@@ -333,10 +353,153 @@ export function isMedicationScheduledForDate(med: Medication, targetDate: Date):
         }
       }
     }
+
+    if (startDate) {
+      if (targetDate.getFullYear() !== startDate.getFullYear()) {
+        return false;
+      }
+      if (!matchedInstructionMonth && targetDate.getMonth() !== startDate.getMonth()) {
+        return false;
+      }
+    }
     return true;
   }
 
+  // For 'ทุกวัน' (every day), cannot be scheduled before medication start date / creation date
+  if (startDate) {
+    const startDateStr = getLocalDateString(startDate);
+    if (targetDateStr < startDateStr) {
+      return false;
+    }
+  }
+
+  const createdDt = getMedicationCreatedDateTime(med);
+  if (createdDt) {
+    const createdDateStr = getLocalDateString(createdDt);
+    if (targetDateStr < createdDateStr) {
+      return false;
+    }
+    // If targetDate is the exact day the medication was created, ensure at least one dose time is >= creation time
+    if (targetDateStr === createdDateStr) {
+      const createdMinutes = createdDt.getHours() * 60 + createdDt.getMinutes();
+      const times =
+        med.times && med.times.length > 0 ? med.times : ['08:00'];
+      const hasAnyEligibleTime = times.some(rawTime => {
+        const normTime = rawTime.replace(' น.', '').trim();
+        const [h, m] = normTime.split(':').map(val => parseInt(val, 10));
+        const timeMinutes = (isNaN(h) ? 0 : h) * 60 + (isNaN(m) ? 0 : m);
+        return timeMinutes >= createdMinutes;
+      });
+      if (!hasAnyEligibleTime) {
+        return false;
+      }
+    }
+  }
+
   return true;
+}
+
+export function buildScheduleForDateSync(
+  allMeds: Medication[],
+  targetDate: Date,
+  storedItems: ScheduleItem[] = [],
+  snoozeMap: Record<string, number> = {}
+): ScheduleItem[] {
+  const targetDateStr = getLocalDateString(targetDate);
+  const scheduledMeds = allMeds.filter(m => isMedicationScheduledForDate(m, targetDate));
+  if (scheduledMeds.length === 0) {
+    return [];
+  }
+
+  const reconciled: ScheduleItem[] = [];
+  const consumedIndices = new Set<number>();
+
+  for (const med of scheduledMeds) {
+    const mode = getMedicationDurationMode(med);
+    const createdDt = getMedicationCreatedDateTime(med);
+    let isCreationDay = false;
+    let createdMinutes = 0;
+
+    if (createdDt && mode !== 'กำหนดเอง') {
+      const createdDateStr = getLocalDateString(createdDt);
+      if (targetDateStr < createdDateStr) {
+        continue;
+      }
+      if (targetDateStr === createdDateStr) {
+        isCreationDay = true;
+        createdMinutes = createdDt.getHours() * 60 + createdDt.getMinutes();
+      }
+    }
+
+    const times =
+      med.times && med.times.length > 0 ? med.times : ['08:00'];
+
+    times.forEach((rawTime, idx) => {
+      const normTime = rawTime.replace(' น.', '').trim();
+      const displayTime = `${normTime} น.`;
+      const syntheticId = `sch-${targetDateStr}-${med.id}-${idx}`;
+
+      const matchIdx = storedItems.findIndex(
+        (s, sIdx) =>
+          !consumedIndices.has(sIdx) &&
+          (s.medicationId === med.id ||
+            normalizeMedName(s.medicationName) === normalizeMedName(med.name)) &&
+          ((s.originalTime || s.time.replace(' น.', '').trim()) === normTime ||
+            s.id === syntheticId)
+      );
+
+      const matched = matchIdx >= 0 ? storedItems[matchIdx] : undefined;
+      if (matchIdx >= 0) {
+        consumedIndices.add(matchIdx);
+      }
+
+      if (isCreationDay) {
+        const [h, m] = normTime.split(':').map(val => parseInt(val, 10));
+        const timeMinutes = (isNaN(h) ? 0 : h) * 60 + (isNaN(m) ? 0 : m);
+        if (timeMinutes < createdMinutes && !matched?.isTaken && !matched?.isChecked) {
+          return;
+        }
+      }
+
+      const itemPostponedUntil =
+        matched?.postponedUntil ||
+        snoozeMap[matched?.id || syntheticId] ||
+        snoozeMap[`${med.id}_${targetDateStr}`] ||
+        snoozeMap[`${med.name}_${targetDateStr}`];
+
+      const activePostponedUntil =
+        itemPostponedUntil && Date.now() < itemPostponedUntil
+          ? itemPostponedUntil
+          : undefined;
+
+      reconciled.push({
+        id: matched?.id || syntheticId,
+        medicationId: med.id,
+        medicationName: med.name,
+        dosage: med.dosage,
+        unit: med.unit,
+        type: med.type,
+        doseCount: 1,
+        mealTiming:
+          med.timeMealTimings?.[normTime] || med.mealTiming || matched?.mealTiming || '',
+        originalTime: normTime,
+        postponedTime: activePostponedUntil ? matched?.postponedTime : undefined,
+        postponedUntil: activePostponedUntil,
+        time: activePostponedUntil && matched?.postponedTime ? matched.postponedTime : displayTime,
+        date: targetDateStr,
+        isChecked: matched ? Boolean(matched.isChecked || matched.isTaken) : false,
+        isTaken: matched ? Boolean(matched.isTaken) : false,
+        takenAt: matched?.takenAt,
+        isSkipped: matched ? Boolean(matched.isSkipped) : false,
+      });
+    });
+  }
+
+  reconciled.sort((a, b) =>
+    a.time.replace(' น.', '').trim().localeCompare(b.time.replace(' น.', '').trim())
+  );
+
+  return reconciled;
 }
 
 export function getMedicationStockStatus(med: Medication): {
@@ -1102,14 +1265,30 @@ export const medService = {
   async getMedications(): Promise<Medication[]> {
     await this.purgeMockCacheIfNeeded();
     try {
-      const { userKey, userUUID, user } = await this.getCurrentUserScope();
+      const { userKey, userUUID } = await this.getCurrentUserScope();
       if (!userKey) {
         return [];
       }
       const listKey = `med_user_medications_list_${userKey}`;
+      const deletedKey = `med_deleted_med_names_${userKey}`;
+
+      let deletedNames: string[] = [];
+      try {
+        const delRaw = await safeStorage.getItem(deletedKey);
+        if (delRaw) {
+          const parsedDel = JSON.parse(delRaw);
+          if (Array.isArray(parsedDel)) {
+            deletedNames = parsedDel;
+          }
+        }
+      } catch {}
+      const deletedSet = new Set(deletedNames.map(n => normalizeMedName(n)).filter(Boolean));
+
       let localMeds: Medication[] = [];
       const stored = await safeStorage.getItem(listKey);
-      if (stored) {
+      let hadStoredList = false;
+      if (stored !== null) {
+        hadStoredList = true;
         try {
           const parsed = JSON.parse(stored);
           if (Array.isArray(parsed)) {
@@ -1118,19 +1297,43 @@ export const medService = {
         } catch {}
       }
 
-      // Deduplicate localMeds if needed
+      // Deduplicate localMeds and filter out explicitly deleted medications
       const seen = new Map<string, Medication>();
+      let removedOrRevertedLocal = false;
       for (const item of localMeds) {
         const key = normalizeMedName(item.name);
         if (!key) continue;
+        if (deletedSet.has(key)) {
+          removedOrRevertedLocal = true;
+          continue;
+        }
+        let cleanedItem = item;
+        // Revert any medication that was previously converted with synthetic expiryDate '31/12/2570' back to 'ทุกวัน'
+        if (item.expiryDate === '31/12/2570') {
+          cleanedItem = {
+            ...item,
+            expiryDate: '',
+            durationMode: 'ทุกวัน',
+            customDays: undefined,
+            instructions: 'ทุกวัน',
+          };
+          removedOrRevertedLocal = true;
+        }
         if (!seen.has(key)) {
-          seen.set(key, item);
+          seen.set(key, cleanedItem);
         }
       }
       localMeds = Array.from(seen.values());
+      if (removedOrRevertedLocal) {
+        await safeStorage.setItem(listKey, JSON.stringify(localMeds));
+      }
 
-      // Sync / restore user's medications from Supabase user_schedules (strictly for this userUUID)
-      if (supabase && userUUID) {
+      // Check if any local medication is missing startDate
+      const hasLegacyRestoredMeds = localMeds.some(m => !m.startDate);
+
+      // Sync / restore user's medications from Supabase user_schedules ONLY on initial hydration (!hadStoredList)
+      // or to fill in missing startDate on restored entries
+      if (supabase && userUUID && (!hadStoredList || hasLegacyRestoredMeds)) {
         try {
           const { data: schedRows, error: schedErr } = await supabase
             .from('user_schedules')
@@ -1152,26 +1355,52 @@ export const medService = {
             const grouped = new Map<string, any[]>();
             for (const row of schedRows) {
               const normName = normalizeMedName(row.medication_name);
-              if (!normName) continue;
+              if (!normName || deletedSet.has(normName)) continue;
               if (!grouped.has(normName)) {
                 grouped.set(normName, []);
               }
               grouped.get(normName)!.push(row);
             }
 
-            // Check if any medication from this user's Supabase schedules is missing locally
-            let missingAny = false;
-            for (const normName of grouped.keys()) {
-              if (!seen.has(normName)) {
-                missingAny = true;
-                break;
+            // 1. Ensure any restored medication missing startDate has its local startDate set without overwriting durationMode
+            if (hasLegacyRestoredMeds) {
+              for (const [normName, med] of seen.entries()) {
+                if (!med.startDate) {
+                  const rows = grouped.get(normName) || [];
+                  const validDates = Array.from(
+                    new Set(
+                      rows
+                        .map((r: any) => String(r.date || '').trim())
+                        .filter((d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d))
+                    )
+                  ).sort();
+
+                  const earliestDateStr = validDates[0] || getLocalDateString();
+                  const earliestLocal = parseLocalDateString(earliestDateStr);
+                  const localStartIso = new Date(
+                    earliestLocal.getFullYear(),
+                    earliestLocal.getMonth(),
+                    earliestLocal.getDate(),
+                    0,
+                    0,
+                    0
+                  ).toISOString();
+
+                  seen.set(normName, {
+                    ...med,
+                    startDate: earliestDateStr,
+                    createdAt: med.createdAt || localStartIso,
+                  });
+                  updatedFromRemote = true;
+                }
               }
             }
 
-            if (missingAny) {
+            // 2. Initial hydration when no local list existed yet (!hadStoredList)
+            if (!hadStoredList) {
               const masterList = await getMasterCached();
               for (const [normName, rows] of grouped.entries()) {
-                if (seen.has(normName)) continue;
+                if (seen.has(normName) || deletedSet.has(normName)) continue;
 
                 const firstRow = rows[0];
                 const latestRow = rows[rows.length - 1];
@@ -1206,14 +1435,24 @@ export const medService = {
                 const times = Array.from(timeSet).sort((a, b) => a.localeCompare(b));
                 const resolvedTimes = times.length > 0 ? times : ['08:00'];
 
-                // Use earliest date or created_at so today's full schedule is active
-                let earliestCreatedAt = firstRow.created_at;
-                if (firstRow.date && /^\d{4}-\d{2}-\d{2}$/.test(firstRow.date)) {
-                  const dateStartIso = new Date(`${firstRow.date}T00:00:00`).toISOString();
-                  if (!earliestCreatedAt || dateStartIso < earliestCreatedAt) {
-                    earliestCreatedAt = dateStartIso;
-                  }
-                }
+                const validDates = Array.from(
+                  new Set(
+                    rows
+                      .map((r: any) => String(r.date || '').trim())
+                      .filter((d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d))
+                  )
+                ).sort();
+
+                const earliestDateStr = validDates[0] || getLocalDateString();
+                const earliestLocal = parseLocalDateString(earliestDateStr);
+                const localStartIso = new Date(
+                  earliestLocal.getFullYear(),
+                  earliestLocal.getMonth(),
+                  earliestLocal.getDate(),
+                  0,
+                  0,
+                  0
+                ).toISOString();
 
                 const restoredMed: Medication = {
                   id:
@@ -1228,8 +1467,9 @@ export const medService = {
                   unit: latestRow.unit || matchedMaster?.unit || 'เม็ด',
                   frequency: resolvedTimes.length,
                   remaining: 30,
+                  startDate: earliestDateStr,
                   durationMode: 'ทุกวัน',
-                  instructions: matchedMaster?.instructions || 'ทุกวัน',
+                  instructions: 'ทานทุกวัน',
                   precautions: matchedMaster?.precautions || '',
                   imageUrl: matchedMaster?.imageUrl,
                   status: 'active',
@@ -1237,7 +1477,7 @@ export const medService = {
                   mealTiming: primaryMealTiming || 'หลังอาหาร',
                   timeMealTimings:
                     Object.keys(timeMealTimings).length > 0 ? timeMealTimings : undefined,
-                  createdAt: earliestCreatedAt || new Date(0).toISOString(),
+                  createdAt: localStartIso,
                 };
 
                 seen.set(normName, restoredMed);
@@ -1295,6 +1535,31 @@ export const medService = {
     }
   },
 
+  async clearCachedSchedulesAroundMonth(userKey: string, keepDateStr?: string): Promise<void> {
+    try {
+      const now = new Date();
+      const y = now.getFullYear();
+      const m = now.getMonth();
+      const datesToClear = new Set<string>();
+      // Previous month, current month, next month
+      for (let monthOffset = -1; monthOffset <= 1; monthOffset++) {
+        const targetM = m + monthOffset;
+        const daysInM = new Date(y, targetM + 1, 0).getDate();
+        for (let day = 1; day <= daysInM; day++) {
+          const dStr = getLocalDateString(new Date(y, targetM, day));
+          if (dStr !== keepDateStr) {
+            datesToClear.add(dStr);
+          }
+        }
+      }
+      await Promise.all(
+        Array.from(datesToClear).map(dStr =>
+          safeStorage.removeItem(`med_schedule_${userKey}_${dStr}`).catch(() => {})
+        )
+      );
+    } catch {}
+  },
+
   async saveMedication(med: Medication): Promise<Medication> {
     if (!med.createdAt) {
       if (med.id && med.id.startsWith('med-')) {
@@ -1314,6 +1579,22 @@ export const medService = {
         return med;
       }
       const listKey = `med_user_medications_list_${userKey}`;
+      const deletedKey = `med_deleted_med_names_${userKey}`;
+
+      // Remove this medication name from deleted list if user is adding/saving it
+      const normNew = normalizeMedName(med.name);
+      try {
+        const delRaw = await safeStorage.getItem(deletedKey);
+        if (delRaw) {
+          const parsedDel: string[] = JSON.parse(delRaw);
+          if (Array.isArray(parsedDel)) {
+            const nextDel = parsedDel.filter(n => normalizeMedName(n) !== normNew);
+            if (nextDel.length !== parsedDel.length) {
+              await safeStorage.setItem(deletedKey, JSON.stringify(nextDel));
+            }
+          }
+        }
+      } catch {}
 
       // Determine effective times if active
       let effectiveTimes = med.times || [];
@@ -1322,34 +1603,51 @@ export const medService = {
         med.times = effectiveTimes;
       }
 
+      // Normalize durationMode & customDays so switching between 'ทุกวัน' and 'กำหนดเอง' is clean
+      const resolvedDurationMode =
+        med.durationMode === 'กำหนดเอง'
+          ? 'กำหนดเอง'
+          : med.durationMode === 'ทุกวัน'
+          ? 'ทุกวัน'
+          : getMedicationDurationMode(med) || 'ทุกวัน';
+      const resolvedCustomDays =
+        resolvedDurationMode === 'กำหนดเอง'
+          ? extractCustomDaysFromMedication(med)
+          : undefined;
+      med.durationMode = resolvedDurationMode;
+      med.customDays = resolvedCustomDays;
+      if (resolvedDurationMode === 'ทุกวัน') {
+        med.instructions = 'ทุกวัน';
+      }
+
       const current = await this.getMedications();
-      const existingIdx = current.findIndex(m => m.id === med.id);
+      let existingIdx = current.findIndex(m => m.id === med.id);
+      if (existingIdx < 0 && normNew) {
+        existingIdx = current.findIndex(m => normalizeMedName(m.name) === normNew);
+      }
       const previousMed = existingIdx >= 0 ? current[existingIdx] : undefined;
       let updated: Medication[];
 
       if (existingIdx >= 0) {
         updated = [...current];
-        updated[existingIdx] = {
+        const mergedMed: Medication = {
           ...current[existingIdx],
           ...med,
+          id: current[existingIdx].id || med.id,
           remaining: med.remaining,
           lowStockThreshold: med.lowStockThreshold,
           expiryDate: med.expiryDate,
-          durationMode: med.durationMode,
-          customDays: med.customDays,
+          durationMode: resolvedDurationMode,
+          customDays: resolvedCustomDays,
+          instructions: med.instructions,
           mealTiming: med.mealTiming,
           timeMealTimings: med.timeMealTimings,
           precautions: med.precautions,
           imageUrl: med.imageUrl,
         };
+        med = mergedMed;
+        updated[existingIdx] = mergedMed;
       } else {
-        const normNew = normalizeMedName(med.name);
-        const dupIdx = current.findIndex(m => normalizeMedName(m.name) === normNew);
-        if (dupIdx >= 0) {
-          throw new Error(
-            `คุณมียา "${med.name}" ในรายการยาแล้ว หากต้องการแก้ไขข้อมูลหรือเพิ่มจำนวนยา กรุณาไปทำที่ปุ่มแก้ไข`
-          );
-        }
         updated = [med, ...current];
       }
 
@@ -1374,74 +1672,36 @@ export const medService = {
       const previousEntriesForMed = currentSchedule.filter(
         s =>
           s.medicationId === med.id ||
-          s.medicationName === med.name ||
-          (previousMed && s.medicationName === previousMed.name)
+          normalizeMedName(s.medicationName) === normNew ||
+          (previousMed &&
+            normalizeMedName(s.medicationName) === normalizeMedName(previousMed.name))
       );
 
       // Remove previous schedule entries for this medication on today
       currentSchedule = currentSchedule.filter(
         s =>
           s.medicationId !== med.id &&
-          s.medicationName !== med.name &&
-          (!previousMed || s.medicationName !== previousMed.name)
+          normalizeMedName(s.medicationName) !== normNew &&
+          (!previousMed ||
+            normalizeMedName(s.medicationName) !== normalizeMedName(previousMed.name))
       );
 
-      // If scheduled for today, generate today's schedule entries (preserving isTaken for unchanged times)
-      const shouldScheduleToday = isMedicationScheduledForDate(med, todayDate);
-      let newScheduleItems: ScheduleItem[] = [];
-      if (shouldScheduleToday && effectiveTimes.length > 0) {
-        const now = new Date();
-        const currentMinutes = now.getHours() * 60 + now.getMinutes();
+      // If scheduled for today, generate today's schedule entries using buildScheduleForDateSync
+      const newScheduleItems = buildScheduleForDateSync(
+        [med],
+        todayDate,
+        previousEntriesForMed
+      );
 
-        // If medication was created today, omit times before current time for today (start from now)
-        const timesForToday = effectiveTimes.filter(t => {
-          const normT = t.replace(' น.', '').trim();
-          const [h, m] = normT.split(':').map(v => parseInt(v, 10));
-          const timeMinutes = (isNaN(h) ? 0 : h) * 60 + (isNaN(m) ? 0 : m);
-          const wasTaken = previousEntriesForMed.some(
-            p => (p.originalTime || p.time.replace(' น.', '').trim()) === normT && (p.isTaken || p.isChecked)
-          );
-          return wasTaken || timeMinutes >= currentMinutes;
-        });
-
-        const usedPrevIds = new Set<string>();
-        newScheduleItems = timesForToday.map((t, idx) => {
-          const normT = t.replace(' น.', '').trim();
-          const formattedTime = `${normT} น.`;
-          const matchedPrev = previousEntriesForMed.find(
-            p =>
-              !usedPrevIds.has(p.id) &&
-              (p.originalTime || p.time.replace(' น.', '').trim()) === normT
-          );
-          if (matchedPrev) {
-            usedPrevIds.add(matchedPrev.id);
-          }
-          return {
-            id: matchedPrev?.id || `sch-${today}-${med.id}-${idx}`,
-            medicationId: med.id,
-            medicationName: med.name,
-            dosage: med.dosage,
-            unit: med.unit,
-            type: med.type,
-            doseCount: 1,
-            mealTiming: med.timeMealTimings?.[normT] || med.mealTiming || '',
-            originalTime: normT,
-            time: formattedTime,
-            date: today,
-            isChecked: matchedPrev ? Boolean(matchedPrev.isChecked || matchedPrev.isTaken) : false,
-            isTaken: matchedPrev ? Boolean(matchedPrev.isTaken) : false,
-            takenAt: matchedPrev?.takenAt,
-            isSkipped: matchedPrev ? Boolean(matchedPrev.isSkipped) : false,
-          };
-        });
-
+      if (newScheduleItems.length > 0) {
         currentSchedule = [...currentSchedule, ...newScheduleItems].sort((a, b) =>
           a.time.replace(' น.', '').trim().localeCompare(b.time.replace(' น.', '').trim())
         );
       }
 
-      // ALWAYS update local storage for today
+      // ALWAYS update local storage for today and invalidate cached schedules for other dates
       await safeStorage.setItem(scheduleKey, JSON.stringify(currentSchedule));
+      await this.clearCachedSchedulesAroundMonth(userKey, today);
 
       // Sync to Supabase user_schedules (strictly scoped to this user's UUID)
       if (supabase && userUUID) {
@@ -1453,6 +1713,14 @@ export const medService = {
               .eq('user_id', userUUID)
               .eq('medication_name', previousMed.name);
           }
+          // Delete any untaken schedule rows across all dates for this medication so old dates/times don't linger
+          await supabase
+            .from('user_schedules')
+            .delete()
+            .eq('user_id', userUUID)
+            .eq('medication_name', med.name)
+            .eq('is_taken', false);
+
           await supabase
             .from('user_schedules')
             .delete()
@@ -1462,7 +1730,7 @@ export const medService = {
 
           const medUUID = isValidUUID(med.id) ? med.id : null;
 
-          if (shouldScheduleToday && newScheduleItems.length > 0) {
+          if (newScheduleItems.length > 0) {
             const supabaseRows = newScheduleItems.map(item => ({
               user_id: userUUID,
               medication_id: medUUID,
@@ -1479,41 +1747,9 @@ export const medService = {
             }));
 
             await supabase.from('user_schedules').insert(supabaseRows);
-          } else if (med.status === 'active' && effectiveTimes.length > 0) {
-            // Ensure all configured times are persisted in Supabase user_schedules for this user
-            const tomorrowDate = new Date(todayDate);
-            tomorrowDate.setDate(tomorrowDate.getDate() + 1);
-            const tomorrowStr = getLocalDateString(tomorrowDate);
-
-            await supabase
-              .from('user_schedules')
-              .delete()
-              .eq('user_id', userUUID)
-              .eq('date', tomorrowStr)
-              .eq('medication_name', med.name);
-
-            const tomorrowRows = effectiveTimes.map(t => {
-              const normT = t.replace(' น.', '').trim();
-              return {
-                user_id: userUUID,
-                medication_id: medUUID,
-                medication_name: med.name,
-                dosage: med.dosage,
-                unit: med.unit,
-                type: med.type,
-                meal_timing: med.timeMealTimings?.[normT] || med.mealTiming || '',
-                time: `${normT} น.`,
-                date: tomorrowStr,
-                is_taken: false,
-                taken_at: null,
-                is_skipped: false,
-              };
-            });
-
-            await supabase.from('user_schedules').insert(tomorrowRows);
           }
         } catch (schErr) {
-          console.warn('Failed to insert user_schedules to Supabase:', schErr);
+          console.warn('Failed to sync user_schedules to Supabase:', schErr);
         }
       }
 
@@ -1534,13 +1770,37 @@ export const medService = {
       const { userKey, userUUID } = await this.getCurrentUserScope();
       if (!userKey) return false;
       const listKey = `med_user_medications_list_${userKey}`;
+      const deletedKey = `med_deleted_med_names_${userKey}`;
 
       const current = await this.getMedications();
-      const medToDelete = current.find(m => m.id === id);
-      const updated = current.filter(m => m.id !== id);
+      const medToDelete = current.find(
+        m => m.id === id || normalizeMedName(m.name) === normalizeMedName(id)
+      );
+      const normDeleteName = medToDelete ? normalizeMedName(medToDelete.name) : '';
+
+      if (normDeleteName) {
+        try {
+          let delList: string[] = [];
+          const delRaw = await safeStorage.getItem(deletedKey);
+          if (delRaw) {
+            const parsedDel = JSON.parse(delRaw);
+            if (Array.isArray(parsedDel)) delList = parsedDel;
+          }
+          if (!delList.some(n => normalizeMedName(n) === normDeleteName)) {
+            delList.push(normDeleteName);
+            await safeStorage.setItem(deletedKey, JSON.stringify(delList));
+          }
+        } catch {}
+      }
+
+      const updated = current.filter(
+        m =>
+          m.id !== id &&
+          (!normDeleteName || normalizeMedName(m.name) !== normDeleteName)
+      );
       await safeStorage.setItem(listKey, JSON.stringify(updated));
 
-      // Remove from today's schedule
+      // Remove from today's schedule & clear cached schedules for other dates
       const today = getLocalDateString();
       const scheduleKey = `med_schedule_${userKey}_${today}`;
       const localStr = await safeStorage.getItem(scheduleKey);
@@ -1548,19 +1808,31 @@ export const medService = {
         try {
           const parsed: ScheduleItem[] = JSON.parse(localStr);
           const filtered = parsed.filter(
-            s => s.medicationId !== id && (!medToDelete || s.medicationName !== medToDelete.name)
+            s =>
+              s.medicationId !== id &&
+              (!normDeleteName || normalizeMedName(s.medicationName) !== normDeleteName)
           );
           await safeStorage.setItem(scheduleKey, JSON.stringify(filtered));
         } catch {}
       }
+      await this.clearCachedSchedulesAroundMonth(userKey, today);
 
-      if (supabase && userUUID && medToDelete) {
+      if (supabase && userUUID) {
         try {
-          await supabase
-            .from('user_schedules')
-            .delete()
-            .eq('user_id', userUUID)
-            .eq('medication_name', medToDelete.name);
+          if (medToDelete?.name) {
+            await supabase
+              .from('user_schedules')
+              .delete()
+              .eq('user_id', userUUID)
+              .eq('medication_name', medToDelete.name);
+          }
+          if (isValidUUID(id)) {
+            await supabase
+              .from('user_schedules')
+              .delete()
+              .eq('user_id', userUUID)
+              .eq('medication_id', id);
+          }
         } catch {}
       }
 
@@ -1699,110 +1971,7 @@ export const medService = {
     // 3. Always reconcile with ALL user medications scheduled for targetDate
     try {
       const allMeds = await this.getMedications();
-      const scheduledMeds = allMeds.filter(m => isMedicationScheduledForDate(m, targetDate));
-
-      if (scheduledMeds.length === 0) {
-        if (localItems.length > 0) {
-          await safeStorage.setItem(key, JSON.stringify([]));
-        }
-        return [];
-      }
-
-      const reconciled: ScheduleItem[] = [];
-      const consumedIndices = new Set<number>();
-
-      for (const med of scheduledMeds) {
-        let createdDate: Date | null = null;
-        if (med.createdAt) {
-          createdDate = new Date(med.createdAt);
-        } else if (med.id && med.id.startsWith('med-')) {
-          const ts = parseInt(med.id.replace('med-', ''), 10);
-          if (!isNaN(ts) && ts > 1000000000) {
-            createdDate = new Date(ts);
-          }
-        }
-        if (!createdDate) {
-          createdDate = getMedicationStartDate(med);
-        }
-
-        let isCreationDay = false;
-        let createdMinutes = 0;
-        if (createdDate && !isNaN(createdDate.getTime())) {
-          const createdDateStr = getLocalDateString(createdDate);
-          if (targetDateStr < createdDateStr) {
-            // Target date is before medication was created! Skip!
-            continue;
-          }
-          if (targetDateStr === createdDateStr) {
-            isCreationDay = true;
-            createdMinutes = createdDate.getHours() * 60 + createdDate.getMinutes();
-          }
-        }
-
-        const times =
-          med.times && med.times.length > 0
-            ? med.times
-            : this.getDefaultTimesForFrequency(1);
-
-        times.forEach((rawTime, idx) => {
-          const normTime = rawTime.replace(' น.', '').trim();
-          const displayTime = `${normTime} น.`;
-          const syntheticId = `sch-${targetDateStr}-${med.id}-${idx}`;
-
-          const matchIdx = storedItems.findIndex(
-            (s, sIdx) =>
-              !consumedIndices.has(sIdx) &&
-              (s.medicationId === med.id || s.medicationName === med.name) &&
-              ((s.originalTime || s.time.replace(' น.', '').trim()) === normTime ||
-                s.id === syntheticId)
-          );
-
-          const matched = matchIdx >= 0 ? storedItems[matchIdx] : undefined;
-          if (matchIdx >= 0) {
-            consumedIndices.add(matchIdx);
-          }
-
-          // If medication was created on targetDateStr, omit times that had already passed before creation
-          if (isCreationDay) {
-            const [h, m] = normTime.split(':').map(val => parseInt(val, 10));
-            const timeMinutes = (isNaN(h) ? 0 : h) * 60 + (isNaN(m) ? 0 : m);
-            if (timeMinutes < createdMinutes && !matched?.isTaken && !matched?.isChecked) {
-              return; // Skip past times on creation day
-            }
-          }
-
-          const itemPostponedUntil =
-            matched?.postponedUntil ||
-            snoozeMap[matched?.id || syntheticId] ||
-            snoozeMap[`${med.id}_${targetDateStr}`] ||
-            snoozeMap[`${med.name}_${targetDateStr}`];
-
-          reconciled.push({
-            id: matched?.id || syntheticId,
-            medicationId: med.id,
-            medicationName: med.name,
-            dosage: med.dosage,
-            unit: med.unit,
-            type: med.type,
-            doseCount: 1,
-            mealTiming:
-              med.timeMealTimings?.[normTime] || med.mealTiming || matched?.mealTiming || '',
-            originalTime: normTime,
-            postponedTime: matched?.postponedTime,
-            postponedUntil: itemPostponedUntil && Date.now() < itemPostponedUntil ? itemPostponedUntil : undefined,
-            time: matched?.postponedTime || displayTime,
-            date: targetDateStr,
-            isChecked: matched ? Boolean(matched.isChecked || matched.isTaken) : false,
-            isTaken: matched ? Boolean(matched.isTaken) : false,
-            takenAt: matched?.takenAt,
-            isSkipped: matched ? Boolean(matched.isSkipped) : false,
-          });
-        });
-      }
-
-      reconciled.sort((a, b) =>
-        a.time.replace(' น.', '').trim().localeCompare(b.time.replace(' น.', '').trim())
-      );
+      const reconciled = buildScheduleForDateSync(allMeds, targetDate, storedItems, snoozeMap);
       await safeStorage.setItem(key, JSON.stringify(reconciled));
       return reconciled;
     } catch (e) {

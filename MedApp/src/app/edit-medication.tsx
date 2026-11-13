@@ -54,7 +54,11 @@ export default function EditMedicationScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      initializedIdRef.current = null;
       refreshData();
+      return () => {
+        initializedIdRef.current = null;
+      };
     }, [refreshData])
   );
 
