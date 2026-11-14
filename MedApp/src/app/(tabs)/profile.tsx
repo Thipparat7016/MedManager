@@ -17,6 +17,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '@/context/AppContext';
+import { isScheduleTakenOnTime } from '@/services/medService';
 
 interface SmoothSwitchProps {
   value: boolean;
@@ -151,8 +152,9 @@ export default function ProfileScreen() {
   const activeMedsCount = medications.filter(m => m.status === 'active').length;
   const upcomingAptsCount = appointments.filter(a => a.status !== 'passed').length;
   const takenCount = todaySchedule.filter(s => s.isTaken).length;
+  const onTimeCount = todaySchedule.filter(s => isScheduleTakenOnTime(s)).length;
   const totalSchedule = todaySchedule.length;
-  const onTimeRate = totalSchedule > 0 ? `${Math.round((takenCount / totalSchedule) * 100)}%` : '-';
+  const onTimeRate = totalSchedule > 0 ? `${Math.round((onTimeCount / totalSchedule) * 100)}%` : '-';
   const consistencyRate = totalSchedule > 0 ? `${Math.round((takenCount / totalSchedule) * 100)}%` : '-';
 
   const topInsetPadding = Math.max(insets.top, 24) + 14;

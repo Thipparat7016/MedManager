@@ -414,8 +414,22 @@ export default function InteractionListPage() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div><strong>อาหาร/กลุ่มอาหาร:</strong> {viewItem.food_name}</div>
                 <div><strong>ประเภทปฏิสัมพันธ์:</strong> {viewItem.interaction_type}</div>
-                <div><strong>ความรุนแรง:</strong> <span className={`badge-severity ${viewItem.severity === 'สูง' ? 'high' : viewItem.severity === 'ต่ำ' ? 'low' : 'medium'}`} style={{ marginLeft: '4px' }}>{viewItem.severity}</span></div>
-                <div><strong>ช่วงเวลางด:</strong> {viewItem.hours_note || `${viewItem.hours_before} ชม. ก่อน - ${viewItem.hours_after} ชม. หลัง`}</div>
+                <div>
+                  <strong>ความรุนแรง:</strong>{' '}
+                  {viewItem.severity && viewItem.severity !== '-' && !(viewItem.interaction_type || '').includes('แนะนำ') ? (
+                    <span className={`badge-severity ${viewItem.severity === 'สูง' ? 'high' : viewItem.severity === 'ต่ำ' ? 'low' : 'medium'}`} style={{ marginLeft: '4px' }}>
+                      {viewItem.severity}
+                    </span>
+                  ) : (
+                    <span style={{ color: 'var(--color-neutral-400)', marginLeft: '4px' }}>-</span>
+                  )}
+                </div>
+                <div>
+                  <strong>ช่วงเวลางด:</strong>{' '}
+                  {(viewItem.interaction_type || '').includes('แนะนำ')
+                    ? '-'
+                    : viewItem.hours_note || (Number(viewItem.hours_before) || Number(viewItem.hours_after) ? `${viewItem.hours_before || 0} ชม. ก่อน - ${viewItem.hours_after || 0} ชม. หลัง` : '-')}
+                </div>
               </div>
               <div style={{ borderTop: '1px solid var(--color-neutral-100)', paddingTop: '10px' }}>
                 <div style={{ fontWeight: 600, color: 'var(--color-neutral-800)', marginBottom: '4px' }}>รายละเอียดผลกระทบ:</div>

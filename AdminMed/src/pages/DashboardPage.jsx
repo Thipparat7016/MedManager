@@ -6,22 +6,21 @@ const THAI_SHORT_MONTHS = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.',
 const THAI_SHORT_DAYS = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส']
 
 function buildDefaultSideEffectTrend() {
-  const now = new Date()
-  const list = []
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-    list.push({ month: THAI_SHORT_MONTHS[d.getMonth()], value: 0 })
-  }
-  return list
+  return [
+    { month: 'สัปดาห์ที่ 1', value: 0 },
+    { month: 'สัปดาห์ที่ 2', value: 0 },
+    { month: 'สัปดาห์ที่ 3', value: 0 },
+    { month: 'สัปดาห์ที่ 4', value: 0 }
+  ]
 }
 
 function buildDefaultAdherenceBars() {
   const now = new Date()
   const list = []
-  for (let i = 13; i >= 0; i--) {
+  for (let i = 6; i >= 0; i--) {
     const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i)
     list.push({
-      label: THAI_SHORT_DAYS[d.getDay()],
+      label: `${THAI_SHORT_DAYS[d.getDay()]} ${d.getDate()}`,
       dateLabel: `${d.getDate()} ${THAI_SHORT_MONTHS[d.getMonth()]}`,
       height: 0,
       rate: 0,
@@ -40,35 +39,66 @@ export default function DashboardPage() {
   const [lastUpdated, setLastUpdated] = useState('อัปเดตเมื่อสักครู่')
   const [isRefreshing, setIsRefreshing] = useState(false)
 
-  useEffect(() => {
-    loadData()
-  }, [])
-
-  const loadData = async () => {
-    setIsRefreshing(true)
+  const loadData = async ({ silent = false } = {}) => {
+    if (!silent) setIsRefreshing(true)
     const [dashStats, activityLogs] = await Promise.all([
       dataService.getDashboardStats(),
       dataService.getPharmacyActivities()
     ])
     setStats(dashStats)
     setActivities(activityLogs)
-    setLastUpdated('อัปเดตเมื่อสักครู่')
-    setTimeout(() => setIsRefreshing(false), 300)
+    const now = new Date()
+    const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')} น.`
+    setLastUpdated(`อัปเดตล่าสุด ${timeStr}`)
+    if (!silent) {
+      setTimeout(() => setIsRefreshing(false), 300)
+    }
   }
 
-  // 7-month ADR / side-effect trend data (real Supabase data)
+  useEffect(() => {
+    loadData()
+
+    const unsubscribeRealtime = dataService.subscribeToDashboardRealtime(() => {
+      loadData({ silent: true })
+    })
+
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        loadData({ silent: true })
+      }
+    }
+    window.addEventListener('focus', handleVisibilityOrFocus)
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus)
+
+    const pollInterval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        loadData({ silent: true })
+      }
+    }, 10000)
+
+    return () => {
+      unsubscribeRealtime()
+      window.removeEventListener('focus', handleVisibilityOrFocus)
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus)
+      clearInterval(pollInterval)
+    }
+  }, [])
+
+  // 1-month (4 weeks) ADR / side-effect trend data (real Supabase data)
   const sideEffectTrendData = stats?.sideEffectTrend || buildDefaultSideEffectTrend()
   const maxTrendValue = Math.max(...sideEffectTrendData.map(d => d.value), 1)
+  const stepX = sideEffectTrendData.length > 1 ? 550 / (sideEffectTrendData.length - 1) : 0
   const trendPoints = sideEffectTrendData.map((d, i) => ({
-    x: Math.round(50 + i * (550 / 6)),
+    x: Math.round(50 + i * stepX),
     y: d.value > 0 ? Math.round(160 - (d.value / maxTrendValue) * 120) : 160,
     month: d.month,
+    rangeLabel: d.rangeLabel,
     value: d.value
   }))
   const polylinePoints = trendPoints.map(pt => `${pt.x},${pt.y}`).join(' ')
   const polygonPoints = `50,160 ${polylinePoints} 600,160`
 
-  // 14-day daily adherence data (real Supabase data)
+  // 7-day daily adherence data (real Supabase data)
   const adherenceBars = stats?.adherenceBars || buildDefaultAdherenceBars()
 
   // Donut chart arc calculations (circumference = 2 * pi * 56 ≈ 351.86)
@@ -117,7 +147,7 @@ export default function DashboardPage() {
         <div className="page-actions">
           <button 
             className="btn btn-primary" 
-            onClick={loadData}
+            onClick={() => loadData()}
             style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px' }}
           >
             <RefreshCw size={14} className={isRefreshing ? 'animate-spin' : ''} />
@@ -178,7 +208,7 @@ export default function DashboardPage() {
         {/* Left: Charts Container */}
         <div className="card" style={{ padding: '24px 28px' }}>
           <div style={{ fontSize: '14.5px', fontWeight: 600, color: 'var(--color-neutral-800)', marginBottom: '20px' }}>
-            แนวโน้มรายงานผลข้างเคียง (7 เดือนล่าสุด)
+            แนวโน้มรายงานผลข้างเคียง (1 เดือนล่าสุด)
           </div>
 
           {/* SVG Line Chart */}
@@ -213,7 +243,7 @@ export default function DashboardPage() {
               {trendPoints.map((pt, i) => (
                 <g key={i}>
                   <circle cx={pt.x} cy={pt.y} r="4" fill="var(--color-primary-500)" stroke="#ffffff" strokeWidth="2">
-                    <title>{`${pt.month}: ${pt.value} รายการ`}</title>
+                    <title>{pt.rangeLabel ? `${pt.month} (${pt.rangeLabel}): ${pt.value} รายการ` : `${pt.month}: ${pt.value} รายการ`}</title>
                   </circle>
                   {pt.value > 0 && (
                     <text
@@ -251,9 +281,9 @@ export default function DashboardPage() {
           {/* Adherence Rate Mini Bar Chart */}
           <div style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px solid var(--color-neutral-100)' }}>
             <div style={{ fontSize: '12px', color: 'var(--color-neutral-500)', marginBottom: '12px' }}>
-              Adherence Rate รายวัน (14 วันล่าสุด)
+              Adherence Rate รายวัน (7 วันล่าสุด)
             </div>
-            <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', height: '60px', gap: '6px' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', height: '60px', gap: '8px' }}>
               {adherenceBars.map((bar, i) => (
                 <div key={i} style={{ flex: 1, height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
                   <div 

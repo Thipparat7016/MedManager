@@ -39,9 +39,6 @@ export default function MedicationsScreen() {
     }, [refreshData])
   );
 
-  const activeMeds = medications.filter(m => m.status === 'active');
-  const inactiveMeds = medications.filter(m => m.status === 'inactive');
-
   const filterList = (list: typeof medications) => {
     return list.filter(m => {
       const matchSearch =
@@ -53,8 +50,7 @@ export default function MedicationsScreen() {
     });
   };
 
-  const filteredActive = filterList(activeMeds);
-  const filteredInactive = filterList(inactiveMeds);
+  const filteredMeds = filterList(medications);
 
   const handleDelete = (id: string, name: string) => {
     Alert.alert('ยืนยันการลบ', `คุณต้องการลบ "${name}" หรือไม่?`, [
@@ -169,7 +165,7 @@ export default function MedicationsScreen() {
           </View>
         ) : (
           <>
-            {filteredActive.map(item => {
+            {filteredMeds.map(item => {
               const stockStatus = getMedicationStockStatus(item);
               const imgUri = resolveMedicationImageUri(item, masterMedications);
               const cleanName = formatCleanDrugName(item.name);
@@ -253,64 +249,6 @@ export default function MedicationsScreen() {
                 </View>
               );
             })}
-
-            {/* Section: Inactive */}
-            {filteredInactive.length > 0 && (
-              <>
-                <Text style={[styles.sectionTitle, { marginTop: 24 }]}>หยุดใช้งาน</Text>
-                {filteredInactive.map(item => {
-                  const stockStatus = getMedicationStockStatus(item);
-                  const imgUri = resolveMedicationImageUri(item, masterMedications);
-                  const cleanName = formatCleanDrugName(item.name);
-
-                  return (
-                    <View key={item.id} style={styles.inactiveCard}>
-                      {imgUri ? (
-                        <TouchableOpacity
-                          onPress={() =>
-                            setPreviewMedImage({
-                              uri: imgUri,
-                              name: cleanName,
-                            })
-                          }
-                          activeOpacity={0.75}
-                          hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                        >
-                          <Image
-                            source={{ uri: imgUri }}
-                            style={[styles.medThumbImage, { opacity: 0.8 }]}
-                            resizeMode="cover"
-                          />
-                        </TouchableOpacity>
-                      ) : null}
-
-                      <View style={[styles.inactiveDetails, !imgUri && { marginLeft: 0 }]}>
-                        <View style={styles.nameRow}>
-                          <Text
-                            style={[styles.inactiveName, { flex: 1, marginRight: 8 }]}
-                            numberOfLines={1}
-                          >
-                            {cleanName}
-                          </Text>
-                          {stockStatus.isLowStock && (
-                            <StatusBadge label="ใกล้หมด" variant="low_stock" size="sm" />
-                          )}
-                        </View>
-                        <Text style={styles.inactiveMeta}>
-                          {item.dosage}{item.unit} • {item.type}
-                          {item.endDate ? ` • หยุด ${item.endDate}` : ''}
-                        </Text>
-                        {stockStatus.hasStock && (
-                          <Text style={[styles.inactiveMeta, { fontWeight: '700', color: '#475569' }]}>
-                            คงเหลือ: {stockStatus.remaining} เม็ด
-                          </Text>
-                        )}
-                      </View>
-                    </View>
-                  );
-                })}
-              </>
-            )}
           </>
         )}
       </ScrollView>
@@ -539,8 +477,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   inactiveCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
     backgroundColor: '#F8FAFC',
     borderRadius: 16,
     borderWidth: 1.5,

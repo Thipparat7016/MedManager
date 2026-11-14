@@ -483,9 +483,9 @@ export function buildScheduleForDateSync(
         mealTiming:
           med.timeMealTimings?.[normTime] || med.mealTiming || matched?.mealTiming || '',
         originalTime: normTime,
-        postponedTime: activePostponedUntil ? matched?.postponedTime : undefined,
+        postponedTime: matched?.postponedTime,
         postponedUntil: activePostponedUntil,
-        time: activePostponedUntil && matched?.postponedTime ? matched.postponedTime : displayTime,
+        time: matched?.postponedTime || displayTime,
         date: targetDateStr,
         isChecked: matched ? Boolean(matched.isChecked || matched.isTaken) : false,
         isTaken: matched ? Boolean(matched.isTaken) : false,
@@ -500,6 +500,66 @@ export function buildScheduleForDateSync(
   );
 
   return reconciled;
+}
+
+function parseScheduleTimeMinutes(raw?: string): number | null {
+  if (!raw || typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  if (trimmed.includes('T')) {
+    const dt = new Date(trimmed);
+    if (!isNaN(dt.getTime())) {
+      return dt.getHours() * 60 + dt.getMinutes();
+    }
+  }
+  const clean = trimmed.replace(' น.', '').trim();
+  const match = clean.match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return null;
+  const h = parseInt(match[1], 10);
+  const m = parseInt(match[2], 10);
+  if (isNaN(h) || isNaN(m)) return null;
+  return h * 60 + m;
+}
+
+export function isScheduleTakenOnTime(item: ScheduleItem): boolean {
+  if (!item || !item.isTaken || !item.takenAt) return false;
+
+  const takenMinutes = parseScheduleTimeMinutes(item.takenAt);
+  if (takenMinutes === null) return false;
+
+  const origMinutes = parseScheduleTimeMinutes(item.originalTime || item.time);
+  const postponedMinutes = parseScheduleTimeMinutes(item.postponedTime);
+  const currentTargetMinutes = parseScheduleTimeMinutes(item.time);
+
+  // กรณีที่ 1: กดก่อนเวลาไม่เกิน 30 นาที จนถึงตรงเวลาที่ตั้งไว้เป๊ะ (เช่น ตั้งไว้ 08:00 กดในช่วง 07:30 – 08:00)
+  if (!item.postponedTime && origMinutes !== null) {
+    const minutesBeforeScheduled = (((origMinutes - takenMinutes) % 1440) + 1440) % 1440;
+    if (minutesBeforeScheduled >= 0 && minutesBeforeScheduled <= 30) {
+      return true;
+    }
+  }
+
+  // กรณีที่ 2: กดข้าม/เลื่อน 30 นาที แล้วเมื่อผ่านไปตามเวลาที่ข้าม (30 นาที) กดทานตรงตามเวลาที่เลื่อนไป
+  if (postponedMinutes !== null && takenMinutes === postponedMinutes) {
+    return true;
+  }
+  if (
+    item.postponedTime &&
+    origMinutes !== null &&
+    takenMinutes === (((origMinutes + 30) % 1440) + 1440) % 1440
+  ) {
+    return true;
+  }
+  if (
+    currentTargetMinutes !== null &&
+    origMinutes !== null &&
+    currentTargetMinutes !== origMinutes &&
+    takenMinutes === currentTargetMinutes
+  ) {
+    return true;
+  }
+
+  return false;
 }
 
 export function getMedicationStockStatus(med: Medication): {

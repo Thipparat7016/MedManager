@@ -935,55 +935,140 @@ export const dataService = {
     const THAI_SHORT_MONTHS = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.']
     const THAI_SHORT_DAYS = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส']
 
-    const parseDateValue = (rawStr, fallbackIso) => {
-      if (rawStr && typeof rawStr === 'string') {
-        const str = rawStr.trim()
-        const isoMatch = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)
-        if (isoMatch) {
-          let y = parseInt(isoMatch[1], 10)
-          const m = parseInt(isoMatch[2], 10) - 1
-          const d = parseInt(isoMatch[3], 10)
-          if (y > 2400) y -= 543
-          return new Date(y, m, d)
-        }
-        const slashMatch = str.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})/)
-        if (slashMatch) {
-          const d = parseInt(slashMatch[1], 10)
-          const m = parseInt(slashMatch[2], 10) - 1
-          let y = parseInt(slashMatch[3], 10)
-          if (y > 2400) y -= 543
-          else if (y < 100) y += 2000
-          return new Date(y, m, d)
-        }
-        const thaiMatch = str.match(/^(\d{1,2})\s+([^\s\d]+)\s+(\d{2,4})/)
-        if (thaiMatch) {
-          const d = parseInt(thaiMatch[1], 10)
-          const m = THAI_MONTH_MAP[thaiMatch[2]]
-          let y = parseInt(thaiMatch[3], 10)
-          if (y > 2400) y -= 543
-          if (m !== undefined) return new Date(y, m, d)
+    const parseFlexibleDate = (raw) => {
+      if (!raw || typeof raw !== 'string') return null
+      let str = raw.trim()
+      if (!str) return null
+
+      // Remove common prefix text (matching MedApp parseFlexibleDate)
+      str = str.replace(/^(เริ่มต้น|ตั้งแต่วันที่|เริ่ม|วันที่)\s*/, '')
+
+      // 1. Full ISO datetime string with 'T' -> convert to LOCAL date
+      if (str.includes('T')) {
+        const parsedIso = new Date(str)
+        if (!isNaN(parsedIso.getTime())) {
+          return new Date(parsedIso.getFullYear(), parsedIso.getMonth(), parsedIso.getDate())
         }
       }
-      if (fallbackIso) {
-        const fallback = new Date(fallbackIso)
-        if (!isNaN(fallback.getTime())) {
-          return new Date(fallback.getFullYear(), fallback.getMonth(), fallback.getDate())
+
+      // 2. Date-only YYYY-MM-DD
+      const isoMatch = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/)
+      if (isoMatch) {
+        let y = parseInt(isoMatch[1], 10)
+        if (y > 2400) y -= 543
+        const m = parseInt(isoMatch[2], 10) - 1
+        const d = parseInt(isoMatch[3], 10)
+        if (!isNaN(y) && !isNaN(m) && !isNaN(d)) {
+          return new Date(y, m, d)
         }
       }
+
+      // 3. Thai text like '2 พฤศจิกายน 2569' or '2 พ.ย. 2569'
+      const thaiMatch = str.match(/^(\d{1,2})\s+([^\s\d]+)\s+(\d{2,4})$/)
+      if (thaiMatch) {
+        const d = parseInt(thaiMatch[1], 10)
+        const m = THAI_MONTH_MAP[thaiMatch[2]]
+        let y = parseInt(thaiMatch[3], 10)
+        if (y > 2400) y -= 543
+        else if (y < 100) y = y > 50 ? 2500 + y - 543 : 2000 + y
+        if (m !== undefined && !isNaN(d) && !isNaN(y)) {
+          return new Date(y, m, d)
+        }
+      }
+
+      // 4. DD/MM/YYYY or DD-MM-YYYY (or BE year)
+      const slashMatch = str.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$/)
+      if (slashMatch) {
+        const d = parseInt(slashMatch[1], 10)
+        const m = parseInt(slashMatch[2], 10) - 1
+        let y = parseInt(slashMatch[3], 10)
+        if (y > 2400) y -= 543
+        else if (y < 100) y = y > 50 ? 2500 + y - 543 : 2000 + y
+        if (!isNaN(d) && !isNaN(m) && !isNaN(y)) {
+          return new Date(y, m, d)
+        }
+      }
+
+      const parsed = new Date(str)
+      if (!isNaN(parsed.getTime())) {
+        return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate())
+      }
+
       return null
+    }
+
+    const parseDateValue = (rawStr, fallbackIso) => {
+      return parseFlexibleDate(rawStr) || parseFlexibleDate(fallbackIso)
     }
 
     const toDateKey = (d) =>
       `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 
+    const parseScheduleTimeMinutes = (raw) => {
+      if (!raw || typeof raw !== 'string') return null
+      const trimmed = raw.trim()
+      if (!trimmed) return null
+      if (trimmed.includes('T')) {
+        const dt = new Date(trimmed)
+        if (!isNaN(dt.getTime())) {
+          return dt.getHours() * 60 + dt.getMinutes()
+        }
+      }
+      const clean = trimmed.replace('น.', '').trim()
+      const match = clean.match(/^(\d{1,2}):(\d{2})/)
+      if (!match) return null
+      const h = parseInt(match[1], 10)
+      const m = parseInt(match[2], 10)
+      if (isNaN(h) || isNaN(m)) return null
+      return h * 60 + m
+    }
+
     const parseTimeMinutes = (timeStr) => {
-      if (!timeStr || typeof timeStr !== 'string') return 0
-      const clean = timeStr.replace('น.', '').trim()
-      const parts = clean.split(':')
-      const h = parseInt(parts[0], 10)
-      const m = parseInt(parts[1] || '0', 10)
-      if (isNaN(h)) return 0
-      return h * 60 + (isNaN(m) ? 0 : m)
+      const parsed = parseScheduleTimeMinutes(timeStr)
+      return parsed !== null ? parsed : 0
+    }
+
+    const isScheduleTakenOnTime = (item) => {
+      const isTaken = Boolean(item?.is_taken ?? item?.isTaken)
+      const takenAt = item?.taken_at ?? item?.takenAt
+      if (!item || !isTaken || !takenAt) return false
+
+      const takenMinutes = parseScheduleTimeMinutes(takenAt)
+      if (takenMinutes === null) return false
+
+      const origMinutes = parseScheduleTimeMinutes(item.original_time || item.originalTime || item.time)
+      const postponedMinutes = parseScheduleTimeMinutes(item.postponed_time || item.postponedTime)
+      const currentTargetMinutes = parseScheduleTimeMinutes(item.time)
+
+      // กรณีที่ 1: กดก่อนเวลาไม่เกิน 30 นาที จนถึงตรงเวลาที่ตั้งไว้เป๊ะ (เช่น ตั้งไว้ 08:00 กดในช่วง 07:30 – 08:00)
+      if (!(item.postponed_time || item.postponedTime) && origMinutes !== null) {
+        const minutesBeforeScheduled = (((origMinutes - takenMinutes) % 1440) + 1440) % 1440
+        if (minutesBeforeScheduled >= 0 && minutesBeforeScheduled <= 30) {
+          return true
+        }
+      }
+
+      // กรณีที่ 2: กดข้าม/เลื่อน 30 นาที แล้วเมื่อผ่านไปตามเวลาที่ข้าม (30 นาที) กดทานตรงตามเวลาที่เลื่อนไป
+      if (postponedMinutes !== null && takenMinutes === postponedMinutes) {
+        return true
+      }
+      if (
+        (item.postponed_time || item.postponedTime) &&
+        origMinutes !== null &&
+        takenMinutes === (((origMinutes + 30) % 1440) + 1440) % 1440
+      ) {
+        return true
+      }
+      if (
+        currentTargetMinutes !== null &&
+        origMinutes !== null &&
+        currentTargetMinutes !== origMinutes &&
+        takenMinutes === currentTargetMinutes
+      ) {
+        return true
+      }
+
+      return false
     }
 
     const now = new Date()
@@ -1031,7 +1116,7 @@ export const dataService = {
         : `สะสมเดือนนี้ ${thisMonthSideEffectsCount} รายการ`
     }
 
-    // 5. Medication Adherence Rate KPI (from user_schedules)
+    // 5. On-Time Medication Rate KPI (from user_schedules using MedApp's isScheduleTakenOnTime)
     const dueSchedules = schedules.filter(s => {
       if (s.is_taken || s.is_skipped) return true
       const d = parseDateValue(s.date, s.created_at)
@@ -1041,14 +1126,19 @@ export const dataService = {
       if (key === todayKey) return parseTimeMinutes(s.time) <= nowMinutes
       return false
     })
+    const onTimeCount = dueSchedules.filter(s => isScheduleTakenOnTime(s)).length
     const takenCount = dueSchedules.filter(s => Boolean(s.is_taken)).length
     const skippedCount = dueSchedules.filter(s => Boolean(s.is_skipped) && !s.is_taken).length
-    const adherencePct = dueSchedules.length > 0 ? Math.round((takenCount / dueSchedules.length) * 100) : 0
+    const adherencePct = dueSchedules.length > 0 ? Math.round((onTimeCount / dueSchedules.length) * 100) : 0
     let adherenceSub = 'ยังไม่มีประวัติการกินยา'
     if (dueSchedules.length > 0) {
-      adherenceSub = skippedCount > 0
-        ? `กินแล้ว ${takenCount}/${dueSchedules.length} มื้อ • ข้าม ${skippedCount}`
-        : `กินแล้ว ${takenCount} จาก ${dueSchedules.length} มื้อ`
+      if (skippedCount > 0) {
+        adherenceSub = `ตรงเวลา ${onTimeCount}/${dueSchedules.length} มื้อ • ข้าม ${skippedCount}`
+      } else if (takenCount !== onTimeCount) {
+        adherenceSub = `ตรงเวลา ${onTimeCount} จาก ${dueSchedules.length} มื้อ (กินแล้ว ${takenCount})`
+      } else {
+        adherenceSub = `ตรงเวลา ${onTimeCount} จาก ${dueSchedules.length} มื้อ`
+      }
     } else if (schedules.length > 0) {
       adherenceSub = `รอถึงเวลากินยา (${schedules.length} มื้อ)`
     }
@@ -1075,25 +1165,42 @@ export const dataService = {
     const capsulePct = totalMeds > 0 ? Math.round((capsuleCount / totalMeds) * 100) : 0
     const liquidPct = totalMeds > 0 ? Math.max(0, 100 - tabletPct - capsulePct) : 0
 
-    // 8. 7-Month Side Effect (ADR) Trend (Line Chart)
-    const sideEffectTrend = []
-    for (let i = 6; i >= 0; i--) {
-      const targetMonthDate = new Date(now.getFullYear(), now.getMonth() - i, 1)
-      const targetYear = targetMonthDate.getFullYear()
-      const targetMonth = targetMonthDate.getMonth()
-      const monthCount = sideEffects.filter(s => {
-        const d = parseDateValue(s.log_date, s.created_at)
-        return d && d.getFullYear() === targetYear && d.getMonth() === targetMonth
-      }).length
-      sideEffectTrend.push({
-        month: THAI_SHORT_MONTHS[targetMonth],
-        value: monthCount
-      })
-    }
+    // 8. 1-Month Side Effect (ADR) Trend (4 Weeks of Current Month: 1-7, 8-15, 16-23, 24-end)
+    const curYear = now.getFullYear()
+    const curMonth = now.getMonth()
+    const lastDayOfMonth = new Date(curYear, curMonth + 1, 0).getDate()
+    const monthShortName = THAI_SHORT_MONTHS[curMonth]
+    const weekRanges = [
+      { label: 'สัปดาห์ที่ 1', startDay: 1, endDay: 7 },
+      { label: 'สัปดาห์ที่ 2', startDay: 8, endDay: 15 },
+      { label: 'สัปดาห์ที่ 3', startDay: 16, endDay: 23 },
+      { label: 'สัปดาห์ที่ 4', startDay: 24, endDay: lastDayOfMonth }
+    ]
 
-    // 9. 14-Day Daily Adherence Rate (Mini Bar Chart)
+    const sideEffectTrend = weekRanges.map(w => {
+      const startDate = new Date(curYear, curMonth, w.startDay)
+      const endDate = new Date(curYear, curMonth, w.endDay)
+      const startKey = toDateKey(startDate)
+      const endKey = toDateKey(endDate)
+
+      const weekCount = sideEffects.filter(s => {
+        const d = parseDateValue(s.log_date, s.created_at)
+        if (!d) return false
+        const key = toDateKey(d)
+        return key >= startKey && key <= endKey
+      }).length
+
+      const rangeLabel = `${w.startDay} ${monthShortName} - ${w.endDay} ${monthShortName}`
+      return {
+        month: w.label,
+        rangeLabel,
+        value: weekCount
+      }
+    })
+
+    // 9. 7-Day Daily Adherence Rate (Mini Bar Chart)
     const adherenceBars = []
-    for (let i = 13; i >= 0; i--) {
+    for (let i = 6; i >= 0; i--) {
       const dayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i)
       const dayKey = toDateKey(dayDate)
       const dayRows = schedules.filter(s => {
@@ -1108,7 +1215,7 @@ export const dataService = {
       const dayRate = dayTotal > 0 ? Math.round((dayTaken / dayTotal) * 100) : 0
 
       adherenceBars.push({
-        label: THAI_SHORT_DAYS[dayDate.getDay()],
+        label: `${THAI_SHORT_DAYS[dayDate.getDay()]} ${dayDate.getDate()}`,
         dateLabel: `${dayDate.getDate()} ${THAI_SHORT_MONTHS[dayDate.getMonth()]}`,
         height: dayRate,
         rate: dayRate,
@@ -1203,6 +1310,39 @@ export const dataService = {
         liquid: liquidPct
       },
       topMedications: topMeds
+    }
+  },
+
+  // --------------------------------------------------------------------------
+  // Realtime Subscription for Dashboard Updates
+  // --------------------------------------------------------------------------
+  subscribeToDashboardRealtime(onUpdate) {
+    if (!supabase || typeof onUpdate !== 'function') return () => {}
+    let debounceTimer = null
+    const triggerUpdate = () => {
+      if (debounceTimer) clearTimeout(debounceTimer)
+      debounceTimer = setTimeout(() => {
+        onUpdate()
+      }, 250)
+    }
+
+    const channel = supabase
+      .channel(`adminmed-dashboard-realtime-${Date.now()}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'side_effects' }, triggerUpdate)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_schedules' }, triggerUpdate)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'medications' }, triggerUpdate)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'drug_food_interactions' }, triggerUpdate)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'app_users' }, triggerUpdate)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'activity_logs' }, triggerUpdate)
+      .subscribe()
+
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer)
+      try {
+        supabase.removeChannel(channel)
+      } catch {
+        // Ignore cleanup errors
+      }
     }
   }
 }

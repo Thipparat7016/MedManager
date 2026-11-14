@@ -352,23 +352,25 @@ export default function AddMedicationScreen() {
       );
       return;
     }
-    if (!frequencyCount || frequencyCount < 1) {
-      newErrors.frequency = 'กรุณาเลือกจำนวนต่อครั้ง';
-    }
-    if (!durationMode) {
-      newErrors.duration = 'กรุณาเลือกระยะเวลา';
-    } else if (durationMode === 'กำหนดเอง' && selectedMonthDates.length === 0) {
-      newErrors.duration = 'กรุณาเลือกวันที่รับประทานยาอย่างน้อย 1 วัน';
-    }
-    if (timesList.length === 0) {
-      newErrors.times = 'กรุณาเลือกเวลารับประทานอย่างน้อย 1 เวลา';
-    } else {
-      const missingMeal = timesList.some(t => {
-        const clean = t.replace(' น.', '').trim();
-        return !timeMealTimings[clean] && !mealTiming;
-      });
-      if (missingMeal) {
-        newErrors.times = 'กรุณาเลือกวิธีรับประทาน (ก่อนอาหาร / หลังอาหาร)';
+    if (createSchedule) {
+      if (!frequencyCount || frequencyCount < 1) {
+        newErrors.frequency = 'กรุณาเลือกจำนวนต่อครั้ง';
+      }
+      if (!durationMode) {
+        newErrors.duration = 'กรุณาเลือกระยะเวลา';
+      } else if (durationMode === 'กำหนดเอง' && selectedMonthDates.length === 0) {
+        newErrors.duration = 'กรุณาเลือกวันที่รับประทานยาอย่างน้อย 1 วัน';
+      }
+      if (timesList.length === 0) {
+        newErrors.times = 'กรุณาเลือกเวลารับประทานอย่างน้อย 1 เวลา';
+      } else {
+        const missingMeal = timesList.some(t => {
+          const clean = t.replace(' น.', '').trim();
+          return !timeMealTimings[clean] && !mealTiming;
+        });
+        if (missingMeal) {
+          newErrors.times = 'กรุณาเลือกวิธีรับประทาน (ก่อนอาหาร / หลังอาหาร)';
+        }
       }
     }
 
@@ -399,14 +401,16 @@ export default function AddMedicationScreen() {
     setIsSaving(true);
     try {
       const formattedStartDate = `${now.getDate()} ${THAI_MONTHS[currentMonth]} ${currentYear + 543}`;
-      let durationNote = 'ทุกวัน';
-      if (durationMode === 'กำหนดเอง') {
+      let durationNote = createSchedule ? 'ทุกวัน' : 'บันทึกเฉพาะข้อมูลยา';
+      if (durationMode === 'ทุกวัน') {
+        durationNote = 'ทุกวัน';
+      } else if (durationMode === 'กำหนดเอง') {
         durationNote = selectedMonthDates.length > 0
           ? `วันที่ ${selectedMonthDates.join(', ')} ในเดือน${THAI_MONTHS[currentMonth]}`
           : 'กำหนดวันเอง';
       }
 
-      const effectiveTimes = [...timesList];
+      const effectiveTimes = createSchedule ? [...timesList] : [...timesList];
       const cleanMedName = formatCleanDrugName(name.trim());
       const validRemaining = parsedRemaining;
       const primaryMealTiming =
@@ -421,7 +425,7 @@ export default function AddMedicationScreen() {
         category: category,
         dosage: dosage,
         unit: unit,
-        frequency: frequencyCount,
+        frequency: frequencyCount || 1,
         remaining: validRemaining,
         expiryDate: expiryDate.trim(),
         durationMode: durationMode || undefined,

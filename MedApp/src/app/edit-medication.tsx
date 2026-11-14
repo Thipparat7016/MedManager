@@ -135,7 +135,10 @@ export default function EditMedicationScreen() {
       existingMed.frequency && existingMed.frequency >= 1 ? existingMed.frequency : 1
     );
 
-    const savedDurationMode = getMedicationDurationMode(existingMed);
+    const savedDurationMode =
+      existingMed.status === 'inactive' && !existingMed.durationMode
+        ? null
+        : getMedicationDurationMode(existingMed);
     setDurationMode(savedDurationMode);
     setSelectedMonthDates(extractCustomDaysFromMedication(existingMed));
 
@@ -455,11 +458,15 @@ export default function EditMedicationScreen() {
         expiryDate: expiryDate.trim(),
         durationMode: durationMode || undefined,
         customDays: durationMode === 'กำหนดเอง' ? selectedMonthDates : undefined,
-        status: existingMed?.status || 'active',
+        status: 'active',
         times: effectiveTimes,
         mealTiming: primaryMealTiming,
         timeMealTimings: Object.keys(timeMealTimings).length > 0 ? timeMealTimings : undefined,
         startDate: formattedStartDate,
+        createdAt:
+          existingMed?.status === 'inactive' || !existingMed?.createdAt
+            ? new Date().toISOString()
+            : existingMed.createdAt,
         instructions: durationNote,
         precautions: precautions.trim() || undefined,
         imageUrl: imageUri || undefined,

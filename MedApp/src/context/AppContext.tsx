@@ -484,11 +484,16 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const confirmCheckedIntake = async (scheduleIds: string[], dateStr?: string) => {
+    const now = new Date();
+    const timeNow = `${now.getHours().toString().padStart(2, '0')}:${now
+      .getMinutes()
+      .toString()
+      .padStart(2, '0')} น.`;
     // Optimistic update ทันที
     setTodaySchedule(prev =>
       prev.map(item =>
         scheduleIds.includes(item.id)
-          ? { ...item, isTaken: true, takenAt: new Date().toISOString() }
+          ? { ...item, isTaken: true, takenAt: item.takenAt || timeNow }
           : item
       )
     );
@@ -497,10 +502,15 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const markTaken = async (scheduleId: string, isTaken: boolean = true, dateStr?: string) => {
+    const now = new Date();
+    const timeNow = `${now.getHours().toString().padStart(2, '0')}:${now
+      .getMinutes()
+      .toString()
+      .padStart(2, '0')} น.`;
     setTodaySchedule(prev =>
       prev.map(item =>
         item.id === scheduleId
-          ? { ...item, isTaken, takenAt: isTaken ? new Date().toISOString() : undefined }
+          ? { ...item, isTaken, takenAt: isTaken ? item.takenAt || timeNow : undefined }
           : item
       )
     );
