@@ -9,6 +9,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
+  AppState,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import {
@@ -91,20 +92,28 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [isSavingPhoneModal, setIsSavingPhoneModal] = useState<boolean>(false);
   const [skippedPhoneEmail, setSkippedPhoneEmail] = useState<string | null>(null);
   const dismissedNotifIdsRef = useRef<Set<string>>(new Set());
+  const isRefreshingRef = useRef<boolean>(false);
+  const pendingRefreshRef = useRef<boolean>(false);
 
   const loadAllData = useCallback(async (showGlobalLoading = false) => {
+    if (!showGlobalLoading && isRefreshingRef.current) {
+      pendingRefreshRef.current = true;
+      return;
+    }
     try {
       if (showGlobalLoading) {
         setIsLoading(true);
+      } else {
+        isRefreshingRef.current = true;
       }
       // 1. Immediately restore user profile & auth status
       const u = await medService.getUserProfile().catch(() => null);
       setUser(u);
       setIsAuthenticated(Boolean(u && u.email));
 
-      // 2. Concurrently load application datasets
-      const [userMeds, masterMeds, sched, apts, se, inter] = await Promise.all([
-        medService.getMedications().catch(() => []),
+      // 2. Sync user medications first so remote medication & schedule overrides are ready, then load remaining datasets
+      const userMeds = await medService.getMedications().catch(() => []);
+      const [masterMeds, sched, apts, se, inter] = await Promise.all([
         medService.getMasterMedications().catch(() => []),
         medService.getTodaySchedule().catch(() => []),
         medService.getAppointments().catch(() => []),
@@ -332,6 +341,14 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     } finally {
       if (showGlobalLoading) {
         setIsLoading(false);
+      } else {
+        isRefreshingRef.current = false;
+        if (pendingRefreshRef.current) {
+          pendingRefreshRef.current = false;
+          setTimeout(() => {
+            loadAllData(false);
+          }, 50);
+        }
       }
     }
   }, []);
@@ -339,15 +356,28 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     loadAllData(true);
 
-    // ตรวจสอบและรีเฟรชข้อมูลทุก 30 วินาที เพื่อปลดล็อครายการที่หมดเวลา Snooze อัตโนมัติ
+    // ซิงก์ข้อมูลระหว่างโทรศัพท์กับ Notebook แบบ Real-time (อัปเดตพื้นหลังทุก 4 วินาที และเมื่อกลับมาเปิดหน้าจอ)
     const interval = setInterval(() => {
       loadAllData(false);
-    }, 30000);
+    }, 4000);
 
-    // Supabase Realtime Subscription for Live Sync with AdminMed
+    const appStateSubscription = AppState.addEventListener('change', nextState => {
+      if (nextState === 'active') {
+        loadAllData(false);
+      }
+    });
+
+    const handleWindowFocus = () => {
+      loadAllData(false);
+    };
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      window.addEventListener('focus', handleWindowFocus);
+    }
+
+    // Supabase Realtime Subscription for Live Sync across Devices & AdminMed
     if (supabase) {
       const channel = supabase
-        .channel('realtime:app-sync')
+        .channel(`realtime:app-sync-${Date.now()}`)
         .on(
           'postgres_changes',
           { event: '*', schema: 'public', table: 'medications' },
@@ -379,18 +409,47 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
             loadAllData(false);
           }
         )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'appointments' },
+          () => {
+            loadAllData(false);
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'activity_logs' },
+          () => {
+            loadAllData(false);
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'side_effects' },
+          () => {
+            loadAllData(false);
+          }
+        )
         .subscribe();
 
       return () => {
         clearInterval(interval);
+        appStateSubscription.remove();
+        if (Platform.OS === 'web' && typeof window !== 'undefined') {
+          window.removeEventListener('focus', handleWindowFocus);
+        }
         supabase?.removeChannel(channel);
       };
     }
 
     return () => {
       clearInterval(interval);
+      appStateSubscription.remove();
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        window.removeEventListener('focus', handleWindowFocus);
+      }
     };
-  }, []);
+  }, [loadAllData]);
 
   const login = async (email: string, pass: string): Promise<{ success: boolean; error?: string }> => {
     try {

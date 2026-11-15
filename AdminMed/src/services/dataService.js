@@ -910,12 +910,13 @@ export const dataService = {
   // Dashboard Stats (Pharmacist KPIs calculated purely from real Supabase rows)
   // --------------------------------------------------------------------------
   async getDashboardStats() {
-    const [medications, interactions, users, sideEffects, schedules] = await Promise.all([
+    const [medications, interactions, users, sideEffects, schedules, activityLogs] = await Promise.all([
       this.getMedications(),
       this.getInteractions(),
       this.getAppUsers(),
       this.getSideEffects(),
-      this.getUserSchedules()
+      this.getUserSchedules(),
+      this.getActivityLogs(200)
     ])
 
     const THAI_MONTH_MAP = {
@@ -1028,6 +1029,21 @@ export const dataService = {
       return parsed !== null ? parsed : 0
     }
 
+    const getMealWindowCategory = (minutes, mealTiming) => {
+      if (mealTiming === 'ก่อนนอน') return 'ก่อนนอน'
+      if (minutes >= 300 && minutes <= 659) return 'เช้า' // 05:00 - 10:59 น.
+      if (minutes >= 660 && minutes <= 899) return 'กลางวัน' // 11:00 - 14:59 น.
+      if (minutes >= 900 && minutes <= 1199) return 'เย็น' // 15:00 - 19:59 น.
+      return 'ก่อนนอน' // 20:00 - 04:59 น.
+    }
+
+    const getMealWindowStartMinutes = (meal) => {
+      if (meal === 'เช้า') return 300 // 05:00 น.
+      if (meal === 'กลางวัน') return 660 // 11:00 น.
+      if (meal === 'เย็น') return 900 // 15:00 น.
+      return 1200 // 20:00 น.
+    }
+
     const isScheduleTakenOnTime = (item) => {
       const isTaken = Boolean(item?.is_taken ?? item?.isTaken)
       const takenAt = item?.taken_at ?? item?.takenAt
@@ -1039,33 +1055,43 @@ export const dataService = {
       const origMinutes = parseScheduleTimeMinutes(item.original_time || item.originalTime || item.time)
       const postponedMinutes = parseScheduleTimeMinutes(item.postponed_time || item.postponedTime)
       const currentTargetMinutes = parseScheduleTimeMinutes(item.time)
+      const mealTiming = item.meal_timing || item.mealTiming
 
-      // กรณีที่ 1: กดก่อนเวลาไม่เกิน 30 นาที จนถึงตรงเวลาที่ตั้งไว้เป๊ะ (เช่น ตั้งไว้ 08:00 กดในช่วง 07:30 – 08:00)
-      if (!(item.postponed_time || item.postponedTime) && origMinutes !== null) {
+      // กรณีที่ 1: คิดคะแนน "ตรงเวลา" เป็นมื้อตามช่วงเวลาที่แสดงบนการ์ด + ก่อนเริ่มช่วงมื้อไม่เกิน 30 นาที
+      if (origMinutes !== null) {
+        const scheduledMeal = getMealWindowCategory(origMinutes, mealTiming)
+        const takenMeal = getMealWindowCategory(takenMinutes)
+        if (scheduledMeal === takenMeal) {
+          return true
+        }
+
+        const mealStartMinutes = getMealWindowStartMinutes(scheduledMeal)
+        const minutesBeforeMealStart = (((mealStartMinutes - takenMinutes) % 1440) + 1440) % 1440
+        if (minutesBeforeMealStart >= 0 && minutesBeforeMealStart <= 30) {
+          return true
+        }
+
         const minutesBeforeScheduled = (((origMinutes - takenMinutes) % 1440) + 1440) % 1440
         if (minutesBeforeScheduled >= 0 && minutesBeforeScheduled <= 30) {
           return true
         }
       }
 
-      // กรณีที่ 2: กดข้าม/เลื่อน 30 นาที แล้วเมื่อผ่านไปตามเวลาที่ข้าม (30 นาที) กดทานตรงตามเวลาที่เลื่อนไป
-      if (postponedMinutes !== null && takenMinutes === postponedMinutes) {
-        return true
-      }
-      if (
-        (item.postponed_time || item.postponedTime) &&
-        origMinutes !== null &&
-        takenMinutes === (((origMinutes + 30) % 1440) + 1440) % 1440
-      ) {
-        return true
-      }
-      if (
-        currentTargetMinutes !== null &&
-        origMinutes !== null &&
-        currentTargetMinutes !== origMinutes &&
-        takenMinutes === currentTargetMinutes
-      ) {
-        return true
+      // กรณีที่ 2: กดปุ่ม "ข้าม 30 นาที" (แม้เวลาที่เลื่อนจะขยับพ้นขอบเขตมื้อไปเล็กน้อย) แล้วกดทานตามเวลาที่เลื่อน
+      const effectivePostponed =
+        postponedMinutes !== null
+          ? postponedMinutes
+          : (item.postponed_time || item.postponedTime) && origMinutes !== null
+          ? (((origMinutes + 30) % 1440) + 1440) % 1440
+          : currentTargetMinutes !== null && origMinutes !== null && currentTargetMinutes !== origMinutes
+          ? currentTargetMinutes
+          : null
+
+      if (effectivePostponed !== null) {
+        const diffBeforePostponed = (((effectivePostponed - takenMinutes) % 1440) + 1440) % 1440
+        if (diffBeforePostponed >= 0 && diffBeforePostponed <= 30) {
+          return true
+        }
       }
 
       return false
@@ -1116,8 +1142,114 @@ export const dataService = {
         : `สะสมเดือนนี้ ${thisMonthSideEffectsCount} รายการ`
     }
 
-    // 5. On-Time Medication Rate KPI (from user_schedules using MedApp's isScheduleTakenOnTime)
-    const dueSchedules = schedules.filter(s => {
+    // Reconcile user_schedules with active app_users, creation time, and MedApp's MED_SYNC state
+    // so meals added after their scheduled time has already passed today (moved to next day in MedApp) are not counted on today
+    const normalizeMedKey = (str) =>
+      (str || '')
+        .toLowerCase()
+        .replace(/[()（）[\]{}.,/#!$%^&*;:{}=\-_`~?+]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+    const toStorageKey = (emailOrId) =>
+      (emailOrId || '').trim().toLowerCase().replace(/[^a-z0-9@._-]/gi, '_')
+
+    const validUserIdSet = new Set(users.map(u => String(u.id)))
+    const userSyncByUserId = new Map()
+    const syncLogs = (activityLogs || []).filter(l => l.activity === 'เข้าสู่ระบบ:MED_SYNC' && l.details)
+
+    users.forEach(u => {
+      const uid = String(u.id)
+      const uKey = toStorageKey(u.email)
+      let bestPayload = null
+      for (const row of syncLogs) {
+        if (row.user_name !== uKey && row.user_name !== uid) continue
+        try {
+          const parsed = JSON.parse(row.details)
+          if (parsed && Array.isArray(parsed.medications)) {
+            if (!bestPayload || (Number(parsed.updatedAt) || 0) > (Number(bestPayload.updatedAt) || 0)) {
+              bestPayload = parsed
+            }
+          }
+        } catch {
+          // Ignore malformed sync payload
+        }
+      }
+      if (bestPayload) {
+        userSyncByUserId.set(uid, bestPayload)
+      }
+    })
+
+    const validSchedules = schedules.filter(s => {
+      if (users.length > 0) {
+        if (!s.user_id || !validUserIdSet.has(String(s.user_id))) return false
+      }
+      if (s.is_taken || s.is_skipped) return true
+
+      const schedDate = parseDateValue(s.date, s.created_at)
+      const schedKey = schedDate ? toDateKey(schedDate) : null
+      const schedMinutes = parseTimeMinutes(s.time)
+
+      // 1. If schedule row was created on the same day AFTER its scheduled meal time had already passed, it starts next day
+      if (s.created_at && schedKey) {
+        const createdDt = new Date(s.created_at)
+        if (!isNaN(createdDt.getTime())) {
+          const createdKey = toDateKey(createdDt)
+          if (schedKey < createdKey) return false
+          if (schedKey === createdKey) {
+            const createdMinutes = createdDt.getHours() * 60 + createdDt.getMinutes()
+            if (schedMinutes < createdMinutes) return false
+          }
+        }
+      }
+
+      // 2. Reconcile against MedApp's MED_SYNC state (scheduleOverrides & medication createdAt) if available
+      const syncPayload = s.user_id ? userSyncByUserId.get(String(s.user_id)) : null
+      if (syncPayload && schedKey) {
+        const normName = normalizeMedKey(s.medication_name)
+        const delMap = syncPayload.deletedAtMap || {}
+        const deletedNames = Array.isArray(syncPayload.deletedNames) ? syncPayload.deletedNames : []
+        if (normName && (delMap[normName] || deletedNames.some(n => normalizeMedKey(n) === normName))) {
+          return false
+        }
+
+        const matchedMed = (syncPayload.medications || []).find(
+          m => (s.medication_id && m.id === s.medication_id) || normalizeMedKey(m.name) === normName
+        )
+        if (matchedMed) {
+          if (matchedMed.status && matchedMed.status !== 'active') return false
+          if (matchedMed.createdAt) {
+            const medCreatedDt = new Date(matchedMed.createdAt)
+            if (!isNaN(medCreatedDt.getTime())) {
+              const medCreatedKey = toDateKey(medCreatedDt)
+              if (schedKey < medCreatedKey) return false
+              if (schedKey === medCreatedKey) {
+                const medCreatedMinutes = medCreatedDt.getHours() * 60 + medCreatedDt.getMinutes()
+                if (schedMinutes < medCreatedMinutes) return false
+              }
+            }
+          }
+        }
+
+        const dayOverride = syncPayload.scheduleOverrides && syncPayload.scheduleOverrides[schedKey]
+        if (Array.isArray(dayOverride)) {
+          const inOverride = dayOverride.some(item => {
+            const itemNameNorm = normalizeMedKey(item.medicationName)
+            const itemMinutes = parseTimeMinutes(item.originalTime || item.time)
+            const postponedMinutes = item.postponedTime ? parseTimeMinutes(item.postponedTime) : null
+            return (
+              itemNameNorm === normName &&
+              (itemMinutes === schedMinutes || postponedMinutes === schedMinutes)
+            )
+          })
+          if (!inOverride) return false
+        }
+      }
+
+      return true
+    })
+
+    // 5. On-Time Medication Rate KPI (from validSchedules using MedApp's isScheduleTakenOnTime)
+    const dueSchedules = validSchedules.filter(s => {
       if (s.is_taken || s.is_skipped) return true
       const d = parseDateValue(s.date, s.created_at)
       if (!d) return true
@@ -1139,8 +1271,8 @@ export const dataService = {
       } else {
         adherenceSub = `ตรงเวลา ${onTimeCount} จาก ${dueSchedules.length} มื้อ`
       }
-    } else if (schedules.length > 0) {
-      adherenceSub = `รอถึงเวลากินยา (${schedules.length} มื้อ)`
+    } else if (validSchedules.length > 0) {
+      adherenceSub = `รอถึงเวลากินยา (${validSchedules.length} มื้อ)`
     }
 
     // 6. Patients in System KPI
@@ -1203,7 +1335,7 @@ export const dataService = {
     for (let i = 6; i >= 0; i--) {
       const dayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i)
       const dayKey = toDateKey(dayDate)
-      const dayRows = schedules.filter(s => {
+      const dayRows = validSchedules.filter(s => {
         const d = parseDateValue(s.date, s.created_at)
         return d && toDateKey(d) === dayKey
       })
@@ -1226,7 +1358,7 @@ export const dataService = {
       })
     }
 
-    // 10. Top Used Medications (from real user_schedules, falling back to catalog list with 0)
+    // 10. Top Used Medications (from real validSchedules, falling back to catalog list with 0)
     const normalizeName = (str) => (str || '').trim().replace(/\s+/g, ' ').toLowerCase()
     const usageByMedKey = new Map()
 
@@ -1240,7 +1372,7 @@ export const dataService = {
       })
     })
 
-    schedules.forEach(s => {
+    validSchedules.forEach(s => {
       if (s.is_skipped) return
       let matchedEntry = null
       if (s.medication_id && usageByMedKey.has(String(s.medication_id))) {

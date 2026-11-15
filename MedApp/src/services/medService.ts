@@ -362,6 +362,24 @@ export function isMedicationScheduledForDate(med: Medication, targetDate: Date):
         return false;
       }
     }
+
+    const customCreatedDt = getMedicationCreatedDateTime(med);
+    if (customCreatedDt) {
+      const createdDateStr = getLocalDateString(customCreatedDt);
+      if (targetDateStr === createdDateStr) {
+        const createdMinutes = customCreatedDt.getHours() * 60 + customCreatedDt.getMinutes();
+        const times = med.times && med.times.length > 0 ? med.times : ['08:00'];
+        const hasAnyEligibleTime = times.some(rawTime => {
+          const normTime = rawTime.replace(' น.', '').trim();
+          const [h, m] = normTime.split(':').map(val => parseInt(val, 10));
+          const timeMinutes = (isNaN(h) ? 0 : h) * 60 + (isNaN(m) ? 0 : m);
+          return timeMinutes >= createdMinutes;
+        });
+        if (!hasAnyEligibleTime) {
+          return false;
+        }
+      }
+    }
     return true;
   }
 
@@ -420,9 +438,9 @@ export function buildScheduleForDateSync(
     let isCreationDay = false;
     let createdMinutes = 0;
 
-    if (createdDt && mode !== 'กำหนดเอง') {
+    if (createdDt) {
       const createdDateStr = getLocalDateString(createdDt);
-      if (targetDateStr < createdDateStr) {
+      if (mode !== 'กำหนดเอง' && targetDateStr < createdDateStr) {
         continue;
       }
       if (targetDateStr === createdDateStr) {
@@ -521,6 +539,30 @@ function parseScheduleTimeMinutes(raw?: string): number | null {
   return h * 60 + m;
 }
 
+function getMealWindowCategory(
+  minutes: number,
+  mealTiming?: string
+): 'เช้า' | 'กลางวัน' | 'เย็น' | 'ก่อนนอน' {
+  if (mealTiming === 'ก่อนนอน') return 'ก่อนนอน';
+  if (minutes >= 300 && minutes <= 659) return 'เช้า'; // 05:00 - 10:59 น.
+  if (minutes >= 660 && minutes <= 899) return 'กลางวัน'; // 11:00 - 14:59 น.
+  if (minutes >= 900 && minutes <= 1199) return 'เย็น'; // 15:00 - 19:59 น.
+  return 'ก่อนนอน'; // 20:00 - 04:59 น.
+}
+
+function getMealWindowStartMinutes(meal: 'เช้า' | 'กลางวัน' | 'เย็น' | 'ก่อนนอน'): number {
+  switch (meal) {
+    case 'เช้า':
+      return 300; // 05:00 น.
+    case 'กลางวัน':
+      return 660; // 11:00 น.
+    case 'เย็น':
+      return 900; // 15:00 น.
+    case 'ก่อนนอน':
+      return 1200; // 20:00 น.
+  }
+}
+
 export function isScheduleTakenOnTime(item: ScheduleItem): boolean {
   if (!item || !item.isTaken || !item.takenAt) return false;
 
@@ -531,32 +573,47 @@ export function isScheduleTakenOnTime(item: ScheduleItem): boolean {
   const postponedMinutes = parseScheduleTimeMinutes(item.postponedTime);
   const currentTargetMinutes = parseScheduleTimeMinutes(item.time);
 
-  // กรณีที่ 1: กดก่อนเวลาไม่เกิน 30 นาที จนถึงตรงเวลาที่ตั้งไว้เป๊ะ (เช่น ตั้งไว้ 08:00 กดในช่วง 07:30 – 08:00)
-  if (!item.postponedTime && origMinutes !== null) {
+  // กรณีที่ 1: คิดคะแนน "ตรงเวลา" เป็นมื้อตามช่วงเวลาที่แสดงบนการ์ด
+  // - มื้อเช้า (05:00 - 10:59 น.) + ก่อนเริ่มมื้อไม่เกิน 30 นาที (04:30 - 04:59 น.)
+  // - มื้อกลางวัน (11:00 - 14:59 น.) + ก่อนเริ่มมื้อไม่เกิน 30 นาที (10:30 - 10:59 น.)
+  // - มื้อเย็น (15:00 - 19:59 น.) + ก่อนเริ่มมื้อไม่เกิน 30 นาที (14:30 - 14:59 น.)
+  // - ก่อนนอน (20:00 - 04:59 น.) + ก่อนเริ่มมื้อไม่เกิน 30 นาที (19:30 - 19:59 น.)
+  if (origMinutes !== null) {
+    const scheduledMeal = getMealWindowCategory(origMinutes, item.mealTiming);
+    const takenMeal = getMealWindowCategory(takenMinutes);
+    if (scheduledMeal === takenMeal) {
+      return true;
+    }
+
+    // เช็คกรณีทานก่อนเริ่มช่วงมื้อไม่เกิน 30 นาที (เช่น มื้อก่อนนอนเริ่ม 20:00 น. กดทานช่วง 19:30 - 19:59 น.)
+    const mealStartMinutes = getMealWindowStartMinutes(scheduledMeal);
+    const minutesBeforeMealStart = (((mealStartMinutes - takenMinutes) % 1440) + 1440) % 1440;
+    if (minutesBeforeMealStart >= 0 && minutesBeforeMealStart <= 30) {
+      return true;
+    }
+
+    // เช็คกรณีกดก่อนเวลาที่ตั้งไว้ไม่เกิน 30 นาที
     const minutesBeforeScheduled = (((origMinutes - takenMinutes) % 1440) + 1440) % 1440;
     if (minutesBeforeScheduled >= 0 && minutesBeforeScheduled <= 30) {
       return true;
     }
   }
 
-  // กรณีที่ 2: กดข้าม/เลื่อน 30 นาที แล้วเมื่อผ่านไปตามเวลาที่ข้าม (30 นาที) กดทานตรงตามเวลาที่เลื่อนไป
-  if (postponedMinutes !== null && takenMinutes === postponedMinutes) {
-    return true;
-  }
-  if (
-    item.postponedTime &&
-    origMinutes !== null &&
-    takenMinutes === (((origMinutes + 30) % 1440) + 1440) % 1440
-  ) {
-    return true;
-  }
-  if (
-    currentTargetMinutes !== null &&
-    origMinutes !== null &&
-    currentTargetMinutes !== origMinutes &&
-    takenMinutes === currentTargetMinutes
-  ) {
-    return true;
+  // กรณีที่ 2: กดปุ่ม "ข้าม 30 นาที" (แม้เวลาที่เลื่อนจะขยับพ้นขอบเขตมื้อไปเล็กน้อย) แล้วกดทานตามเวลาที่เลื่อน
+  const effectivePostponed =
+    postponedMinutes !== null
+      ? postponedMinutes
+      : item.postponedTime && origMinutes !== null
+      ? (((origMinutes + 30) % 1440) + 1440) % 1440
+      : currentTargetMinutes !== null && origMinutes !== null && currentTargetMinutes !== origMinutes
+      ? currentTargetMinutes
+      : null;
+
+  if (effectivePostponed !== null) {
+    const diffBeforePostponed = (((effectivePostponed - takenMinutes) % 1440) + 1440) % 1440;
+    if (diffBeforePostponed >= 0 && diffBeforePostponed <= 30) {
+      return true;
+    }
   }
 
   return false;
@@ -602,6 +659,7 @@ export function getMedicationStockStatus(med: Medication): {
 }
 
 let toggleCheckedQueue: Promise<any> = Promise.resolve();
+let activeMedicationMutations = 0;
 
 export function toUserStorageKey(emailOrId?: string | null): string | null {
   if (!emailOrId) return null;
@@ -1320,8 +1378,268 @@ export const medService = {
   },
 
   // --------------------------------------------------------------------------
-  // 2. User's "My Medications" (ยาของฉัน - แยกตามบัญชีผู้ใช้แต่ละคน และซิงก์กับฐานข้อมูลของผู้ใช้นั้น)
+  // 2. User's "My Medications" (ยาของฉัน - แยกตามบัญชีผู้ใช้แต่ละคน และซิงก์กับฐานข้อมูลของผู้ใช้นั้นแบบ Real-time)
   // --------------------------------------------------------------------------
+  async fetchRemoteUserSync(
+    userUUID: string | null,
+    userKey?: string | null
+  ): Promise<{
+    rowId?: string;
+    logRowId?: string;
+    payload: {
+      version: number;
+      updatedAt: number;
+      medications: Medication[];
+      deletedNames: string[];
+      deletedAtMap?: Record<string, number>;
+      snoozeMap?: Record<string, number>;
+      scheduleOverrides?: Record<string, ScheduleItem[]>;
+    };
+  } | null> {
+    if (!supabase || (!userUUID && !userKey)) return null;
+    try {
+      const userNameKeys = Array.from(new Set([userKey, userUUID].filter(Boolean) as string[]));
+      const [aptRes, logRes] = await Promise.all([
+        userUUID
+          ? supabase
+              .from('appointments')
+              .select('id, details, created_at')
+              .eq('user_id', userUUID)
+              .eq('doctor_name', '__MED_LIST_SYNC__')
+              .order('created_at', { ascending: false })
+              .then(
+                res => res,
+                () => ({ data: null, error: true })
+              )
+          : Promise.resolve({ data: null, error: true }),
+        userNameKeys.length > 0
+          ? supabase
+              .from('activity_logs')
+              .select('id, details, created_at')
+              .in('user_name', userNameKeys)
+              .eq('activity', 'เข้าสู่ระบบ:MED_SYNC')
+              .order('created_at', { ascending: false })
+              .then(
+                res => res,
+                () => ({ data: null, error: true })
+              )
+          : Promise.resolve({ data: null, error: true }),
+      ]);
+
+      let bestAptRow: any = null;
+      let bestLogRow: any = null;
+      let bestPayload: any = null;
+
+      const aptData = !aptRes.error && Array.isArray(aptRes.data) ? aptRes.data : [];
+      for (const row of aptData) {
+        if (!row.details) continue;
+        try {
+          const parsed = JSON.parse(row.details);
+          if (parsed && Array.isArray(parsed.medications)) {
+            if (!bestAptRow) bestAptRow = row;
+            if (!bestPayload || (parsed.updatedAt || 0) > (bestPayload.updatedAt || 0)) {
+              bestPayload = parsed;
+            }
+          }
+        } catch {}
+      }
+
+      const logData = !logRes.error && Array.isArray(logRes.data) ? logRes.data : [];
+      for (const row of logData) {
+        if (!row.details) continue;
+        try {
+          const parsed = JSON.parse(row.details);
+          if (parsed && Array.isArray(parsed.medications)) {
+            if (!bestLogRow) bestLogRow = row;
+            if (!bestPayload || (parsed.updatedAt || 0) > (bestPayload.updatedAt || 0)) {
+              bestPayload = parsed;
+            }
+          }
+        } catch {}
+      }
+
+      // Clean up duplicate sync rows if more than one was created concurrently
+      if (userUUID && aptData.length > 1 && bestAptRow) {
+        const extraIds = aptData.filter((r: any) => r.id !== bestAptRow.id).map((r: any) => r.id);
+        if (extraIds.length > 0) {
+          try {
+            await supabase
+              .from('appointments')
+              .delete()
+              .in('id', extraIds)
+              .eq('user_id', userUUID);
+          } catch {}
+        }
+      }
+      if (logData.length > 1 && bestLogRow) {
+        const extraIds = logData.filter((r: any) => r.id !== bestLogRow.id).map((r: any) => r.id);
+        if (extraIds.length > 0) {
+          try {
+            await supabase
+              .from('activity_logs')
+              .delete()
+              .in('id', extraIds);
+          } catch {}
+        }
+      }
+
+      if (!bestPayload) return null;
+
+      return {
+        rowId: bestAptRow?.id,
+        logRowId: bestLogRow?.id,
+        payload: {
+          version: bestPayload.version || 1,
+          updatedAt: Number(bestPayload.updatedAt || 0),
+          medications: Array.isArray(bestPayload.medications) ? bestPayload.medications : [],
+          deletedNames: Array.isArray(bestPayload.deletedNames) ? bestPayload.deletedNames : [],
+          deletedAtMap:
+            bestPayload.deletedAtMap && typeof bestPayload.deletedAtMap === 'object'
+              ? bestPayload.deletedAtMap
+              : undefined,
+          snoozeMap:
+            bestPayload.snoozeMap && typeof bestPayload.snoozeMap === 'object'
+              ? bestPayload.snoozeMap
+              : undefined,
+          scheduleOverrides:
+            bestPayload.scheduleOverrides && typeof bestPayload.scheduleOverrides === 'object'
+              ? bestPayload.scheduleOverrides
+              : undefined,
+        },
+      };
+    } catch (e) {
+      console.warn('Error fetching remote user sync:', e);
+      return null;
+    }
+  },
+
+  async pushRemoteUserSync(
+    userUUID: string | null,
+    userKey: string | null,
+    partial?: {
+      medications?: Medication[];
+      deletedNames?: string[];
+      deletedAtMap?: Record<string, number>;
+      snoozeMap?: Record<string, number>;
+      scheduleOverrides?: Record<string, ScheduleItem[]>;
+    }
+  ): Promise<void> {
+    if (!supabase || !userKey) return;
+    try {
+      const listKey = `med_user_medications_list_${userKey}`;
+      const deletedKey = `med_deleted_med_names_${userKey}`;
+      const deletedAtKey = `med_deleted_at_map_${userKey}`;
+      const snoozeKey = `med_snooze_until_map_${userKey}`;
+      const today = getLocalDateString();
+      const todayScheduleKey = `med_schedule_${userKey}_${today}`;
+
+      let medications = partial?.medications;
+      if (!medications) {
+        const rawMeds = await safeStorage.getItem(listKey);
+        medications = rawMeds ? JSON.parse(rawMeds) : [];
+      }
+
+      let deletedNames = partial?.deletedNames;
+      if (!deletedNames) {
+        const rawDel = await safeStorage.getItem(deletedKey);
+        deletedNames = rawDel ? JSON.parse(rawDel) : [];
+      }
+
+      let deletedAtMap = partial?.deletedAtMap;
+      if (!deletedAtMap) {
+        const rawDelMap = await safeStorage.getItem(deletedAtKey);
+        deletedAtMap = rawDelMap ? JSON.parse(rawDelMap) : {};
+      }
+
+      let snoozeMap = partial?.snoozeMap;
+      if (!snoozeMap) {
+        const rawSnooze = await safeStorage.getItem(snoozeKey);
+        snoozeMap = rawSnooze ? JSON.parse(rawSnooze) : {};
+      }
+
+      let scheduleOverrides = partial?.scheduleOverrides;
+      if (!scheduleOverrides) {
+        const rawTodaySched = await safeStorage.getItem(todayScheduleKey);
+        scheduleOverrides = {
+          [today]: rawTodaySched ? JSON.parse(rawTodaySched) : [],
+        };
+      }
+
+      const nowTs = Date.now();
+      const payload = {
+        version: 2,
+        updatedAt: nowTs,
+        medications: medications || [],
+        deletedNames: deletedNames || [],
+        deletedAtMap: deletedAtMap || {},
+        snoozeMap: snoozeMap || {},
+        scheduleOverrides: scheduleOverrides || {},
+      };
+
+      await safeStorage.setItem(`med_last_sync_ts_${userKey}`, String(nowTs));
+      await safeStorage.setItem(`med_cloud_sync_migrated_v1_${userKey}`, 'true');
+
+      const existing = await this.fetchRemoteUserSync(userUUID, userKey);
+      const serialized = JSON.stringify(payload);
+      const timeMarker = String(nowTs).slice(-10);
+
+      // Sync to activity_logs keyed by userKey (email) so all devices with the same email sync
+      try {
+        if (existing?.logRowId) {
+          await supabase
+            .from('activity_logs')
+            .update({
+              time: timeMarker,
+              user_name: userKey,
+              details: serialized,
+            })
+            .eq('id', existing.logRowId);
+        } else {
+          await supabase.from('activity_logs').insert([
+            {
+              time: timeMarker,
+              user_name: userKey,
+              activity: 'เข้าสู่ระบบ:MED_SYNC',
+              details: serialized,
+            },
+          ]);
+        }
+      } catch {}
+
+      // Also sync to appointments if userUUID is available
+      if (userUUID) {
+        try {
+          if (existing?.rowId) {
+            await supabase
+              .from('appointments')
+              .update({
+                details: serialized,
+                appointment_time: timeMarker,
+                status: '__SYNC__',
+              })
+              .eq('id', existing.rowId)
+              .eq('user_id', userUUID);
+          } else {
+            await supabase.from('appointments').insert([
+              {
+                user_id: userUUID,
+                doctor_name: '__MED_LIST_SYNC__',
+                department: '__SYNC__',
+                hospital: '__SYNC__',
+                appointment_date: '1970-01-01',
+                appointment_time: timeMarker,
+                status: '__SYNC__',
+                details: serialized,
+              },
+            ]);
+          }
+        } catch {}
+      }
+    } catch (e) {
+      console.warn('Error pushing remote user sync:', e);
+    }
+  },
+
   async getMedications(): Promise<Medication[]> {
     await this.purgeMockCacheIfNeeded();
     try {
@@ -1331,6 +1649,8 @@ export const medService = {
       }
       const listKey = `med_user_medications_list_${userKey}`;
       const deletedKey = `med_deleted_med_names_${userKey}`;
+      const deletedAtKey = `med_deleted_at_map_${userKey}`;
+      const snoozeKey = `med_snooze_until_map_${userKey}`;
 
       let deletedNames: string[] = [];
       try {
@@ -1342,7 +1662,23 @@ export const medService = {
           }
         }
       } catch {}
-      const deletedSet = new Set(deletedNames.map(n => normalizeMedName(n)).filter(Boolean));
+
+      let deletedAtMap: Record<string, number> = {};
+      try {
+        const delMapRaw = await safeStorage.getItem(deletedAtKey);
+        if (delMapRaw) {
+          const parsedMap = JSON.parse(delMapRaw);
+          if (parsedMap && typeof parsedMap === 'object') {
+            deletedAtMap = parsedMap;
+          }
+        }
+      } catch {}
+      for (const n of deletedNames) {
+        const norm = normalizeMedName(n);
+        if (norm && !deletedAtMap[norm]) {
+          deletedAtMap[norm] = 1;
+        }
+      }
 
       let localMeds: Medication[] = [];
       const stored = await safeStorage.getItem(listKey);
@@ -1357,30 +1693,53 @@ export const medService = {
         } catch {}
       }
 
-      // Deduplicate localMeds and filter out explicitly deleted medications
-      const seen = new Map<string, Medication>();
-      let removedOrRevertedLocal = false;
-      for (const item of localMeds) {
-        const key = normalizeMedName(item.name);
-        if (!key) continue;
-        if (deletedSet.has(key)) {
-          removedOrRevertedLocal = true;
-          continue;
+      const getMedTimestamp = (m: Medication): number => {
+        const anyM = m as any;
+        if (typeof anyM.updatedAt === 'number' && anyM.updatedAt > 0) {
+          return anyM.updatedAt;
         }
-        let cleanedItem = item;
-        // Revert any medication that was previously converted with synthetic expiryDate '31/12/2570' back to 'ทุกวัน'
+        if (m.createdAt) {
+          const parsed = new Date(m.createdAt).getTime();
+          if (!isNaN(parsed) && parsed > 0) return parsed;
+        }
+        if (m.id && m.id.startsWith('med-')) {
+          const ts = parseInt(m.id.replace('med-', ''), 10);
+          if (!isNaN(ts) && ts > 1000000000) return ts;
+        }
+        return 2;
+      };
+
+      const cleanSingleMed = (item: Medication): Medication => {
         if (item.expiryDate === '31/12/2570') {
-          cleanedItem = {
+          return {
             ...item,
             expiryDate: '',
             durationMode: 'ทุกวัน',
             customDays: undefined,
             instructions: 'ทุกวัน',
           };
-          removedOrRevertedLocal = true;
         }
-        if (!seen.has(key)) {
-          seen.set(key, cleanedItem);
+        return item;
+      };
+
+      // Deduplicate localMeds and filter out deleted items where deletedAt >= medTimestamp
+      const seen = new Map<string, Medication>();
+      let removedOrRevertedLocal = false;
+      for (const rawItem of localMeds) {
+        if (!rawItem || !rawItem.name) continue;
+        const key = normalizeMedName(rawItem.name);
+        if (!key) continue;
+        const item = cleanSingleMed(rawItem);
+        if (item !== rawItem) removedOrRevertedLocal = true;
+        const medTs = getMedTimestamp(item);
+        const delTs = deletedAtMap[key] || 0;
+        if (delTs >= medTs) {
+          removedOrRevertedLocal = true;
+          continue;
+        }
+        const existing = seen.get(key);
+        if (!existing || medTs > getMedTimestamp(existing)) {
+          seen.set(key, item);
         }
       }
       localMeds = Array.from(seen.values());
@@ -1388,45 +1747,207 @@ export const medService = {
         await safeStorage.setItem(listKey, JSON.stringify(localMeds));
       }
 
-      // Check if any local medication is missing startDate
-      const hasLegacyRestoredMeds = localMeds.some(m => !m.startDate);
+      // If a saveMedication / deleteMedication is currently in progress on this device,
+      // return localMeds immediately so in-flight mutations are never overwritten
+      if (activeMedicationMutations > 0) {
+        return localMeds;
+      }
 
-      // Sync / restore user's medications from Supabase user_schedules ONLY on initial hydration (!hadStoredList)
-      // or to fill in missing startDate on restored entries
-      if (supabase && userUUID && (!hadStoredList || hasLegacyRestoredMeds)) {
+      if (supabase && userKey) {
         try {
-          const { data: schedRows, error: schedErr } = await supabase
-            .from('user_schedules')
-            .select('*')
-            .eq('user_id', userUUID)
-            .order('created_at', { ascending: true });
+          const remoteSync = await this.fetchRemoteUserSync(userUUID, userKey);
 
-          let masterListCache: Medication[] | null = null;
-          const getMasterCached = async () => {
-            if (!masterListCache) {
-              masterListCache = await this.getMasterMedications().catch(() => []);
-            }
-            return masterListCache;
-          };
-
-          let updatedFromRemote = false;
-
-          if (!schedErr && schedRows && schedRows.length > 0) {
-            const grouped = new Map<string, any[]>();
-            for (const row of schedRows) {
-              const normName = normalizeMedName(row.medication_name);
-              if (!normName || deletedSet.has(normName)) continue;
-              if (!grouped.has(normName)) {
-                grouped.set(normName, []);
+          if (remoteSync) {
+            const remotePayload = remoteSync.payload;
+            const remoteDelMap: Record<string, number> = {
+              ...(remotePayload.deletedAtMap || {}),
+            };
+            for (const n of remotePayload.deletedNames || []) {
+              const norm = normalizeMedName(n);
+              if (norm && !remoteDelMap[norm]) {
+                remoteDelMap[norm] = 1;
               }
-              grouped.get(normName)!.push(row);
             }
 
-            // 1. Ensure any restored medication missing startDate has its local startDate set without overwriting durationMode
-            if (hasLegacyRestoredMeds) {
-              for (const [normName, med] of seen.entries()) {
-                if (!med.startDate) {
-                  const rows = grouped.get(normName) || [];
+            // Merge deletion timestamps (LWW-Element-Set CRDT)
+            const mergedDelMap: Record<string, number> = { ...deletedAtMap };
+            for (const [k, ts] of Object.entries(remoteDelMap)) {
+              const norm = normalizeMedName(k);
+              if (!norm) continue;
+              mergedDelMap[norm] = Math.max(mergedDelMap[norm] || 0, Number(ts) || 0);
+            }
+
+            // Merge medications from BOTH localMeds and remotePayload.medications
+            const mergedMedMap = new Map<string, Medication>();
+            for (const rawItem of [...remotePayload.medications, ...localMeds]) {
+              if (!rawItem || !rawItem.name) continue;
+              const key = normalizeMedName(rawItem.name);
+              if (!key) continue;
+              const item = cleanSingleMed(rawItem);
+              const medTs = getMedTimestamp(item);
+              const delTs = mergedDelMap[key] || 0;
+              if (delTs >= medTs) {
+                continue;
+              }
+              // If this medication is newer than any prior deletion, clear its old deletion entry
+              if (mergedDelMap[key]) {
+                delete mergedDelMap[key];
+              }
+              const existing = mergedMedMap.get(key);
+              if (!existing || medTs >= getMedTimestamp(existing)) {
+                mergedMedMap.set(key, item);
+              }
+            }
+
+            const nextMeds = Array.from(mergedMedMap.values());
+            const nextDeletedNames = Object.keys(mergedDelMap);
+            const prevLocalStr = JSON.stringify(localMeds);
+            const nextLocalStr = JSON.stringify(nextMeds);
+            const remoteStr = JSON.stringify(
+              (remotePayload.medications || []).map(cleanSingleMed)
+            );
+
+            localMeds = nextMeds;
+            deletedNames = nextDeletedNames;
+            deletedAtMap = mergedDelMap;
+
+            await safeStorage.setItem(listKey, JSON.stringify(localMeds));
+            await safeStorage.setItem(deletedKey, JSON.stringify(deletedNames));
+            await safeStorage.setItem(deletedAtKey, JSON.stringify(deletedAtMap));
+
+            if (remotePayload.snoozeMap) {
+              await safeStorage.setItem(snoozeKey, JSON.stringify(remotePayload.snoozeMap));
+            }
+
+            if (remotePayload.scheduleOverrides) {
+              const today = getLocalDateString();
+              const remoteTodaySched = remotePayload.scheduleOverrides[today];
+              if (Array.isArray(remoteTodaySched) && remoteTodaySched.length > 0) {
+                await safeStorage.setItem(
+                  `med_schedule_${userKey}_${today}`,
+                  JSON.stringify(remoteTodaySched)
+                );
+              }
+            }
+
+            if (prevLocalStr !== nextLocalStr) {
+              await this.clearCachedSchedulesAroundMonth(userKey, getLocalDateString());
+            }
+
+            // If local device had newer medications or deletions not yet in remotePayload, push merged state to cloud
+            if (nextLocalStr !== remoteStr) {
+              await this.pushRemoteUserSync(userUUID, userKey, {
+                medications: localMeds,
+                deletedNames,
+                deletedAtMap,
+              });
+            }
+
+            return localMeds;
+          }
+
+          // Fallback when no remote sync state exists yet in Supabase for this user:
+          // Hydrate from user_schedules if needed and immediately initialize remote sync state
+          const hasLegacyRestoredMeds = localMeds.some(m => !m.startDate);
+          if ((!hadStoredList || hasLegacyRestoredMeds) && userUUID) {
+            const { data: schedRows, error: schedErr } = await supabase
+              .from('user_schedules')
+              .select('*')
+              .eq('user_id', userUUID)
+              .order('created_at', { ascending: true });
+
+            let masterListCache: Medication[] | null = null;
+            const getMasterCached = async () => {
+              if (!masterListCache) {
+                masterListCache = await this.getMasterMedications().catch(() => []);
+              }
+              return masterListCache;
+            };
+
+            let updatedFromRemote = false;
+
+            if (!schedErr && schedRows && schedRows.length > 0) {
+              const grouped = new Map<string, any[]>();
+              for (const row of schedRows) {
+                const normName = normalizeMedName(row.medication_name);
+                if (!normName || deletedAtMap[normName]) continue;
+                if (!grouped.has(normName)) {
+                  grouped.set(normName, []);
+                }
+                grouped.get(normName)!.push(row);
+              }
+
+              if (hasLegacyRestoredMeds) {
+                for (const [normName, med] of seen.entries()) {
+                  if (!med.startDate) {
+                    const rows = grouped.get(normName) || [];
+                    const validDates = Array.from(
+                      new Set(
+                        rows
+                          .map((r: any) => String(r.date || '').trim())
+                          .filter((d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d))
+                      )
+                    ).sort();
+
+                    const earliestDateStr = validDates[0] || getLocalDateString();
+                    const earliestLocal = parseLocalDateString(earliestDateStr);
+                    const localStartIso = new Date(
+                      earliestLocal.getFullYear(),
+                      earliestLocal.getMonth(),
+                      earliestLocal.getDate(),
+                      0,
+                      0,
+                      0
+                    ).toISOString();
+
+                    seen.set(normName, {
+                      ...med,
+                      startDate: earliestDateStr,
+                      createdAt: med.createdAt || localStartIso,
+                    });
+                    updatedFromRemote = true;
+                  }
+                }
+              }
+
+              if (!hadStoredList) {
+                const masterList = await getMasterCached();
+                for (const [normName, rows] of grouped.entries()) {
+                  if (seen.has(normName) || deletedAtMap[normName]) continue;
+
+                  const firstRow = rows[0];
+                  const latestRow = rows[rows.length - 1];
+                  const medName = latestRow.medication_name || firstRow.medication_name;
+                  const matchedMaster = masterList.find(
+                    m =>
+                      (latestRow.medication_id && m.id === latestRow.medication_id) ||
+                      normalizeMedName(m.name) === normName
+                  );
+
+                  const timeSet = new Set<string>();
+                  const timeMealTimings: Record<string, 'ก่อนอาหาร' | 'หลังอาหาร'> = {};
+                  let primaryMealTiming: any = undefined;
+
+                  for (const r of rows) {
+                    const cleanT = String(r.time || '')
+                      .replace(' น.', '')
+                      .trim();
+                    if (/^\d{1,2}:\d{2}$/.test(cleanT)) {
+                      const [hh, mm] = cleanT.split(':');
+                      const normT = `${hh.padStart(2, '0')}:${mm}`;
+                      timeSet.add(normT);
+                      if (r.meal_timing === 'ก่อนอาหาร' || r.meal_timing === 'หลังอาหาร') {
+                        timeMealTimings[normT] = r.meal_timing;
+                      }
+                      if (!primaryMealTiming && r.meal_timing) {
+                        primaryMealTiming = r.meal_timing;
+                      }
+                    }
+                  }
+
+                  const times = Array.from(timeSet).sort((a, b) => a.localeCompare(b));
+                  const resolvedTimes = times.length > 0 ? times : ['08:00'];
+
                   const validDates = Array.from(
                     new Set(
                       rows
@@ -1446,130 +1967,51 @@ export const medService = {
                     0
                   ).toISOString();
 
-                  seen.set(normName, {
-                    ...med,
+                  const restoredMed: Medication = {
+                    id:
+                      latestRow.medication_id ||
+                      matchedMaster?.id ||
+                      `med-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                    code: matchedMaster?.code,
+                    name: medName,
+                    type: (latestRow.type || matchedMaster?.type || 'เม็ด') as any,
+                    category: (matchedMaster?.category || 'ยา') as any,
+                    dosage: latestRow.dosage || matchedMaster?.dosage || '1',
+                    unit: latestRow.unit || matchedMaster?.unit || 'เม็ด',
+                    frequency: resolvedTimes.length,
+                    remaining: 30,
                     startDate: earliestDateStr,
-                    createdAt: med.createdAt || localStartIso,
-                  });
+                    durationMode: 'ทุกวัน',
+                    instructions: 'ทุกวัน',
+                    precautions: matchedMaster?.precautions || '',
+                    imageUrl: matchedMaster?.imageUrl,
+                    status: 'active',
+                    times: resolvedTimes,
+                    mealTiming: primaryMealTiming || 'หลังอาหาร',
+                    timeMealTimings:
+                      Object.keys(timeMealTimings).length > 0 ? timeMealTimings : undefined,
+                    createdAt: localStartIso,
+                  };
+
+                  seen.set(normName, restoredMed);
                   updatedFromRemote = true;
                 }
               }
             }
 
-            // 2. Initial hydration when no local list existed yet (!hadStoredList)
-            if (!hadStoredList) {
-              const masterList = await getMasterCached();
-              for (const [normName, rows] of grouped.entries()) {
-                if (seen.has(normName) || deletedSet.has(normName)) continue;
-
-                const firstRow = rows[0];
-                const latestRow = rows[rows.length - 1];
-                const medName = latestRow.medication_name || firstRow.medication_name;
-                const matchedMaster = masterList.find(
-                  m =>
-                    (latestRow.medication_id && m.id === latestRow.medication_id) ||
-                    normalizeMedName(m.name) === normName
-                );
-
-                const timeSet = new Set<string>();
-                const timeMealTimings: Record<string, 'ก่อนอาหาร' | 'หลังอาหาร'> = {};
-                let primaryMealTiming: any = undefined;
-
-                for (const r of rows) {
-                  const cleanT = String(r.time || '')
-                    .replace(' น.', '')
-                    .trim();
-                  if (/^\d{1,2}:\d{2}$/.test(cleanT)) {
-                    const [hh, mm] = cleanT.split(':');
-                    const normT = `${hh.padStart(2, '0')}:${mm}`;
-                    timeSet.add(normT);
-                    if (r.meal_timing === 'ก่อนอาหาร' || r.meal_timing === 'หลังอาหาร') {
-                      timeMealTimings[normT] = r.meal_timing;
-                    }
-                    if (!primaryMealTiming && r.meal_timing) {
-                      primaryMealTiming = r.meal_timing;
-                    }
-                  }
-                }
-
-                const times = Array.from(timeSet).sort((a, b) => a.localeCompare(b));
-                const resolvedTimes = times.length > 0 ? times : ['08:00'];
-
-                const validDates = Array.from(
-                  new Set(
-                    rows
-                      .map((r: any) => String(r.date || '').trim())
-                      .filter((d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d))
-                  )
-                ).sort();
-
-                const earliestDateStr = validDates[0] || getLocalDateString();
-                const earliestLocal = parseLocalDateString(earliestDateStr);
-                const localStartIso = new Date(
-                  earliestLocal.getFullYear(),
-                  earliestLocal.getMonth(),
-                  earliestLocal.getDate(),
-                  0,
-                  0,
-                  0
-                ).toISOString();
-
-                const restoredMed: Medication = {
-                  id:
-                    latestRow.medication_id ||
-                    matchedMaster?.id ||
-                    `med-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-                  code: matchedMaster?.code,
-                  name: medName,
-                  type: (latestRow.type || matchedMaster?.type || 'เม็ด') as any,
-                  category: (matchedMaster?.category || 'ยา') as any,
-                  dosage: latestRow.dosage || matchedMaster?.dosage || '1',
-                  unit: latestRow.unit || matchedMaster?.unit || 'เม็ด',
-                  frequency: resolvedTimes.length,
-                  remaining: 30,
-                  startDate: earliestDateStr,
-                  durationMode: 'ทุกวัน',
-                  instructions: 'ทานทุกวัน',
-                  precautions: matchedMaster?.precautions || '',
-                  imageUrl: matchedMaster?.imageUrl,
-                  status: 'active',
-                  times: resolvedTimes,
-                  mealTiming: primaryMealTiming || 'หลังอาหาร',
-                  timeMealTimings:
-                    Object.keys(timeMealTimings).length > 0 ? timeMealTimings : undefined,
-                  createdAt: localStartIso,
-                };
-
-                seen.set(normName, restoredMed);
-                updatedFromRemote = true;
-              }
+            if (updatedFromRemote) {
+              localMeds = Array.from(seen.values());
+              await safeStorage.setItem(listKey, JSON.stringify(localMeds));
             }
           }
 
-          // Clean up any medications that were previously recovered from activity_logs by matching user_name
-          // when this specific user account (userUUID) actually has 0 rows in user_schedules
-          const recoveredKey = `med_recovered_logs_v1_${userKey}`;
-          const cleanedCollisionKey = `med_cleaned_log_collision_v1_${userKey}`;
-          const wasRecoveredByName = await safeStorage.getItem(recoveredKey);
-          const alreadyCleanedCollision = await safeStorage.getItem(cleanedCollisionKey);
-          if (
-            wasRecoveredByName &&
-            !alreadyCleanedCollision &&
-            !schedErr &&
-            (!schedRows || schedRows.length === 0)
-          ) {
-            seen.clear();
-            localMeds = [];
-            await safeStorage.setItem(listKey, JSON.stringify([]));
-            await safeStorage.setItem(cleanedCollisionKey, 'true');
-          }
-
-          if (updatedFromRemote) {
-            localMeds = Array.from(seen.values());
-            await safeStorage.setItem(listKey, JSON.stringify(localMeds));
-          }
+          await this.pushRemoteUserSync(userUUID, userKey, {
+            medications: localMeds,
+            deletedNames,
+            deletedAtMap,
+          });
         } catch (syncErr) {
-          console.warn('Error syncing user medications from Supabase user_schedules:', syncErr);
+          console.warn('Error syncing user medications from Supabase:', syncErr);
         }
       }
 
@@ -1621,18 +2063,13 @@ export const medService = {
   },
 
   async saveMedication(med: Medication): Promise<Medication> {
+    activeMedicationMutations++;
+    const nowTs = Date.now();
     if (!med.createdAt) {
-      if (med.id && med.id.startsWith('med-')) {
-        const ts = parseInt(med.id.replace('med-', ''), 10);
-        if (!isNaN(ts) && ts > 1000000000) {
-          med.createdAt = new Date(ts).toISOString();
-        } else {
-          med.createdAt = new Date().toISOString();
-        }
-      } else {
-        med.createdAt = new Date().toISOString();
-      }
+      med.createdAt = new Date(nowTs).toISOString();
     }
+    (med as any).updatedAt = nowTs;
+
     try {
       const { userKey, userUUID } = await this.getCurrentUserScope();
       if (!userKey) {
@@ -1640,20 +2077,32 @@ export const medService = {
       }
       const listKey = `med_user_medications_list_${userKey}`;
       const deletedKey = `med_deleted_med_names_${userKey}`;
+      const deletedAtKey = `med_deleted_at_map_${userKey}`;
 
-      // Remove this medication name from deleted list if user is adding/saving it
+      // Remove this medication name from deleted list & deletedAtMap if user is adding/saving it
       const normNew = normalizeMedName(med.name);
+      let nextDelList: string[] = [];
+      let nextDelAtMap: Record<string, number> = {};
       try {
         const delRaw = await safeStorage.getItem(deletedKey);
         if (delRaw) {
           const parsedDel: string[] = JSON.parse(delRaw);
           if (Array.isArray(parsedDel)) {
-            const nextDel = parsedDel.filter(n => normalizeMedName(n) !== normNew);
-            if (nextDel.length !== parsedDel.length) {
-              await safeStorage.setItem(deletedKey, JSON.stringify(nextDel));
-            }
+            nextDelList = parsedDel.filter(n => normalizeMedName(n) !== normNew);
           }
         }
+        await safeStorage.setItem(deletedKey, JSON.stringify(nextDelList));
+      } catch {}
+      try {
+        const delMapRaw = await safeStorage.getItem(deletedAtKey);
+        if (delMapRaw) {
+          const parsedMap = JSON.parse(delMapRaw);
+          if (parsedMap && typeof parsedMap === 'object') {
+            nextDelAtMap = { ...parsedMap };
+            delete nextDelAtMap[normNew];
+          }
+        }
+        await safeStorage.setItem(deletedAtKey, JSON.stringify(nextDelAtMap));
       } catch {}
 
       // Determine effective times if active
@@ -1680,7 +2129,18 @@ export const medService = {
         med.instructions = 'ทุกวัน';
       }
 
-      const current = await this.getMedications();
+      // Read current list directly from local storage first so we never block or lose local state
+      let current: Medication[] = [];
+      try {
+        const rawCurrent = await safeStorage.getItem(listKey);
+        if (rawCurrent) {
+          const parsedCurrent = JSON.parse(rawCurrent);
+          if (Array.isArray(parsedCurrent)) {
+            current = parsedCurrent;
+          }
+        }
+      } catch {}
+
       let existingIdx = current.findIndex(m => m.id === med.id);
       if (existingIdx < 0 && normNew) {
         existingIdx = current.findIndex(m => normalizeMedName(m.name) === normNew);
@@ -1705,6 +2165,7 @@ export const medService = {
           precautions: med.precautions,
           imageUrl: med.imageUrl,
         };
+        (mergedMed as any).updatedAt = nowTs;
         med = mergedMed;
         updated[existingIdx] = mergedMed;
       } else {
@@ -1763,7 +2224,16 @@ export const medService = {
       await safeStorage.setItem(scheduleKey, JSON.stringify(currentSchedule));
       await this.clearCachedSchedulesAroundMonth(userKey, today);
 
-      // Sync to Supabase user_schedules (strictly scoped to this user's UUID)
+      // Push remote user sync state FIRST so other devices & any subsequent reads immediately see the new medication
+      if (supabase && userKey) {
+        await this.pushRemoteUserSync(userUUID, userKey, {
+          medications: updated,
+          deletedNames: nextDelList,
+          deletedAtMap: nextDelAtMap,
+          scheduleOverrides: { [today]: currentSchedule },
+        });
+      }
+
       if (supabase && userUUID) {
         try {
           if (previousMed && previousMed.name !== med.name) {
@@ -1820,38 +2290,63 @@ export const medService = {
       );
     } catch (e) {
       console.warn('Failed to save user medication:', e);
+    } finally {
+      activeMedicationMutations = Math.max(0, activeMedicationMutations - 1);
     }
 
     return med;
   },
 
   async deleteMedication(id: string): Promise<boolean> {
+    activeMedicationMutations++;
+    const nowTs = Date.now();
     try {
       const { userKey, userUUID } = await this.getCurrentUserScope();
       if (!userKey) return false;
       const listKey = `med_user_medications_list_${userKey}`;
       const deletedKey = `med_deleted_med_names_${userKey}`;
+      const deletedAtKey = `med_deleted_at_map_${userKey}`;
 
-      const current = await this.getMedications();
+      let current: Medication[] = [];
+      try {
+        const rawCurrent = await safeStorage.getItem(listKey);
+        if (rawCurrent) {
+          const parsedCurrent = JSON.parse(rawCurrent);
+          if (Array.isArray(parsedCurrent)) {
+            current = parsedCurrent;
+          }
+        }
+      } catch {}
+
       const medToDelete = current.find(
         m => m.id === id || normalizeMedName(m.name) === normalizeMedName(id)
       );
       const normDeleteName = medToDelete ? normalizeMedName(medToDelete.name) : '';
 
-      if (normDeleteName) {
-        try {
-          let delList: string[] = [];
-          const delRaw = await safeStorage.getItem(deletedKey);
-          if (delRaw) {
-            const parsedDel = JSON.parse(delRaw);
-            if (Array.isArray(parsedDel)) delList = parsedDel;
-          }
-          if (!delList.some(n => normalizeMedName(n) === normDeleteName)) {
-            delList.push(normDeleteName);
-            await safeStorage.setItem(deletedKey, JSON.stringify(delList));
-          }
-        } catch {}
-      }
+      let delList: string[] = [];
+      let delAtMap: Record<string, number> = {};
+      try {
+        const delRaw = await safeStorage.getItem(deletedKey);
+        if (delRaw) {
+          const parsedDel = JSON.parse(delRaw);
+          if (Array.isArray(parsedDel)) delList = parsedDel;
+        }
+        if (normDeleteName && !delList.some(n => normalizeMedName(n) === normDeleteName)) {
+          delList.push(normDeleteName);
+          await safeStorage.setItem(deletedKey, JSON.stringify(delList));
+        }
+      } catch {}
+      try {
+        const delMapRaw = await safeStorage.getItem(deletedAtKey);
+        if (delMapRaw) {
+          const parsedMap = JSON.parse(delMapRaw);
+          if (parsedMap && typeof parsedMap === 'object') delAtMap = parsedMap;
+        }
+        if (normDeleteName) {
+          delAtMap[normDeleteName] = nowTs;
+          await safeStorage.setItem(deletedAtKey, JSON.stringify(delAtMap));
+        }
+      } catch {}
 
       const updated = current.filter(
         m =>
@@ -1863,19 +2358,29 @@ export const medService = {
       // Remove from today's schedule & clear cached schedules for other dates
       const today = getLocalDateString();
       const scheduleKey = `med_schedule_${userKey}_${today}`;
+      let filteredTodaySchedule: ScheduleItem[] = [];
       const localStr = await safeStorage.getItem(scheduleKey);
       if (localStr) {
         try {
           const parsed: ScheduleItem[] = JSON.parse(localStr);
-          const filtered = parsed.filter(
+          filteredTodaySchedule = parsed.filter(
             s =>
               s.medicationId !== id &&
               (!normDeleteName || normalizeMedName(s.medicationName) !== normDeleteName)
           );
-          await safeStorage.setItem(scheduleKey, JSON.stringify(filtered));
+          await safeStorage.setItem(scheduleKey, JSON.stringify(filteredTodaySchedule));
         } catch {}
       }
       await this.clearCachedSchedulesAroundMonth(userKey, today);
+
+      if (supabase && userKey) {
+        await this.pushRemoteUserSync(userUUID, userKey, {
+          medications: updated,
+          deletedNames: delList,
+          deletedAtMap: delAtMap,
+          scheduleOverrides: { [today]: filteredTodaySchedule },
+        });
+      }
 
       if (supabase && userUUID) {
         try {
@@ -1900,6 +2405,8 @@ export const medService = {
       return true;
     } catch (e) {
       console.warn('Failed to delete user medication:', e);
+    } finally {
+      activeMedicationMutations = Math.max(0, activeMedicationMutations - 1);
     }
     return true;
   },
@@ -1951,7 +2458,10 @@ export const medService = {
     const key = `med_schedule_${userKey}_${targetDateStr}`;
     const snoozeKey = `med_snooze_until_map_${userKey}`;
 
-    // 1. Read local storage for this user & date (freshest isTaken state on this device)
+    // 0. Sync medications & remote schedule overrides first so cross-device updates are reflected immediately
+    const allMeds = await this.getMedications().catch(() => []);
+
+    // 1. Read local storage for this user & date (now updated with remote overrides if any)
     let localItems: ScheduleItem[] = [];
     const local = await safeStorage.getItem(key);
     if (local) {
@@ -2010,18 +2520,22 @@ export const medService = {
       const existingIdx = storedItems.findIndex(
         lItem =>
           ((rItem.medicationId && lItem.medicationId === rItem.medicationId) ||
-            lItem.medicationName === rItem.medicationName) &&
-          (lItem.time.replace(' น.', '').trim() === rTime || lItem.originalTime === rTime)
+            normalizeMedName(lItem.medicationName) === normalizeMedName(rItem.medicationName)) &&
+          (lItem.time.replace(' น.', '').trim() === rTime ||
+            lItem.originalTime === rTime ||
+            (lItem.postponedTime && lItem.postponedTime.replace(' น.', '').trim() === rTime))
       );
       if (existingIdx >= 0) {
         const cur = storedItems[existingIdx];
         const mergedTaken = Boolean(cur.isTaken || rItem.isTaken);
+        const mergedSkipped = mergedTaken ? false : Boolean(cur.isSkipped || rItem.isSkipped);
         storedItems[existingIdx] = {
           ...cur,
           id: isValidUUID(rItem.id) && !isValidUUID(cur.id) ? rItem.id : cur.id,
           isTaken: mergedTaken,
           isChecked: Boolean(cur.isChecked || mergedTaken),
           takenAt: cur.takenAt || rItem.takenAt,
+          isSkipped: mergedSkipped,
         };
       } else {
         storedItems.push(rItem);
@@ -2030,9 +2544,25 @@ export const medService = {
 
     // 3. Always reconcile with ALL user medications scheduled for targetDate
     try {
-      const allMeds = await this.getMedications();
       const reconciled = buildScheduleForDateSync(allMeds, targetDate, storedItems, snoozeMap);
       await safeStorage.setItem(key, JSON.stringify(reconciled));
+
+      if (supabase && userUUID && remoteItems.length > 0) {
+        const reconciledIdSet = new Set(reconciled.map(item => item.id));
+        const staleRemoteIds = remoteItems
+          .filter(r => !r.isTaken && !r.isSkipped && isValidUUID(r.id) && !reconciledIdSet.has(r.id))
+          .map(r => r.id);
+        if (staleRemoteIds.length > 0) {
+          supabase
+            .from('user_schedules')
+            .delete()
+            .in('id', staleRemoteIds)
+            .eq('user_id', userUUID)
+            .eq('is_taken', false)
+            .then(() => {}, () => {});
+        }
+      }
+
       return reconciled;
     } catch (e) {
       console.warn('Error syncing schedule with active medications:', e);
@@ -2156,6 +2686,7 @@ export const medService = {
 
     await safeStorage.setItem(key, JSON.stringify(updated));
 
+    let currentSnoozeMap: Record<string, number> | undefined = undefined;
     if (newlyConfirmed.length > 0) {
       try {
         const snoozeRaw = await safeStorage.getItem(snoozeKey);
@@ -2166,12 +2697,14 @@ export const medService = {
             if (item.medicationId) delete snoozeMap[`${item.medicationId}_${targetDate}`];
             if (item.medicationName) delete snoozeMap[`${item.medicationName}_${targetDate}`];
           });
+          currentSnoozeMap = snoozeMap;
           await safeStorage.setItem(snoozeKey, JSON.stringify(snoozeMap));
         }
       } catch {}
     }
 
     // หักจำนวนยาคงเหลือเฉพาะรายการที่พึ่งกดยืนยันรับประทาน
+    let latestMeds: Medication[] | undefined = undefined;
     if (newlyConfirmed.length > 0) {
       try {
         const meds = await this.getMedications();
@@ -2195,6 +2728,7 @@ export const medService = {
           }
         }
 
+        latestMeds = updatedMeds;
         if (medChanged) {
           await safeStorage.setItem(listKey, JSON.stringify(updatedMeds));
         }
@@ -2250,6 +2784,12 @@ export const medService = {
             }
           } catch {}
         }
+
+        await this.pushRemoteUserSync(userUUID, userKey, {
+          medications: latestMeds,
+          snoozeMap: currentSnoozeMap,
+          scheduleOverrides: { [targetDate]: updated },
+        });
       }
 
       for (const confirmedItem of newlyConfirmed) {
@@ -2303,6 +2843,7 @@ export const medService = {
 
     await safeStorage.setItem(key, JSON.stringify(updated));
 
+    let currentSnoozeMap: Record<string, number> | undefined = undefined;
     if (isTaken) {
       try {
         const snoozeRaw = await safeStorage.getItem(snoozeKey);
@@ -2311,12 +2852,14 @@ export const medService = {
           delete snoozeMap[scheduleId];
           if (targetItem?.medicationId) delete snoozeMap[`${targetItem.medicationId}_${targetDate}`];
           if (targetItem?.medicationName) delete snoozeMap[`${targetItem.medicationName}_${targetDate}`];
+          currentSnoozeMap = snoozeMap;
           await safeStorage.setItem(snoozeKey, JSON.stringify(snoozeMap));
         }
       } catch {}
     }
 
     // Real-time stock update for this medication if intake status changed
+    let latestMeds: Medication[] | undefined = undefined;
     if (targetItem && wasTaken !== isTaken) {
       try {
         const meds = await this.getMedications();
@@ -2335,6 +2878,7 @@ export const medService = {
               ...med,
               remaining: nextRemaining,
             };
+            latestMeds = updatedMeds;
             await safeStorage.setItem(listKey, JSON.stringify(updatedMeds));
           }
         }
@@ -2388,6 +2932,12 @@ export const medService = {
           }
         }
       } catch {}
+
+      await this.pushRemoteUserSync(userUUID, userKey, {
+        medications: latestMeds,
+        snoozeMap: currentSnoozeMap,
+        scheduleOverrides: { [targetDate]: updated },
+      });
     }
 
     const item = updated.find(i => i.id === scheduleId);
@@ -2440,6 +2990,7 @@ export const medService = {
     // กำหนด timestamp ให้ระบบทราบว่ารายการนี้ถูก Snooze ไว้จนถึงเวลาใด
     const postponedUntil = Date.now() + minutes * 60 * 1000;
 
+    let currentSnoozeMap: Record<string, number> = {};
     try {
       const snoozeRaw = await safeStorage.getItem(snoozeKey);
       const snoozeMap: Record<string, number> = snoozeRaw ? JSON.parse(snoozeRaw) : {};
@@ -2448,6 +2999,7 @@ export const medService = {
         snoozeMap[`${targetItem.medicationId}_${targetDate}`] = postponedUntil;
       }
       snoozeMap[`${targetItem.medicationName}_${targetDate}`] = postponedUntil;
+      currentSnoozeMap = snoozeMap;
       await safeStorage.setItem(snoozeKey, JSON.stringify(snoozeMap));
     } catch {}
 
@@ -2469,14 +3021,37 @@ export const medService = {
 
     await safeStorage.setItem(key, JSON.stringify(updated));
 
-    if (supabase && userUUID && isValidUUID(scheduleId)) {
+    if (supabase && userUUID) {
       try {
-        await supabase
-          .from('user_schedules')
-          .update({ time: newTimeStr })
-          .eq('id', scheduleId)
-          .eq('user_id', userUUID);
+        if (isValidUUID(scheduleId)) {
+          await supabase
+            .from('user_schedules')
+            .update({ time: newTimeStr })
+            .eq('id', scheduleId)
+            .eq('user_id', userUUID);
+        } else {
+          const { data: existingRows } = await supabase
+            .from('user_schedules')
+            .select('id')
+            .eq('user_id', userUUID)
+            .eq('date', targetDate)
+            .eq('medication_name', targetItem.medicationName)
+            .eq('time', targetItem.time);
+
+          if (existingRows && existingRows.length > 0) {
+            await supabase
+              .from('user_schedules')
+              .update({ time: newTimeStr })
+              .eq('id', existingRows[0].id)
+              .eq('user_id', userUUID);
+          }
+        }
       } catch {}
+
+      await this.pushRemoteUserSync(userUUID, userKey, {
+        snoozeMap: currentSnoozeMap,
+        scheduleOverrides: { [targetDate]: updated },
+      });
     }
 
     return updated;
@@ -2504,6 +3079,7 @@ export const medService = {
 
     await safeStorage.setItem(key, JSON.stringify(updated));
 
+    let currentSnoozeMap: Record<string, number> | undefined = undefined;
     try {
       const snoozeRaw = await safeStorage.getItem(snoozeKey);
       if (snoozeRaw) {
@@ -2511,18 +3087,60 @@ export const medService = {
         delete snoozeMap[scheduleId];
         if (targetItem?.medicationId) delete snoozeMap[`${targetItem.medicationId}_${targetDate}`];
         if (targetItem?.medicationName) delete snoozeMap[`${targetItem.medicationName}_${targetDate}`];
+        currentSnoozeMap = snoozeMap;
         await safeStorage.setItem(snoozeKey, JSON.stringify(snoozeMap));
       }
     } catch {}
 
-    if (supabase && userUUID && isValidUUID(scheduleId)) {
+    if (supabase && userUUID) {
       try {
-        await supabase
-          .from('user_schedules')
-          .update({ is_skipped: true })
-          .eq('id', scheduleId)
-          .eq('user_id', userUUID);
+        if (isValidUUID(scheduleId)) {
+          await supabase
+            .from('user_schedules')
+            .update({ is_skipped: true })
+            .eq('id', scheduleId)
+            .eq('user_id', userUUID);
+        } else {
+          const { data: existingRows } = await supabase
+            .from('user_schedules')
+            .select('id')
+            .eq('user_id', userUUID)
+            .eq('date', targetDate)
+            .eq('medication_name', targetItem.medicationName)
+            .eq('time', targetItem.time);
+
+          if (existingRows && existingRows.length > 0) {
+            await supabase
+              .from('user_schedules')
+              .update({ is_skipped: true })
+              .eq('id', existingRows[0].id)
+              .eq('user_id', userUUID);
+          } else {
+            const medUUID = isValidUUID(targetItem.medicationId) ? targetItem.medicationId : null;
+            await supabase.from('user_schedules').insert([
+              {
+                user_id: userUUID,
+                medication_id: medUUID,
+                medication_name: targetItem.medicationName,
+                dosage: targetItem.dosage,
+                unit: targetItem.unit,
+                type: targetItem.type,
+                meal_timing: targetItem.mealTiming,
+                time: targetItem.time,
+                date: targetDate,
+                is_taken: false,
+                taken_at: null,
+                is_skipped: true,
+              },
+            ]);
+          }
+        }
       } catch {}
+
+      await this.pushRemoteUserSync(userUUID, userKey, {
+        snoozeMap: currentSnoozeMap,
+        scheduleOverrides: { [targetDate]: updated },
+      });
     }
 
     return updated;
@@ -2548,16 +3166,20 @@ export const medService = {
           .order('appointment_date', { ascending: true });
 
         if (!error && data) {
-          const mapped = data.map((d: any) => ({
-            id: d.id,
-            doctorName: d.doctor_name,
-            department: d.department || '',
-            hospital: d.hospital || '',
-            date: d.appointment_date,
-            time: d.appointment_time,
-            details: d.details || '',
-            status: d.status || 'confirmed',
-          }));
+          const mapped = data
+            .filter(
+              (d: any) => d.doctor_name !== '__MED_LIST_SYNC__' && d.status !== '__SYNC__'
+            )
+            .map((d: any) => ({
+              id: d.id,
+              doctorName: d.doctor_name,
+              department: d.department || '',
+              hospital: d.hospital || '',
+              date: d.appointment_date,
+              time: d.appointment_time,
+              details: d.details || '',
+              status: d.status || 'confirmed',
+            }));
           await safeStorage.setItem(storageKey, JSON.stringify(mapped));
           return mapped;
         }
@@ -2569,7 +3191,12 @@ export const medService = {
       try {
         const parsed = JSON.parse(local);
         if (Array.isArray(parsed)) {
-          return parsed.filter(a => !['apt-1', 'apt-2', 'apt-3'].includes(a.id));
+          return parsed.filter(
+            a =>
+              !['apt-1', 'apt-2', 'apt-3'].includes(a.id) &&
+              a.doctorName !== '__MED_LIST_SYNC__' &&
+              a.status !== '__SYNC__'
+          );
         }
       } catch {}
     }

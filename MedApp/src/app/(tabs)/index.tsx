@@ -167,19 +167,13 @@ export default function HomeScreen() {
     ? 'ทานครบแล้ว'
     : 'ยังไม่มีมื้อยา';
 
-  // รายการยาทั้งหมดในมื้อนี้ (อิงตาม todaySchedule ของวันนั้นๆ)
+  // รายการยาที่ยังไม่ทานในมื้อถัดไป (ถ้ากดทานแล้วให้เอาออกเป็นรายยา แต่คงรายการใน Checklist ไว้เหมือนเดิม)
   const nextMealItems = effectiveNextItem
     ? todaySchedule.filter(
-        s => getMealCategory(s.time, s.mealTiming) === nextMealName
-      )
-    : todaySchedule.length > 0
-    ? todaySchedule.filter(
         s =>
-          getMealCategory(s.time, s.mealTiming) ===
-          getMealCategory(
-            todaySchedule[todaySchedule.length - 1].time,
-            todaySchedule[todaySchedule.length - 1].mealTiming
-          )
+          getMealCategory(s.time, s.mealTiming) === nextMealName &&
+          !s.isTaken &&
+          !s.isSkipped
       )
     : [];
 
@@ -325,9 +319,7 @@ export default function HomeScreen() {
                 adjustsFontSizeToFit
                 minimumFontScale={0.8}
               >
-                {effectiveNextItem
-                  ? `${nextMealName} • ${effectiveNextItem.time}`
-                  : nextMealName}
+                {nextMealName}
               </Text>
 
               {nextMealItems.length > 0 ? (
@@ -408,7 +400,14 @@ export default function HomeScreen() {
                                   {reasonText ? (
                                     <View style={styles.avoidBulletRow}>
                                       <Text style={styles.avoidBulletDot}>•</Text>
-                                      <Text style={styles.avoidBulletText}>{reasonText}</Text>
+                                      <Text
+                                        style={styles.avoidBulletText}
+                                        numberOfLines={1}
+                                        adjustsFontSizeToFit
+                                        minimumFontScale={0.85}
+                                      >
+                                        {reasonText}
+                                      </Text>
                                     </View>
                                   ) : null}
                                 </View>
@@ -526,7 +525,7 @@ export default function HomeScreen() {
                 onPress={handleConfirmCurrentPage}
                 activeOpacity={0.8}
               >
-                <Text style={styles.confirmButtonText}>ยืนยันการรับประทานยา</Text>
+                <Text style={styles.confirmButtonText}>ยืนยันการทานยา</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -661,7 +660,7 @@ export default function HomeScreen() {
             activeOpacity={0.7}
           >
             <Text style={styles.pillToggleText}>
-              {isExpandedAllMeals ? 'ปิดรายการทั้งหมด' : 'รายการรับประทานยาทั้งหมด'}
+              {isExpandedAllMeals ? 'ปิดรายการทั้งหมด' : 'รายการทานยาทั้งหมด'}
             </Text>
             <Feather
               name={isExpandedAllMeals ? 'chevron-up' : 'chevron-down'}
@@ -691,7 +690,7 @@ export default function HomeScreen() {
             activeOpacity={0.7}
           >
             <MaterialCommunityIcons name="view-grid-outline" size={26} color="#16A34A" />
-            <Text style={styles.shortcutText}>ตารางยา</Text>
+            <Text style={styles.shortcutText}>ตารางทานยา</Text>
           </TouchableOpacity>
 
           {/* Shortcut 3: ผลข้างเคียง */}
@@ -975,7 +974,7 @@ const styles = StyleSheet.create({
     marginLeft: 2,
   },
   nextMedMeta: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#64748B',
     marginTop: 1,
     lineHeight: 15,
@@ -998,7 +997,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   avoidBadgeText: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '700',
     color: '#E11D48',
   },
@@ -1019,7 +1018,7 @@ const styles = StyleSheet.create({
   },
   avoidBulletText: {
     flex: 1,
-    fontSize: 10.5,
+    fontSize: 11,
     fontWeight: '500',
     color: '#334155',
     lineHeight: 16,
@@ -1049,7 +1048,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    paddingBottom: 6,
     marginBottom: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E8EDF5',
   },
   rightBoxTitle: {
     fontSize: 10,
@@ -1078,7 +1080,7 @@ const styles = StyleSheet.create({
   },
   checklistContainer: {
     minHeight: 68,
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
   },
   checkItemRow: {
     flexDirection: 'row',
@@ -1109,8 +1111,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   checkItemName: {
-    fontSize: 11.5,
-    fontWeight: '600',
+    fontSize: 11,
+    fontWeight: '500',
     color: '#1E293B',
     flex: 1,
   },

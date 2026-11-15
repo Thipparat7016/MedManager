@@ -119,7 +119,7 @@ export default function ProfileScreen() {
       setShowPasswordModal(false);
       Alert.alert(
         'บันทึกสำเร็จ',
-        'ตั้งรหัสผ่านสำหรับบัญชีนี้เรียบร้อยแล้ว ครั้งต่อไปคุณสามารถเลือกล็อกอินผ่าน Google หรือใช้อีเมลและรหัสผ่านได้ทั้งสองวิธี'
+        'ตั้งรหัสผ่านสำหรับบัญชีนี้เรียบร้อยแล้ว '
       );
     } catch (err: any) {
       Alert.alert('ไม่สามารถบันทึกรหัสผ่านได้', err?.message || 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง');
@@ -339,14 +339,13 @@ export default function ProfileScreen() {
                 {user?.hasPassword ? 'ตั้งรหัสผ่าน / เปลี่ยนรหัสผ่าน' : 'ตั้งรหัสผ่านสำหรับบัญชีนี้'}
               </Text>
               <Text style={styles.modalSubtitle}>
-                บัญชี: {user?.email || '-'}{'\n'}
-                เมื่อตั้งรหัสผ่านแล้ว คุณจะสามารถเข้าสู่ระบบด้วยอีเมลและรหัสผ่าน หรือผ่าน Google ได้ทั้งสองวิธี
+                บัญชี: {user?.email || '-'}
               </Text>
 
               <View style={styles.modalInputGroup}>
                 <Text style={styles.modalInputLabel}>
                   {user?.hasPassword
-                    ? 'ยืนยันตัวตน (รหัสผ่านเดิม หรือ อีเมลบัญชีนี้)'
+                    ? 'ยืนยันตัวตน '
                     : 'ยืนยันตัวตน (อีเมล หรือ เบอร์โทรศัพท์ของบัญชีนี้)'}
                 </Text>
                 <TextInput
@@ -688,22 +687,21 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '800',
     color: '#0F172A',
-    marginBottom: 6,
   },
   modalSubtitle: {
     fontSize: 13,
     color: '#64748B',
     lineHeight: 19,
-    marginBottom: 18,
+    marginBottom: 10,
   },
   modalInputGroup: {
-    marginBottom: 14,
+    marginBottom: 10,
   },
   modalInputLabel: {
     fontSize: 13.5,
     fontWeight: '700',
     color: '#1E293B',
-    marginBottom: 6,
+    marginBottom: 4,
   },
   modalInput: {
     height: 48,

@@ -387,7 +387,7 @@ export default function EditMedicationScreen() {
       newErrors.duration = 'กรุณาเลือกวันที่รับประทานยาอย่างน้อย 1 วัน';
     }
     if (timesList.length === 0) {
-      newErrors.times = 'กรุณาเลือกเวลารับประทานอย่างน้อย 1 เวลา';
+      newErrors.times = 'กรุณาเลือกเวลารับประทานยาอย่างน้อย 1 เวลา';
     } else {
       const missingMeal = timesList.some(t => {
         const clean = t.replace(' น.', '').trim();
@@ -561,8 +561,22 @@ export default function EditMedicationScreen() {
                           {item.unit || ''}
                         </Text>
                       </View>
-                      <View style={styles.masterItemCategoryBadge}>
-                        <Text style={styles.masterItemCategoryText}>
+                      <View
+                        style={[
+                          styles.masterItemCategoryBadge,
+                          item.category === 'อาหารเสริม'
+                            ? styles.masterItemCategorySupplement
+                            : styles.masterItemCategoryDrug,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.masterItemCategoryText,
+                            item.category === 'อาหารเสริม'
+                              ? styles.masterItemCategoryTextSupplement
+                              : styles.masterItemCategoryTextDrug,
+                          ]}
+                        >
                           {item.category || 'ยา'}
                         </Text>
                       </View>
@@ -651,7 +665,7 @@ export default function EditMedicationScreen() {
         {/* ========================================================================= */}
         <View style={styles.timesHeaderRow}>
           <Text style={styles.sectionLabel}>
-            เวลารับประทาน <Text style={styles.requiredAsterisk}>*</Text>
+            เวลารับประทานยา <Text style={styles.requiredAsterisk}>*</Text>
           </Text>
           <TouchableOpacity onPress={handleOpenAddTime} activeOpacity={0.7}>
             <Text style={styles.addTimeLink}>+ เพิ่มเวลา</Text>
@@ -811,7 +825,7 @@ export default function EditMedicationScreen() {
           <Pressable style={styles.timeModalContainer} onPress={e => e.stopPropagation()}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>
-                {editingTimeIndex !== null ? 'แก้ไขเวลารับประทาน' : 'เพิ่มเวลารับประทาน'}
+                {editingTimeIndex !== null ? 'แก้ไขเวลารับประทานยา' : 'เพิ่มเวลารับประทานยา'}
               </Text>
               <TouchableOpacity
                 onPress={() => setShowTimeModal(false)}
@@ -1307,15 +1321,31 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   masterItemCategoryBadge: {
-    backgroundColor: '#F1F5F9',
     paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: -6,
+  },
+  masterItemCategoryDrug: {
+    backgroundColor: '#E0F2FE',
+    borderColor: '#B9E2FE',
+  },
+  masterItemCategorySupplement: {
+    backgroundColor: '#E8E4FB',
+    borderColor: '#C9C3EE',
   },
   masterItemCategoryText: {
     fontSize: 11,
     fontWeight: '600',
-    color: '#475569',
+  },
+  masterItemCategoryTextDrug: {
+    color: '#0284C7',
+  },
+  masterItemCategoryTextSupplement: {
+    color: '#7C6CD8',
   },
   counterRow: {
     flexDirection: 'row',

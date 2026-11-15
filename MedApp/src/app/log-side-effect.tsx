@@ -509,7 +509,7 @@ export default function LogSideEffectScreen() {
           <View style={styles.masterCatalogList}>
             <View style={styles.dropdownHeaderRow}>
               <Text style={styles.masterCatalogHeader}>
-                รายการอาการที่พบบ่อย (แตะเลือกได้มากกว่า 1 ข้อ)
+                รายการอาการที่พบบ่อย (เลือกได้มากกว่า 1 ข้อ)
               </Text>
               <TouchableOpacity onPress={() => setShowSymptomDropdown(false)}>
                 <Text style={styles.dropdownCloseText}>ปิด</Text>
@@ -696,7 +696,7 @@ export default function LogSideEffectScreen() {
         {/* ========================================================================= */}
         <Text style={[styles.sectionLabel, { marginTop: 24 }]}>ประวัติการบันทึก</Text>
         {sideEffects.length === 0 ? (
-          <Text style={{ fontSize: 13, color: '#94A3B8', marginTop: 4, fontStyle: 'italic' }}>
+          <Text style={{ fontSize: 13, color: '#94A3B8', marginTop: 4 }}>
             ยังไม่มีประวัติการบันทึกผลข้างเคียง
           </Text>
         ) : (

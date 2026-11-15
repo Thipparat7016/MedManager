@@ -145,8 +145,8 @@ export default function DashboardPage() {
       <div className="page-header">
         <h1 className="page-title">Dashboard</h1>
         <div className="page-actions">
-          <button 
-            className="btn btn-primary" 
+          <button
+            className="btn btn-primary"
             onClick={() => loadData()}
             style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px' }}
           >
@@ -204,7 +204,7 @@ export default function DashboardPage() {
 
       {/* Middle Section: ADR Trend + Adherence Chart & Drug Type Donut */}
       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '20px', marginBottom: '20px' }}>
-        
+
         {/* Left: Charts Container */}
         <div className="card" style={{ padding: '24px 28px' }}>
           <div style={{ fontSize: '14.5px', fontWeight: 600, color: 'var(--color-neutral-800)', marginBottom: '20px' }}>
@@ -263,13 +263,13 @@ export default function DashboardPage() {
 
               {/* X Axis Labels */}
               {trendPoints.map((pt, i) => (
-                <text 
-                  key={i} 
-                  x={pt.x} 
-                  y="185" 
-                  textAnchor="middle" 
-                  fill="var(--color-neutral-400)" 
-                  fontSize="12" 
+                <text
+                  key={i}
+                  x={pt.x}
+                  y="185"
+                  textAnchor="middle"
+                  fill="var(--color-neutral-400)"
+                  fontSize="12"
                   fontFamily="inherit"
                 >
                   {pt.month}
@@ -286,7 +286,7 @@ export default function DashboardPage() {
             <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', height: '60px', gap: '8px' }}>
               {adherenceBars.map((bar, i) => (
                 <div key={i} style={{ flex: 1, height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
-                  <div 
+                  <div
                     title={bar.dateLabel ? `${bar.dateLabel}: ${bar.rate}% (${bar.taken}/${bar.total} มื้อ)` : `${bar.label}: ${bar.rate}%`}
                     style={{
                       width: '100%',
@@ -390,84 +390,6 @@ export default function DashboardPage() {
 
       {/* Bottom Row: Clinical Medication Logs & Top Medications */}
       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '20px' }}>
-        
-        {/* Left: ติดตามการใช้ยาและผลข้างเคียงล่าสุด */}
-        <div className="card" style={{ padding: '24px' }}>
-          <div className="card-title">ติดตามการใช้ยาและผลข้างเคียงล่าสุด</div>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th style={{ width: '80px' }}>เวลา</th>
-                <th style={{ width: '130px' }}>ผู้ป่วย</th>
-                <th style={{ width: '140px' }}>กิจกรรม</th>
-                <th>รายละเอียด</th>
-              </tr>
-            </thead>
-            <tbody>
-              {activities.length === 0 ? (
-                <tr>
-                  <td colSpan="4" style={{ textAlign: 'center', padding: '28px', color: 'var(--color-neutral-400)' }}>
-                    ยังไม่มีบันทึกการใช้ยาหรือผลข้างเคียงในระบบ
-                  </td>
-                </tr>
-              ) : (
-                activities.map((act) => (
-                  <tr key={act.id}>
-                    <td style={{ color: 'var(--color-neutral-500)', fontSize: '13px' }}>{act.time}</td>
-                    <td style={{ fontWeight: 600, color: 'var(--color-neutral-800)' }}>{act.user_name}</td>
-                    <td>
-                      <span 
-                        style={{
-                          fontSize: '12px',
-                          fontWeight: 500,
-                          padding: '3px 10px',
-                          borderRadius: 'var(--radius-pill)',
-                          whiteSpace: 'nowrap',
-                          ...getActivityBadgeStyle(act.tone)
-                        }}
-                      >
-                        {act.activity}
-                      </span>
-                    </td>
-                    <td style={{ color: 'var(--color-neutral-600)' }}>{act.details}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Right: ยาที่ใช้มากที่สุด */}
-        <div className="card" style={{ padding: '24px' }}>
-          <div className="card-title">ยาที่ใช้มากที่สุด</div>
-          {!stats?.topMedications || stats.topMedications.length === 0 ? (
-            <div style={{ padding: '28px 0', textAlign: 'center', color: 'var(--color-neutral-400)', fontSize: '13px' }}>
-              ยังไม่มีข้อมูลยาในระบบ
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '12px' }}>
-              {stats.topMedications.map((item, idx) => (
-                <div key={idx}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13.5px', marginBottom: '6px' }}>
-                    <span style={{ fontWeight: 600, color: 'var(--color-neutral-800)' }}>{item.name}</span>
-                    <span style={{ color: 'var(--color-neutral-500)', fontSize: '12px' }}>{item.countLabel ?? item.count}</span>
-                  </div>
-                  <div style={{ width: '100%', height: '8px', backgroundColor: 'var(--color-neutral-100)', borderRadius: 'var(--radius-pill)', overflow: 'hidden' }}>
-                    <div 
-                      style={{
-                        height: '100%',
-                        width: `${item.max > 0 ? Math.min(100, (item.count / item.max) * 100) : 0}%`,
-                        background: 'linear-gradient(135deg, var(--color-primary-400) 0%, var(--color-primary-500) 100%)',
-                        borderRadius: 'var(--radius-pill)'
-                      }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
       </div>
 
     </div>

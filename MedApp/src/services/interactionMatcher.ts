@@ -95,7 +95,7 @@ export function formatFoodAvoidanceHeader(foodName?: string | null, hoursNote?: 
   const trimmedHours = hoursNote.trim();
   const matchHours = trimmedHours.match(/(\d+)\s*(ชม\.|ชั่วโมง)/);
   const hoursTag = matchHours ? `(เว้น ${matchHours[1]} ชม.)` : `(${trimmedHours})`;
-  return cleanFood ? `${cleanFood} ${hoursTag}` : hoursTag;
+  return cleanFood ? `${cleanFood} ${hoursTag}` : hoursTag; 
 }
 
 /**

@@ -77,10 +77,10 @@ export default function AddAppointmentScreen() {
   const [selectedQuickTime, setSelectedQuickTime] = useState<string | null>(null);
 
   const quickTimePresets = [
-    { label: 'เช้า (08:00)', hour: 8, minute: 0 },
-    { label: 'กลางวัน (12:00)', hour: 12, minute: 0 },
-    { label: 'บ่าย (14:00)', hour: 14, minute: 0 },
-    { label: 'เย็น (16:00)', hour: 16, minute: 0 },
+    { label: 'เช้า ', hour: 8, minute: 0 },
+    { label: 'กลางวัน ', hour: 12, minute: 0 },
+    { label: 'บ่าย ', hour: 14, minute: 0 },
+    { label: 'เย็น ', hour: 16, minute: 0 },
   ];
 
   // Load persisted favorite doctors for current user
@@ -137,7 +137,7 @@ export default function AddAppointmentScreen() {
   const handleDeleteFavoriteDoctor = (doc: FavoriteDoctor) => {
     Alert.alert(
       'ลบแพทย์ที่ใช้บ่อย',
-      `ต้องการลบ "${doc.name}" ออกจากรายการแพทย์ที่ใช้บ่อยหรือไม่?`,
+      `ต้องการลบ "${doc.name}" ออกจากรายการแพทย์ที่นัดประจำหรือไม่?`,
       [
         { text: 'ยกเลิก', style: 'cancel' },
         {
@@ -248,7 +248,7 @@ export default function AddAppointmentScreen() {
     if (isDuplicateDoctor) {
       Alert.alert(
         'ชื่อแพทย์ซ้ำ',
-        `มีแพทย์ชื่อ "${doctorName.trim()}" ในระบบแล้ว ไม่สามารถเพิ่มเป็นแพทย์ใหม่ซ้ำได้ กรุณาเลือกจากรายการแพทย์ที่ใช้บ่อยด้านบน`
+        `มีแพทย์ชื่อ "${doctorName.trim()}" มีแพทย์ที่นัดประจำท่านนี้ในระบบแล้ว กรุณาเลือกจากรายการแพทย์ที่นัดประจำด้านบน`
       );
       return;
     }
@@ -345,7 +345,7 @@ export default function AddAppointmentScreen() {
           <View style={{ marginBottom: 10 }}>
             <View style={styles.sectionHeaderRow}>
               <Ionicons name="star" size={16} color="#EAB308" />
-              <Text style={styles.sectionHeaderTitle}>แพทย์ที่ใช้บ่อย</Text>
+              <Text style={styles.sectionHeaderTitle}>แพทย์ที่นัดประจำ</Text>
             </View>
 
             {/* Favorite Doctor Cards List */}
@@ -455,7 +455,7 @@ export default function AddAppointmentScreen() {
             <Text style={styles.inputLabel}>แผนก</Text>
             <TextInput
               style={styles.input}
-              placeholder="เช่น อายุรกรรมทั่วไป"
+              placeholder="เช่น อายุรกรรม"
               placeholderTextColor="#94A3B8"
               value={department}
               onChangeText={setDepartment}
@@ -481,7 +481,7 @@ export default function AddAppointmentScreen() {
           activeOpacity={0.7}
         >
           <Text style={styles.favoriteToggleLabel}>
-            เก็บเป็นแพทย์ที่ใช้บ่อย (ไม่ต้องกรอกใหม่ครั้งหน้า)
+            แพทย์ที่นัดประจำ
           </Text>
           <Ionicons
             name={saveAsFavorite ? 'star' : 'star-outline'}
@@ -737,7 +737,7 @@ export default function AddAppointmentScreen() {
         >
           <Pressable style={styles.editDocModalCard} onPress={e => e.stopPropagation()}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>แก้ไขข้อมูลแพทย์ที่ใช้บ่อย</Text>
+              <Text style={styles.modalTitle}>แก้ไขข้อมูลแพทย์ที่นัดประจำ</Text>
               <TouchableOpacity
                 onPress={() => setShowEditDocModal(false)}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
@@ -968,7 +968,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#0F172A',
     flex: 1,
-    marginRight: 10,
+    marginLeft: -4,
   },
 
   // Date & Time Picker Input Boxes
@@ -1100,8 +1100,8 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: '#64748B',
-    marginTop: 8,
-    marginBottom: 8,
+    marginTop: 10,
+    marginBottom: 10,
   },
   quickTimesGrid: {
     flexDirection: 'row',

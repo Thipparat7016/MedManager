@@ -352,7 +352,7 @@ export default function ScheduleScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <AppHeader
-        title="ตารางยา"
+        title="ตาราง"
         rightAction={
           <View style={styles.viewToggleGroup}>
             <TouchableOpacity
