@@ -1,161 +1,42 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  Alert,
 } from 'react-native';
-import { useRouter, useFocusEffect } from 'expo-router';
 import { Feather, Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useApp } from '@/context/AppContext';
 import { StatusBadge } from '@/components/ui/StatusBadge';
-import { formatHospitalName, formatDepartmentName } from '@/services/medService';
+import { formatHospitalName, formatDepartmentName } from '@/utils/formatUtils';
+import { useAppointmentsTab } from '@/hooks/useAppointmentsTab';
 
 export default function AppointmentsScreen() {
-  const router = useRouter();
-  const insets = useSafeAreaInsets();
-  const { appointments, deleteAppointment } = useApp();
-
-  const now = useMemo(() => new Date(), []);
-  const getYearPageBase = (y: number) => y - ((((y - 2024) % 12) + 12) % 12);
-
-  const [viewYear, setViewYear] = useState<number>(now.getFullYear());
-  const [viewMonth, setViewMonth] = useState<number>(now.getMonth());
-  const [selectedDay, setSelectedDay] = useState<number>(now.getDate());
-  const [pickerMode, setPickerMode] = useState<'day' | 'month' | 'year'>('day');
-  const [yearPageStart, setYearPageStart] = useState<number>(() =>
-    getYearPageBase(now.getFullYear())
-  );
-
-  // รีเซ็ตปฏิทินเป็นวันที่ปัจจุบันแบบ real-time ทุกครั้งที่กลับมาที่หน้านัดหมาย
-  useFocusEffect(
-    useCallback(() => {
-      const today = new Date();
-      setViewYear(today.getFullYear());
-      setViewMonth(today.getMonth());
-      setSelectedDay(today.getDate());
-      setPickerMode('day');
-      setYearPageStart(getYearPageBase(today.getFullYear()));
-    }, [])
-  );
-
-  const THAI_MONTHS_FULL = [
-    'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
-    'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'
-  ];
-
-  // Parse appointment date string (DD/MM/YYYY or DD/MM/BE)
-  const parseAptDate = (dateStr: string) => {
-    if (!dateStr) return null;
-    const parts = dateStr.trim().split(/[\/\-.]/);
-    if (parts.length >= 3) {
-      const d = parseInt(parts[0], 10);
-      const m = parseInt(parts[1], 10) - 1;
-      let y = parseInt(parts[2], 10);
-      if (y > 2400) y -= 543; // Buddhist Era to CE
-      if (!isNaN(d) && !isNaN(m) && !isNaN(y)) {
-        return { day: d, month: m, year: y };
-      }
-    }
-    return null;
-  };
-
-  // Filter appointments for the currently selected date (Day / Month / Year)
-  const selectedDateApts = useMemo(() => {
-    return appointments.filter(apt => {
-      if (apt.status === 'passed') return false;
-      const parsed = parseAptDate(apt.date);
-      if (!parsed) return false;
-      return (
-        parsed.day === selectedDay &&
-        parsed.month === viewMonth &&
-        parsed.year === viewYear
-      );
-    });
-  }, [appointments, selectedDay, viewMonth, viewYear]);
-
-  const pastApts = useMemo(() => {
-    return appointments.filter(a => a.status === 'passed');
-  }, [appointments]);
-
-  const handleDelete = (id: string, name: string) => {
-    Alert.alert('ยืนยันการลบ', `ต้องการลบนัดหมาย "${name}" หรือไม่?`, [
-      { text: 'ยกเลิก', style: 'cancel' },
-      { text: 'ลบ', style: 'destructive', onPress: () => deleteAppointment(id) },
-    ]);
-  };
-
-  const daysOfWeek = ['จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส', 'อา'];
-
-  // Dynamically calculate days of the viewed month & year
-  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
-  const firstDayIndex = (new Date(viewYear, viewMonth, 1).getDay() + 6) % 7; // Monday-first
-
-  const calendarDays: (number | null)[][] = [];
-  let currentWeek: (number | null)[] = [];
-  for (let i = 0; i < firstDayIndex; i++) {
-    currentWeek.push(null);
-  }
-  for (let d = 1; d <= daysInMonth; d++) {
-    currentWeek.push(d);
-    if (currentWeek.length === 7) {
-      calendarDays.push(currentWeek);
-      currentWeek = [];
-    }
-  }
-  if (currentWeek.length > 0) {
-    while (currentWeek.length < 7) {
-      currentWeek.push(null);
-    }
-    calendarDays.push(currentWeek);
-  }
-
-  // Filter appointments for the currently viewed month & year
-  const appointmentDays = useMemo(() => {
-    return appointments
-      .map(apt => parseAptDate(apt.date))
-      .filter((parsed): parsed is { day: number; month: number; year: number } => {
-        return !!parsed && parsed.month === viewMonth && parsed.year === viewYear;
-      })
-      .map(p => p.day);
-  }, [appointments, viewMonth, viewYear]);
-
-  const handlePrevMonth = () => {
-    if (viewMonth === 0) {
-      setViewMonth(11);
-      setViewYear(prev => prev - 1);
-    } else {
-      setViewMonth(prev => prev - 1);
-    }
-  };
-
-  const handleNextMonth = () => {
-    if (viewMonth === 11) {
-      setViewMonth(0);
-      setViewYear(prev => prev + 1);
-    } else {
-      setViewMonth(prev => prev + 1);
-    }
-  };
-
-  const handleSelectYear = (yr: number) => {
-    setViewYear(yr);
-    setPickerMode('month');
-  };
-
-  const handleSelectMonth = (mIdx: number) => {
-    setViewMonth(mIdx);
-    const maxDay = new Date(viewYear, mIdx + 1, 0).getDate();
-    if (selectedDay > maxDay) {
-      setSelectedDay(maxDay);
-    }
-    setPickerMode('day');
-  };
-
-  const topInsetPadding = Math.max(insets.top, 24) + 14;
+  const {
+    THAI_MONTHS_FULL,
+    daysOfWeek,
+    viewYear,
+    viewMonth,
+    selectedDay,
+    setSelectedDay,
+    pickerMode,
+    yearPageStart,
+    calendarDays,
+    appointmentDays,
+    selectedDateApts,
+    pastApts,
+    handleDelete,
+    handlePrevPeriod,
+    handleNextPeriod,
+    openYearPicker,
+    openMonthPicker,
+    closePickerToDay,
+    handleSelectYear,
+    handleSelectMonth,
+    goToAddAppointment,
+    goToEditAppointment,
+    topInsetPadding,
+  } = useAppointmentsTab();
 
   return (
     <View style={styles.safeArea}>
@@ -168,7 +49,7 @@ export default function AppointmentsScreen() {
           <Text style={styles.headerTitle}>นัดหมายแพทย์</Text>
           <TouchableOpacity
             style={styles.addAptButton}
-            onPress={() => router.push('/add-appointment')}
+            onPress={goToAddAppointment}
             activeOpacity={0.8}
           >
             <Text style={styles.addAptButtonText}>+ เพิ่ม</Text>
@@ -181,13 +62,7 @@ export default function AppointmentsScreen() {
           <View style={styles.monthHeader}>
             <TouchableOpacity
               style={styles.monthArrow}
-              onPress={
-                pickerMode === 'year'
-                  ? () => setYearPageStart(prev => prev - 12)
-                  : pickerMode === 'month'
-                    ? () => setViewYear(prev => prev - 1)
-                    : handlePrevMonth
-              }
+              onPress={handlePrevPeriod}
               activeOpacity={0.7}
             >
               <Ionicons name="chevron-back" size={16} color="#64748B" />
@@ -195,7 +70,7 @@ export default function AppointmentsScreen() {
 
             {pickerMode === 'year' ? (
               <TouchableOpacity
-                onPress={() => setPickerMode('day')}
+                onPress={closePickerToDay}
                 activeOpacity={0.7}
                 style={styles.headerSelectorPill}
               >
@@ -205,7 +80,7 @@ export default function AppointmentsScreen() {
               </TouchableOpacity>
             ) : pickerMode === 'month' ? (
               <TouchableOpacity
-                onPress={() => setPickerMode('day')}
+                onPress={closePickerToDay}
                 activeOpacity={0.7}
                 style={styles.headerSelectorPill}
               >
@@ -217,7 +92,7 @@ export default function AppointmentsScreen() {
               <View style={styles.monthYearCenterRow}>
                 {/* ปุ่มเลือกเดือน */}
                 <TouchableOpacity
-                  onPress={() => setPickerMode('month')}
+                  onPress={openMonthPicker}
                   activeOpacity={0.7}
                   style={styles.headerSelectorPill}
                 >
@@ -228,10 +103,7 @@ export default function AppointmentsScreen() {
 
                 {/* ปุ่มเลือกปี */}
                 <TouchableOpacity
-                  onPress={() => {
-                    setYearPageStart(getYearPageBase(viewYear));
-                    setPickerMode('year');
-                  }}
+                  onPress={openYearPicker}
                   activeOpacity={0.7}
                   style={styles.headerSelectorPill}
                 >
@@ -242,13 +114,7 @@ export default function AppointmentsScreen() {
 
             <TouchableOpacity
               style={styles.monthArrow}
-              onPress={
-                pickerMode === 'year'
-                  ? () => setYearPageStart(prev => prev + 12)
-                  : pickerMode === 'month'
-                    ? () => setViewYear(prev => prev + 1)
-                    : handleNextMonth
-              }
+              onPress={handleNextPeriod}
               activeOpacity={0.7}
             >
               <Ionicons name="chevron-forward" size={16} color="#64748B" />
@@ -403,12 +269,7 @@ export default function AppointmentsScreen() {
               <View style={styles.cardActionsRow}>
                 <TouchableOpacity
                   style={styles.actionBtnEdit}
-                  onPress={() =>
-                    router.push({
-                      pathname: '/edit-appointment' as any,
-                      params: { id: apt.id },
-                    })
-                  }
+                  onPress={() => goToEditAppointment(apt.id)}
                   activeOpacity={0.7}
                 >
                   <Text style={styles.actionBtnEditText}>แก้ไข</Text>

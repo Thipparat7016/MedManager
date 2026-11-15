@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   View,
   Text,
@@ -8,59 +8,34 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter, Redirect } from 'expo-router';
+import { Redirect } from 'expo-router';
 import { AppHeader } from '@/components/ui/AppHeader';
-import { useApp } from '@/context/AppContext';
+import { useRegister } from '@/hooks/useRegister';
 
 export default function RegisterScreen() {
-  const router = useRouter();
-  const { register, isAuthenticated, isLoading: isAppLoading } = useApp();
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const {
+    name,
+    setName,
+    email,
+    setEmail,
+    phone,
+    setPhone,
+    password,
+    setPassword,
+    confirmPassword,
+    setConfirmPassword,
+    isLoading,
+    shouldRedirectToTabs,
+    handleRegister,
+    navigateToLogin,
+  } = useRegister();
 
   // If already logged in, redirect directly to tabs
-  if (!isAppLoading && isAuthenticated) {
+  if (shouldRedirectToTabs) {
     return <Redirect href={'/(tabs)' as any} />;
   }
-
-  const handleRegister = async () => {
-    if (!name.trim() || !email.trim()) {
-      Alert.alert('กรุณากรอกข้อมูล', 'กรุณากรอกชื่อและอีเมล');
-      return;
-    }
-    if (!password.trim()) {
-      Alert.alert('กรุณากรอกข้อมูล', 'กรุณากำหนดรหัสผ่าน');
-      return;
-    }
-    if (password !== confirmPassword) {
-      Alert.alert('ข้อผิดพลาด', 'รหัสผ่านทั้งสองช่องไม่ตรงกัน');
-      return;
-    }
-
-    setIsLoading(true);
-    const result = await register({
-      name: name.trim(),
-      email: email.trim().toLowerCase(),
-      phone: phone.trim(),
-      password: password.trim(),
-    });
-    setIsLoading(false);
-
-    if (result.success) {
-      Alert.alert('สำเร็จ', 'สมัครสมาชิกเรียบร้อยแล้ว', [
-        { text: 'ตกลง', onPress: () => router.replace('/(tabs)' as any) },
-      ]);
-    } else {
-      Alert.alert('สมัครสมาชิกไม่สำเร็จ', result.error || 'เกิดข้อผิดพลาดในการสมัครสมาชิก');
-    }
-  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -150,7 +125,7 @@ export default function RegisterScreen() {
             {/* Footer */}
             <View style={styles.footerRow}>
               <Text style={styles.footerText}>มีบัญชีแล้ว? </Text>
-              <TouchableOpacity onPress={() => router.push('/(auth)/login')}>
+              <TouchableOpacity onPress={navigateToLogin}>
                 <Text style={styles.footerLink}>เข้าสู่ระบบ</Text>
               </TouchableOpacity>
             </View>

@@ -1,3 +1,8 @@
+import {
+  matchFoodInteractionsForMedication,
+  filterInteractionPresets
+} from '../utils/drugTextUtils.js'
+
 // ==============================================================================
 // Food-Drug & Food-Supplement Interaction Service
 // Comprehensive clinical interaction database matching all drugs & supplements in system
@@ -2099,60 +2104,12 @@ export const PRESET_FOOD_INTERACTIONS = [
 ];
 
 /**
- * Clean text for fuzzy keyword matching
- */
-function cleanText(txt = '') {
-  return String(txt)
-    .toLowerCase()
-    .replace(/[\(\)\-\_\/\+\,\.\']/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-/**
- * Helper to extract base key from food name for deduplication
- */
-function getBaseFoodKey(foodName) {
-  if (!foodName) return '';
-  let base = foodName.replace(/\(.*?\)/g, '').trim();
-  base = base.replace(/^(เครื่องดื่ม|อาหาร|ผลิตภัณฑ์|กลุ่ม)/, '').trim();
-  return base.toLowerCase().replace(/\s+/g, '');
-}
-
-/**
  * Get matching food interactions for a given medication or supplement name
  * @param {string} medName - Thai or English medication name
  * @returns {Array} List of matched interaction presets
  */
 export function getInteractionsForMedication(medName = '') {
-  if (!medName) return [];
-  const cleanQ = cleanText(medName);
-
-  const matched = [];
-  const seenFoodKeys = new Set();
-
-  for (const item of PRESET_FOOD_INTERACTIONS) {
-    const isHit = item.medication_keys.some(key => {
-      const cleanKey = cleanText(key);
-      if (!cleanKey) return false;
-      if (cleanQ.includes(cleanKey)) return true;
-      if (cleanQ.length >= 3 && cleanKey.includes(cleanQ)) return true;
-      return false;
-    });
-
-    if (isHit) {
-      const typeKey = (item.interaction_type || '').includes('แนะนำ') ? 'recommend' : 'avoid';
-      const baseFood = getBaseFoodKey(item.food_name);
-      const dedupeKey = `${typeKey}:${baseFood}`;
-
-      if (!seenFoodKeys.has(dedupeKey)) {
-        seenFoodKeys.add(dedupeKey);
-        matched.push(item);
-      }
-    }
-  }
-
-  return matched;
+  return matchFoodInteractionsForMedication(medName, PRESET_FOOD_INTERACTIONS);
 }
 
 /**
@@ -2161,22 +2118,7 @@ export function getInteractionsForMedication(medName = '') {
  * @returns {Array}
  */
 export function searchInteractionPresets(query = '') {
-  if (!query) return PRESET_FOOD_INTERACTIONS;
-  const cleanQ = cleanText(query);
-
-  return PRESET_FOOD_INTERACTIONS.filter(item => {
-    const medLabel = cleanText(item.medication_label);
-    const foodName = cleanText(item.food_name);
-    const impact = cleanText(item.impact_details);
-    const keys = item.medication_keys.map(cleanText).join(' ');
-
-    return (
-      medLabel.includes(cleanQ) ||
-      foodName.includes(cleanQ) ||
-      impact.includes(cleanQ) ||
-      keys.includes(cleanQ)
-    );
-  });
+  return filterInteractionPresets(query, PRESET_FOOD_INTERACTIONS);
 }
 
 /**

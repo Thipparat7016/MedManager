@@ -1,163 +1,42 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  Animated,
   Image,
-  Alert,
-  Modal,
-  TextInput,
-  KeyboardAvoidingView,
-  Platform,
 } from 'react-native';
-import { useRouter } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useApp } from '@/context/AppContext';
-import { isScheduleTakenOnTime } from '@/services/medService';
-
-interface SmoothSwitchProps {
-  value: boolean;
-  onValueChange: (val: boolean) => void;
-}
-
-function SmoothSwitch({ value, onValueChange }: SmoothSwitchProps) {
-  const animatedValue = useRef(new Animated.Value(value ? 1 : 0)).current;
-
-  useEffect(() => {
-    Animated.spring(animatedValue, {
-      toValue: value ? 1 : 0,
-      friction: 8,
-      tension: 65,
-      useNativeDriver: false,
-    }).start();
-  }, [value]);
-
-  const translateX = animatedValue.interpolate({
-    inputRange: [0, 1],
-    outputRange: [2, 22],
-  });
-
-  const backgroundColor = animatedValue.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['#CBD5E1', '#8B95F6'],
-  });
-
-  return (
-    <TouchableOpacity
-      activeOpacity={0.85}
-      onPress={() => onValueChange(!value)}
-      style={styles.switchTouchContainer}
-    >
-      <Animated.View style={[styles.switchTrack, { backgroundColor }]}>
-        <Animated.View
-          style={[
-            styles.switchThumb,
-            { transform: [{ translateX }] },
-          ]}
-        />
-      </Animated.View>
-    </TouchableOpacity>
-  );
-}
+import { SmoothSwitch } from '@/components/ui/SmoothSwitch';
+import { PasswordSetupModal } from '@/components/profile/PasswordSetupModal';
+import { useProfileTab } from '@/hooks/useProfileTab';
 
 export default function ProfileScreen() {
-  const router = useRouter();
-  const insets = useSafeAreaInsets();
   const {
     user,
-    updateProfile,
-    setAccountPassword,
-    logout,
-    medications,
-    appointments,
-    todaySchedule,
-  } = useApp();
-
-  const [showPasswordModal, setShowPasswordModal] = useState(false);
-  const [verifyInput, setVerifyInput] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [showNewPassword, setShowNewPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [isSavingPassword, setIsSavingPassword] = useState(false);
-
-  const handleOpenPasswordModal = () => {
-    setVerifyInput('');
-    setNewPassword('');
-    setConfirmPassword('');
-    setShowNewPassword(false);
-    setShowConfirmPassword(false);
-    setShowPasswordModal(true);
-  };
-
-  const handleSavePassword = async () => {
-    if (!verifyInput.trim()) {
-      Alert.alert(
-        'กรุณายืนยันตัวตน',
-        user?.hasPassword
-          ? 'กรุณากรอกรหัสผ่านเดิม หรือ อีเมลของบัญชีนี้เพื่อยืนยันตัวตน'
-          : 'กรุณากรอกอีเมล หรือ เบอร์โทรศัพท์ของบัญชีนี้เพื่อยืนยันตัวตน'
-      );
-      return;
-    }
-    if (newPassword.trim().length < 6) {
-      Alert.alert('รหัสผ่านสั้นเกินไป', 'กรุณากำหนดรหัสผ่านใหม่อย่างน้อย 6 ตัวอักษร');
-      return;
-    }
-    if (newPassword.trim() !== confirmPassword.trim()) {
-      Alert.alert('รหัสผ่านไม่ตรงกัน', 'กรุณากรอกรหัสผ่านใหม่และยืนยันรหัสผ่านให้ตรงกัน');
-      return;
-    }
-
-    try {
-      setIsSavingPassword(true);
-      await setAccountPassword(verifyInput.trim(), newPassword.trim());
-      setShowPasswordModal(false);
-      Alert.alert(
-        'บันทึกสำเร็จ',
-        'ตั้งรหัสผ่านสำหรับบัญชีนี้เรียบร้อยแล้ว '
-      );
-    } catch (err: any) {
-      Alert.alert('ไม่สามารถบันทึกรหัสผ่านได้', err?.message || 'เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง');
-    } finally {
-      setIsSavingPassword(false);
-    }
-  };
-
-  const handleToggle = (key: keyof NonNullable<typeof user>) => {
-    if (!user) return;
-    updateProfile({
-      [key]: !user[key],
-    });
-  };
-
-  const handleLogout = () => {
-    Alert.alert('ออกจากระบบ', 'คุณต้องการออกจากระบบหรือไม่?', [
-      { text: 'ยกเลิก', style: 'cancel' },
-      {
-        text: 'ออกจากระบบ',
-        style: 'destructive',
-        onPress: async () => {
-          await logout();
-          router.replace('/(auth)/login');
-        },
-      },
-    ]);
-  };
-
-  const activeMedsCount = medications.filter(m => m.status === 'active').length;
-  const upcomingAptsCount = appointments.filter(a => a.status !== 'passed').length;
-  const takenCount = todaySchedule.filter(s => s.isTaken).length;
-  const onTimeCount = todaySchedule.filter(s => isScheduleTakenOnTime(s)).length;
-  const totalSchedule = todaySchedule.length;
-  const onTimeRate = totalSchedule > 0 ? `${Math.round((onTimeCount / totalSchedule) * 100)}%` : '-';
-  const consistencyRate = totalSchedule > 0 ? `${Math.round((takenCount / totalSchedule) * 100)}%` : '-';
-
-  const topInsetPadding = Math.max(insets.top, 24) + 14;
+    showPasswordModal,
+    verifyInput,
+    setVerifyInput,
+    newPassword,
+    setNewPassword,
+    confirmPassword,
+    setConfirmPassword,
+    showNewPassword,
+    setShowNewPassword,
+    showConfirmPassword,
+    setShowConfirmPassword,
+    isSavingPassword,
+    handleOpenPasswordModal,
+    handleClosePasswordModal,
+    handleSavePassword,
+    handleToggle,
+    handleLogout,
+    goToEditProfile,
+    goToHistory,
+    stats,
+    topInsetPadding,
+  } = useProfileTab();
 
   return (
     <View style={styles.safeArea}>
@@ -181,7 +60,7 @@ export default function ProfileScreen() {
 
           <TouchableOpacity
             style={styles.editProfileBtn}
-            onPress={() => router.push('/edit-profile')}
+            onPress={goToEditProfile}
             activeOpacity={0.8}
           >
             <Text style={styles.editProfileBtnText}>แก้ไขโปรไฟล์</Text>
@@ -193,25 +72,25 @@ export default function ProfileScreen() {
           <Text style={styles.statsCardTitle}>สถิติการรับประทานยา</Text>
           <View style={styles.statsGrid}>
             <View style={styles.statBox}>
-              <Text style={styles.statValue}>{onTimeRate}</Text>
+              <Text style={styles.statValue}>{stats.onTimeRate}</Text>
               <Text style={styles.statLabel}>ตรงเวลา</Text>
               <Text style={styles.statSublabel}>วันนี้</Text>
             </View>
 
             <View style={styles.statBox}>
-              <Text style={styles.statValue}>{consistencyRate}</Text>
+              <Text style={styles.statValue}>{stats.consistencyRate}</Text>
               <Text style={styles.statLabel}>สำเร็จ</Text>
               <Text style={styles.statSublabel}>วันนี้</Text>
             </View>
 
             <View style={styles.statBox}>
-              <Text style={styles.statValue}>{activeMedsCount}</Text>
+              <Text style={styles.statValue}>{stats.activeMedsCount}</Text>
               <Text style={styles.statLabel}>รายการ</Text>
               <Text style={styles.statSublabel}>ยาที่ใช้อยู่</Text>
             </View>
 
             <View style={styles.statBox}>
-              <Text style={styles.statValue}>{upcomingAptsCount}</Text>
+              <Text style={styles.statValue}>{stats.upcomingAptsCount}</Text>
               <Text style={styles.statLabel}>ที่จะมาถึง</Text>
               <Text style={styles.statSublabel}>นัดหมาย</Text>
             </View>
@@ -261,7 +140,7 @@ export default function ProfileScreen() {
 
           <TouchableOpacity
             style={styles.linkRow}
-            onPress={() => router.push('/edit-profile')}
+            onPress={goToEditProfile}
             activeOpacity={0.7}
           >
             <View style={styles.linkLeft}>
@@ -285,7 +164,7 @@ export default function ProfileScreen() {
 
           <TouchableOpacity
             style={[styles.linkRow, { borderBottomWidth: 0 }]}
-            onPress={() => router.push('/history')}
+            onPress={goToHistory}
             activeOpacity={0.7}
           >
             <View style={styles.linkLeft}>
@@ -310,133 +189,24 @@ export default function ProfileScreen() {
       </ScrollView>
 
       {/* Set / Change Password Modal */}
-      <Modal
+      <PasswordSetupModal
         visible={showPasswordModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => !isSavingPassword && setShowPasswordModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-            style={styles.modalKeyboardWrapper}
-          >
-            <View style={styles.modalCard}>
-              <View style={styles.modalHeaderRow}>
-                <View style={styles.modalIconBox}>
-                  <Ionicons name="lock-closed-outline" size={24} color="#8B95F6" />
-                </View>
-                <TouchableOpacity
-                  onPress={() => setShowPasswordModal(false)}
-                  disabled={isSavingPassword}
-                  style={styles.modalCloseBtn}
-                >
-                  <Ionicons name="close" size={20} color="#64748B" />
-                </TouchableOpacity>
-              </View>
-
-              <Text style={styles.modalTitle}>
-                {user?.hasPassword ? 'ตั้งรหัสผ่าน / เปลี่ยนรหัสผ่าน' : 'ตั้งรหัสผ่านสำหรับบัญชีนี้'}
-              </Text>
-              <Text style={styles.modalSubtitle}>
-                บัญชี: {user?.email || '-'}
-              </Text>
-
-              <View style={styles.modalInputGroup}>
-                <Text style={styles.modalInputLabel}>
-                  {user?.hasPassword
-                    ? 'ยืนยันตัวตน '
-                    : 'ยืนยันตัวตน (อีเมล หรือ เบอร์โทรศัพท์ของบัญชีนี้)'}
-                </Text>
-                <TextInput
-                  style={styles.modalInput}
-                  placeholder={
-                    user?.hasPassword
-                      ? 'กรอกรหัสผ่านเดิม หรือ อีเมลบัญชีนี้'
-                      : 'กรอกอีเมล หรือ เบอร์โทรศัพท์ของคุณ'
-                  }
-                  placeholderTextColor="#94A3B8"
-                  value={verifyInput}
-                  onChangeText={setVerifyInput}
-                  autoCapitalize="none"
-                />
-              </View>
-
-              <View style={styles.modalInputGroup}>
-                <Text style={styles.modalInputLabel}>รหัสผ่านใหม่</Text>
-                <View style={styles.passwordInputWrapper}>
-                  <TextInput
-                    style={styles.passwordInputField}
-                    placeholder="อย่างน้อย 6 ตัวอักษร"
-                    placeholderTextColor="#94A3B8"
-                    value={newPassword}
-                    onChangeText={setNewPassword}
-                    secureTextEntry={!showNewPassword}
-                    autoCapitalize="none"
-                  />
-                  <TouchableOpacity
-                    onPress={() => setShowNewPassword(prev => !prev)}
-                    style={styles.eyeIconBtn}
-                  >
-                    <Ionicons
-                      name={showNewPassword ? 'eye-off-outline' : 'eye-outline'}
-                      size={20}
-                      color="#64748B"
-                    />
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              <View style={styles.modalInputGroup}>
-                <Text style={styles.modalInputLabel}>ยืนยันรหัสผ่านใหม่</Text>
-                <View style={styles.passwordInputWrapper}>
-                  <TextInput
-                    style={styles.passwordInputField}
-                    placeholder="กรอกรหัสผ่านใหม่อีกครั้ง"
-                    placeholderTextColor="#94A3B8"
-                    value={confirmPassword}
-                    onChangeText={setConfirmPassword}
-                    secureTextEntry={!showConfirmPassword}
-                    autoCapitalize="none"
-                  />
-                  <TouchableOpacity
-                    onPress={() => setShowConfirmPassword(prev => !prev)}
-                    style={styles.eyeIconBtn}
-                  >
-                    <Ionicons
-                      name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'}
-                      size={20}
-                      color="#64748B"
-                    />
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              <View style={styles.modalActionRow}>
-                <TouchableOpacity
-                  style={styles.modalCancelBtn}
-                  onPress={() => setShowPasswordModal(false)}
-                  disabled={isSavingPassword}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.modalCancelBtnText}>ยกเลิก</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.modalSaveBtn, isSavingPassword && { opacity: 0.7 }]}
-                  onPress={handleSavePassword}
-                  disabled={isSavingPassword}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.modalSaveBtnText}>
-                    {isSavingPassword ? 'กำลังบันทึก...' : 'บันทึกรหัสผ่าน'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </KeyboardAvoidingView>
-        </View>
-      </Modal>
+        hasPassword={user?.hasPassword}
+        email={user?.email}
+        verifyInput={verifyInput}
+        newPassword={newPassword}
+        confirmPassword={confirmPassword}
+        showNewPassword={showNewPassword}
+        showConfirmPassword={showConfirmPassword}
+        isSavingPassword={isSavingPassword}
+        onChangeVerifyInput={setVerifyInput}
+        onChangeNewPassword={setNewPassword}
+        onChangeConfirmPassword={setConfirmPassword}
+        onToggleShowNewPassword={() => setShowNewPassword(prev => !prev)}
+        onToggleShowConfirmPassword={() => setShowConfirmPassword(prev => !prev)}
+        onClose={handleClosePasswordModal}
+        onSave={handleSavePassword}
+      />
     </View>
   );
 }
@@ -571,27 +341,6 @@ const styles = StyleSheet.create({
     color: '#1E293B',
     fontWeight: '500',
   },
-  switchTouchContainer: {
-    paddingVertical: 4,
-    paddingHorizontal: 2,
-  },
-  switchTrack: {
-    width: 50,
-    height: 30,
-    borderRadius: 15,
-    justifyContent: 'center',
-  },
-  switchThumb: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.18,
-    shadowRadius: 3,
-    elevation: 3,
-  },
   linkRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -633,137 +382,5 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#94A3B8',
     marginBottom: 20,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.45)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-  },
-  modalKeyboardWrapper: {
-    width: '100%',
-    alignItems: 'center',
-  },
-  modalCard: {
-    width: '100%',
-    maxWidth: 400,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: 22,
-    borderWidth: 1.5,
-    borderColor: '#EDE9FE',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.12,
-    shadowRadius: 16,
-    elevation: 6,
-  },
-  modalHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  modalIconBox: {
-    width: 48,
-    height: 48,
-    borderRadius: 16,
-    borderWidth: 1.5,
-    borderColor: '#C7D2FE',
-    backgroundColor: '#F5F6FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  modalCloseBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: '#F8FAFC',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  modalSubtitle: {
-    fontSize: 13,
-    color: '#64748B',
-    lineHeight: 19,
-    marginBottom: 10,
-  },
-  modalInputGroup: {
-    marginBottom: 10,
-  },
-  modalInputLabel: {
-    fontSize: 13.5,
-    fontWeight: '700',
-    color: '#1E293B',
-    marginBottom: 4,
-  },
-  modalInput: {
-    height: 48,
-    borderWidth: 1.5,
-    borderColor: '#E2E8F0',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    fontSize: 14,
-    color: '#0F172A',
-    backgroundColor: '#FAFAFC',
-  },
-  passwordInputWrapper: {
-    height: 48,
-    borderWidth: 1.5,
-    borderColor: '#E2E8F0',
-    borderRadius: 12,
-    paddingLeft: 14,
-    paddingRight: 8,
-    backgroundColor: '#FAFAFC',
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  passwordInputField: {
-    flex: 1,
-    fontSize: 14,
-    color: '#0F172A',
-    height: '100%',
-  },
-  eyeIconBtn: {
-    padding: 6,
-  },
-  modalActionRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 8,
-  },
-  modalCancelBtn: {
-    flex: 1,
-    height: 48,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: '#E2E8F0',
-    backgroundColor: '#F8FAFC',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  modalCancelBtnText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#64748B',
-  },
-  modalSaveBtn: {
-    flex: 1.4,
-    height: 48,
-    borderRadius: 12,
-    backgroundColor: '#8B95F6',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  modalSaveBtnText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#FFFFFF',
   },
 });

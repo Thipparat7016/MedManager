@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React from 'react';
 import {
   View,
   Text,
@@ -6,195 +6,61 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  Alert,
-  Modal,
-  Pressable,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
-import { Feather, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Feather, Ionicons } from '@expo/vector-icons';
 import { AppHeader } from '@/components/ui/AppHeader';
-import { StatusBadge } from '@/components/ui/StatusBadge';
 import { CalendarModal } from '@/components/ui/CalendarModal';
-import { useApp } from '@/context/AppContext';
-import { formatCleanDrugName, isMedicationMatch } from '@/services/interactionMatcher';
+import { DigitalTimeModal } from '@/components/ui/DigitalTimeModal';
+import { DrugPrecautionCard } from '@/components/side-effects/DrugPrecautionCard';
+import { SideEffectHistoryList } from '@/components/side-effects/SideEffectHistoryList';
+import { formatCleanDrugName } from '@/utils/interactionMatcher';
+import { useLogSideEffect } from '@/hooks/useLogSideEffect';
 
 export default function LogSideEffectScreen() {
-  const router = useRouter();
-  const { sideEffects, addSideEffect, medications, masterMedications } = useApp();
-
-  const now = new Date();
-  const pad = (n: number) => n.toString().padStart(2, '0');
-  const defaultDate = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear() + 543}`;
-  const defaultTime = `${pad(now.getHours())}:${pad(now.getMinutes())} น.`;
-
-  // 1. Date & Calendar State (defaults to today's date)
-  const [date, setDate] = useState<string>(defaultDate);
-  const [showCalendar, setShowCalendar] = useState<boolean>(false);
-
-  // 2. Time & Time Picker Popup State (defaults to current time)
-  const [time, setTime] = useState<string>(defaultTime);
-  const [showTimeModal, setShowTimeModal] = useState<boolean>(false);
-  const [modalHour, setModalHour] = useState<number>(now.getHours());
-  const [modalMinute, setModalMinute] = useState<number>(Math.floor(now.getMinutes() / 5) * 5);
-  const [selectedQuickTime, setSelectedQuickTime] = useState<string | null>(null);
-
-  // 3. Related Drug Dropdown State (defaults to empty on initial load)
-  const [selectedDrug, setSelectedDrug] = useState<string>('');
-  const [showDrugDropdown, setShowDrugDropdown] = useState<boolean>(false);
-
-  // 4. Symptoms Dropdown State
-  const [selectedSymptoms, setSelectedSymptoms] = useState<string[]>([]);
-  const [showSymptomDropdown, setShowSymptomDropdown] = useState<boolean>(false);
-  const [showCustomSymptomInput, setShowCustomSymptomInput] = useState<boolean>(false);
-  const [customSymptomText, setCustomSymptomText] = useState<string>('');
-
-  // 5. Severity & Details (defaults to null so no button is pre-selected initially)
-  const [severity, setSeverity] = useState<'สูง' | 'กลาง' | 'ต่ำ' | null>(null);
-  const [details, setDetails] = useState<string>('');
-  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
-
-  // Standard symptom options for dropdown
-  const commonSymptoms = [
-    'คลื่นไส้',
-    'อาเจียน',
-    'ปวดท้อง',
-    'ปวดหัว',
-    'วิงเวียน',
-    'ผื่นคัน',
-    'หายใจหอบ',
-    'ใจสั่น',
-    'นอนไม่หลับ',
-    'ท้องเสีย',
-    'ท้องผูก',
-    'ง่วงซึม',
-    'แน่นหน้าอก',
-    'เบื่ออาหาร',
-    'ปากแห้ง / คอแห้ง',
-  ];
-
-  // Quick Time presets
-  const quickTimePresets = [
-    { label: 'เช้า (08:00)', hour: 8, minute: 0 },
-    { label: 'กลางวัน (12:00)', hour: 12, minute: 0 },
-    { label: 'เย็น (18:00)', hour: 18, minute: 0 },
-    { label: 'ก่อนนอน (21:00)', hour: 21, minute: 0 },
-  ];
-
-  // Compute drug list for dropdown (Only user's added medications, matching add-medication catalog card format)
-  const userDrugList = useMemo(() => {
-    const list: typeof medications = [];
-    const seen = new Set<string>();
-    for (const m of medications) {
-      const clean = formatCleanDrugName(m.name).toLowerCase();
-      if (!seen.has(clean)) {
-        seen.add(clean);
-        list.push(m);
-      }
-    }
-    return list;
-  }, [medications]);
-
-  // Find backend precaution / side effect info for selectedDrug
-  const backendDrugInfo = useMemo(() => {
-    if (!selectedDrug) return null;
-
-    // Check user medications first
-    const userMatch = medications.find(
-      m => m.name === selectedDrug || isMedicationMatch(selectedDrug, m.name)
-    );
-    if (userMatch?.precautions) {
-      return {
-        drugName: userMatch.name,
-        precautions: userMatch.precautions,
-      };
-    }
-
-    // Check master medications catalog
-    const masterMatch = masterMedications.find(
-      m => m.name === selectedDrug || isMedicationMatch(selectedDrug, m.name)
-    );
-    if (masterMatch?.precautions) {
-      return {
-        drugName: masterMatch.name,
-        precautions: masterMatch.precautions,
-      };
-    }
-
-    return null;
-  }, [selectedDrug, medications, masterMedications]);
-
-  // Derive suggested side-effects symptoms based on the selected drug
-  const suggestedSymptomsForDrug = useMemo(() => {
-    if (!selectedDrug) return [];
-    const text = (backendDrugInfo?.precautions || selectedDrug).toLowerCase();
-
-    const matches: string[] = [];
-    if (text.includes('ง่วง') || text.includes('ซึม')) matches.push('ง่วงซึม');
-    if (text.includes('คลื่นไส้')) matches.push('คลื่นไส้');
-    if (text.includes('อาเจียน')) matches.push('อาเจียน');
-    if (text.includes('กระเพาะ') || text.includes('ปวดท้อง')) matches.push('ปวดท้อง');
-    if (text.includes('ปวดหัว') || text.includes('ศีรษะ')) matches.push('ปวดหัว');
-    if (text.includes('วิงเวียน')) matches.push('วิงเวียน');
-    if (text.includes('ผื่น') || text.includes('คัน')) matches.push('ผื่นคัน');
-    if (text.includes('ใจสั่น')) matches.push('ใจสั่น');
-    if (text.includes('นอนไม่หลับ')) matches.push('นอนไม่หลับ');
-    if (text.includes('ท้องเสีย')) matches.push('ท้องเสีย');
-    if (text.includes('ท้องผูก')) matches.push('ท้องผูก');
-    if (text.includes('ปากแห้ง') || text.includes('คอแห้ง')) matches.push('ปากแห้ง / คอแห้ง');
-
-    // Default suggestions if no specific matches
-    if (matches.length === 0) {
-      return ['ง่วงซึม', 'คลื่นไส้', 'วิงเวียน', 'ปวดท้อง'];
-    }
-    return Array.from(new Set(matches));
-  }, [selectedDrug, backendDrugInfo]);
-
-  const toggleSymptom = (symptom: string) => {
-    if (selectedSymptoms.includes(symptom)) {
-      setSelectedSymptoms(selectedSymptoms.filter(s => s !== symptom));
-    } else {
-      setSelectedSymptoms([...selectedSymptoms, symptom]);
-    }
-  };
-
-  const handleAddCustomSymptom = () => {
-    const trimmed = customSymptomText.trim();
-    if (!trimmed) return;
-    if (!selectedSymptoms.includes(trimmed)) {
-      setSelectedSymptoms([...selectedSymptoms, trimmed]);
-    }
-    setCustomSymptomText('');
-    setShowCustomSymptomInput(false);
-  };
-
-  const handleSaveTime = () => {
-    const formatted = `${pad(modalHour)}:${pad(modalMinute)} น.`;
-    setTime(formatted);
-    setShowTimeModal(false);
-  };
-
-  const handleSubmit = async () => {
-    if (!selectedDrug || selectedSymptoms.length === 0) {
-      Alert.alert('ข้อมูลไม่ครบถ้วน', 'กรุณาระบุยาที่เกี่ยวข้องและเลือกอาการที่พบอย่างน้อย 1 อย่าง');
-      return;
-    }
-
-    setIsSubmitting(true);
-    await addSideEffect({
-      date,
-      time,
-      medicationName: selectedDrug,
-      symptoms: selectedSymptoms,
-      severity: severity || 'กลาง',
-      details,
-    });
-    setIsSubmitting(false);
-
-    Alert.alert('สำเร็จ', 'บันทึกข้อมูลผลข้างเคียงเรียบร้อยแล้ว', [
-      { text: 'ตกลง', onPress: () => router.replace('/(tabs)' as any) },
-    ]);
-  };
+  const {
+    sideEffects,
+    date,
+    setDate,
+    showCalendar,
+    setShowCalendar,
+    time,
+    showTimeModal,
+    setShowTimeModal,
+    modalHour,
+    setModalHour,
+    modalMinute,
+    setModalMinute,
+    selectedQuickTime,
+    setSelectedQuickTime,
+    selectedDrug,
+    setSelectedDrug,
+    showDrugDropdown,
+    setShowDrugDropdown,
+    selectedSymptoms,
+    showSymptomDropdown,
+    setShowSymptomDropdown,
+    showCustomSymptomInput,
+    setShowCustomSymptomInput,
+    customSymptomText,
+    setCustomSymptomText,
+    severity,
+    setSeverity,
+    details,
+    setDetails,
+    isSubmitting,
+    commonSymptoms,
+    quickTimePresets,
+    userDrugList,
+    backendDrugInfo,
+    suggestedSymptomsForDrug,
+    toggleSymptom,
+    handleAddCustomSymptom,
+    openTimeModal,
+    handleSaveTime,
+    handleSubmit,
+    pad,
+  } = useLogSideEffect();
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -208,54 +74,14 @@ export default function LogSideEffectScreen() {
           บันทึกอาการหลังรับประทานยาเพื่อให้แพทย์ติดตามการรักษาได้อย่างแม่นยำ
         </Text>
 
-        {/* ========================================================================= */}
-        {/* Section: Backend Recommended Side Effects & Precautions Card              */}
-        {/* ========================================================================= */}
-        <View style={styles.recommendSectionCard}>
-          <View style={styles.recommendHeaderRow}>
-            <Text style={styles.recommendHeaderTitle}>
-              {selectedDrug
-                ? `ผลข้างเคียงที่อาจพบ • ${formatCleanDrugName(selectedDrug)}`
-                : 'ผลข้างเคียงที่อาจพบได้'}
-            </Text>
-          </View>
+        {/* Backend Recommended Side Effects & Precautions Card */}
+        <DrugPrecautionCard
+          selectedDrug={selectedDrug}
+          precautions={backendDrugInfo?.precautions}
+          suggestedSymptomsForDrug={suggestedSymptomsForDrug}
+        />
 
-          {selectedDrug ? (
-            <View style={styles.recommendBody}>
-              {backendDrugInfo?.precautions ? (
-                <Text style={styles.recommendPrecautionText}>
-                  {backendDrugInfo.precautions}
-                </Text>
-              ) : (
-                <Text style={styles.recommendPrecautionText}>
-                  ข้อควรระวังทั่วไป: หากมีอาการวิงเวียน ผื่นคัน แน่นหน้าอก หรืออาการผิดปกติรุนแรง ควรหยุดยาและปรึกษาแพทย์
-                </Text>
-              )}
-
-              {/* Potential side effects list for this drug */}
-              <View style={styles.suggestionBox}>
-                <Text style={styles.suggestionTitle}>
-                  ผลข้างเคียงที่อาจเกิดขึ้น:
-                </Text>
-                <View style={styles.suggestionBulletList}>
-                  {suggestedSymptomsForDrug.map(sym => (
-                    <Text key={sym} style={styles.suggestionBulletText}>
-                      • {sym}
-                    </Text>
-                  ))}
-                </View>
-              </View>
-            </View>
-          ) : (
-            <Text style={styles.recommendEmptyText}>
-              เลือกยาที่เกี่ยวข้องด้านล่าง เพื่อดูข้อมูลผลข้างเคียงและข้อควรระวังที่พบบ่อยจากระบบ
-            </Text>
-          )}
-        </View>
-
-        {/* ========================================================================= */}
-        {/* Date & Time Row (With Calendar and Time Popup)                             */}
-        {/* ========================================================================= */}
+        {/* Date & Time Row */}
         <View style={styles.rowInputs}>
           {/* วันที่ */}
           <View style={styles.halfInput}>
@@ -282,14 +108,7 @@ export default function LogSideEffectScreen() {
             <Text style={styles.inputLabel}>เวลา</Text>
             <TouchableOpacity
               style={styles.pickerInputBox}
-              onPress={() => {
-                const match = time.match(/(\d+):(\d+)/);
-                if (match) {
-                  setModalHour(parseInt(match[1], 10));
-                  setModalMinute(parseInt(match[2], 10));
-                }
-                setShowTimeModal(true);
-              }}
+              onPress={openTimeModal}
               activeOpacity={0.7}
             >
               <Text
@@ -694,39 +513,7 @@ export default function LogSideEffectScreen() {
         {/* ========================================================================= */}
         {/* Past History List                                                         */}
         {/* ========================================================================= */}
-        <Text style={[styles.sectionLabel, { marginTop: 24 }]}>ประวัติการบันทึก</Text>
-        {sideEffects.length === 0 ? (
-          <Text style={{ fontSize: 13, color: '#94A3B8', marginTop: 4 }}>
-            ยังไม่มีประวัติการบันทึกผลข้างเคียง
-          </Text>
-        ) : (
-          sideEffects.map(item => (
-            <View key={item.id} style={styles.historyCard}>
-              <View style={styles.historyHeader}>
-                <Text style={styles.historyDrug} numberOfLines={1}>
-                  {item.date} {item.time ? `• ${item.time}` : ''} • {formatCleanDrugName(item.medicationName)}
-                </Text>
-                <View style={styles.badgeWrap}>
-                  <StatusBadge
-                    label={item.severity}
-                    variant={
-                      item.severity === 'สูง'
-                        ? 'high'
-                        : item.severity === 'กลาง'
-                          ? 'medium'
-                          : 'low'
-                    }
-                    size="sm"
-                  />
-                </View>
-              </View>
-              <Text style={styles.historySymptoms}>{item.symptoms.join(', ')}</Text>
-              {item.details ? (
-                <Text style={styles.historyDetails}>{item.details}</Text>
-              ) : null}
-            </View>
-          ))
-        )}
+        <SideEffectHistoryList sideEffects={sideEffects} />
       </ScrollView>
 
       {/* ========================================================================= */}
@@ -747,136 +534,22 @@ export default function LogSideEffectScreen() {
       {/* ========================================================================= */}
       {/* 2. TIME PICKER MODAL                                                      */}
       {/* ========================================================================= */}
-      <Modal
+      <DigitalTimeModal
         visible={showTimeModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowTimeModal(false)}
-      >
-        <Pressable
-          style={styles.modalOverlay}
-          onPress={() => setShowTimeModal(false)}
-        >
-          <Pressable style={styles.timeModalContainer} onPress={e => e.stopPropagation()}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>เลือกเวลาที่เกิดอาการ</Text>
-              <TouchableOpacity
-                onPress={() => setShowTimeModal(false)}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
-                <Feather name="x" size={22} color="#64748B" />
-              </TouchableOpacity>
-            </View>
-
-            {/* Digital Clock Steppers */}
-            <View style={styles.digitalClockRow}>
-              {/* Hours */}
-              <View style={styles.timeBoxCol}>
-                <TouchableOpacity
-                  style={styles.timeStepBtn}
-                  onPress={() => {
-                    setModalHour(h => (h + 1) % 24);
-                    setSelectedQuickTime(null);
-                  }}
-                >
-                  <Feather name="chevron-up" size={20} color="#475569" />
-                </TouchableOpacity>
-                <View style={styles.timeDigitBox}>
-                  <Text style={styles.timeDigitText}>{pad(modalHour)}</Text>
-                </View>
-                <TouchableOpacity
-                  style={styles.timeStepBtn}
-                  onPress={() => {
-                    setModalHour(h => (h - 1 + 24) % 24);
-                    setSelectedQuickTime(null);
-                  }}
-                >
-                  <Feather name="chevron-down" size={20} color="#475569" />
-                </TouchableOpacity>
-                <Text style={styles.timeUnitSub}>ชั่วโมง</Text>
-              </View>
-
-              <Text style={styles.timeColonText}>:</Text>
-
-              {/* Minutes */}
-              <View style={styles.timeBoxCol}>
-                <TouchableOpacity
-                  style={styles.timeStepBtn}
-                  onPress={() => {
-                    setModalMinute(m => (m + 5) % 60);
-                    setSelectedQuickTime(null);
-                  }}
-                >
-                  <Feather name="chevron-up" size={20} color="#475569" />
-                </TouchableOpacity>
-                <View style={styles.timeDigitBox}>
-                  <Text style={styles.timeDigitText}>{pad(modalMinute)}</Text>
-                </View>
-                <TouchableOpacity
-                  style={styles.timeStepBtn}
-                  onPress={() => {
-                    setModalMinute(m => (m - 5 + 60) % 60);
-                    setSelectedQuickTime(null);
-                  }}
-                >
-                  <Feather name="chevron-down" size={20} color="#475569" />
-                </TouchableOpacity>
-                <Text style={styles.timeUnitSub}>นาที</Text>
-              </View>
-            </View>
-
-            {/* Quick Time Presets */}
-            <Text style={styles.quickTimeHeader}>เวลาแนะนำ:</Text>
-            <View style={styles.quickTimesGrid}>
-              {quickTimePresets.map(preset => {
-                const isSelected =
-                  selectedQuickTime === preset.label ||
-                  (modalHour === preset.hour && modalMinute === preset.minute);
-                return (
-                  <TouchableOpacity
-                    key={preset.label}
-                    style={[
-                      styles.quickTimeChip,
-                      isSelected && styles.quickTimeChipActive,
-                    ]}
-                    onPress={() => {
-                      setModalHour(preset.hour);
-                      setModalMinute(preset.minute);
-                      setSelectedQuickTime(preset.label);
-                    }}
-                    activeOpacity={0.7}
-                  >
-                    <Text
-                      style={[
-                        styles.quickTimeText,
-                        isSelected && styles.quickTimeTextActive,
-                      ]}
-                    >
-                      {preset.label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
-            {/* Modal Action Buttons */}
-            <View style={styles.modalActionsRow}>
-              <TouchableOpacity
-                style={styles.modalCancelBtn}
-                onPress={() => setShowTimeModal(false)}
-              >
-                <Text style={styles.modalCancelText}>ยกเลิก</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.modalConfirmBtn}
-                onPress={handleSaveTime}
-              >
-                <Text style={styles.modalConfirmText}>ตกลง</Text>
-              </TouchableOpacity>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
+        title="เลือกเวลาที่เกิดอาการ"
+        theme="coral"
+        modalHour={modalHour}
+        modalMinute={modalMinute}
+        selectedQuickTime={selectedQuickTime}
+        quickTimePresets={quickTimePresets}
+        matchPresetByTime
+        pad={pad}
+        onChangeHour={setModalHour}
+        onChangeMinute={setModalMinute}
+        onSelectQuickTime={setSelectedQuickTime}
+        onClose={() => setShowTimeModal(false)}
+        onSave={handleSaveTime}
+      />
     </SafeAreaView>
   );
 }
@@ -896,61 +569,6 @@ const styles = StyleSheet.create({
     color: '#6B7280',
     lineHeight: 18,
     marginBottom: 16,
-  },
-  // Recommendation Card from Backend
-  recommendSectionCard: {
-    backgroundColor: '#FFF7ED',
-    borderRadius: 16,
-    borderWidth: 1.5,
-    borderColor: '#FED7AA',
-    padding: 14,
-    marginBottom: 18,
-  },
-  recommendHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  recommendHeaderTitle: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#9A3412',
-    marginLeft: 2,
-  },
-  recommendBody: {
-    marginTop: 2,
-  },
-  recommendPrecautionText: {
-    fontSize: 12,
-    color: '#7C2D12',
-    lineHeight: 18,
-    marginBottom: 8,
-  },
-  recommendEmptyText: {
-    fontSize: 12,
-    color: '#9A3412',
-    lineHeight: 18,
-  },
-  suggestionBox: {
-    marginTop: 6,
-    borderTopWidth: 0.5,
-    borderTopColor: '#FED7AA',
-    paddingTop: 6,
-  },
-  suggestionTitle: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#C2410C',
-    marginBottom: 6,
-  },
-  suggestionBulletList: {
-    marginTop: 2,
-    gap: 4,
-  },
-  suggestionBulletText: {
-    fontSize: 12,
-    color: '#7C2D12',
-    lineHeight: 18,
   },
 
   // Date & Time Inputs
@@ -1325,179 +943,6 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '700',
-  },
-  historyCard: {
-    backgroundColor: '#FAFAFC',
-    borderRadius: 16,
-    borderWidth: 1.5,
-    borderColor: '#FED7AA',
-    paddingTop: 14,
-    paddingBottom: 14,
-    paddingLeft: 14,
-    paddingRight: 8,
-    marginBottom: 10,
-  },
-  historyHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  historyDrug: {
-    flex: 1,
-    fontSize: 13.5,
-    fontWeight: '700',
-    color: '#0F172A',
-    marginRight: 8,
-  },
-  badgeWrap: {
-    flexShrink: 0,
-  },
-  historySymptoms: {
-    fontSize: 13,
-    color: '#475569',
-  },
-  historyDetails: {
-    fontSize: 12,
-    color: '#94A3B8',
-    marginTop: 4,
-  },
-
-  // Time Picker Modal Styles
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.45)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-  },
-  timeModalContainer: {
-    width: '100%',
-    maxWidth: 340,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 16,
-    elevation: 6,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  modalTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  digitalClockRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginVertical: 12,
-  },
-  timeBoxCol: {
-    alignItems: 'center',
-  },
-  timeStepBtn: {
-    padding: 6,
-  },
-  timeDigitBox: {
-    width: 64,
-    height: 60,
-    backgroundColor: '#FFF5F5',
-    borderRadius: 14,
-    borderWidth: 1.5,
-    borderColor: '#FECACA',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  timeDigitText: {
-    fontSize: 26,
-    fontWeight: '800',
-    color: '#DC2626',
-  },
-  timeUnitSub: {
-    fontSize: 11,
-    color: '#64748B',
-    marginTop: 4,
-    fontWeight: '600',
-  },
-  timeColonText: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: '#DC2626',
-    marginHorizontal: 12,
-    paddingBottom: 20,
-  },
-  quickTimeHeader: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#64748B',
-    marginTop: 8,
-    marginBottom: 8,
-  },
-  quickTimesGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 16,
-  },
-  quickTimeChip: {
-    flexBasis: '48%',
-    paddingVertical: 8,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-  },
-  quickTimeChipActive: {
-    backgroundColor: '#FEE2E2',
-    borderColor: '#F87171',
-  },
-  quickTimeText: {
-    fontSize: 11.5,
-    fontWeight: '600',
-    color: '#475569',
-  },
-  quickTimeTextActive: {
-    color: '#DC2626',
-    fontWeight: '700',
-  },
-  modalActionsRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 4,
-  },
-  modalCancelBtn: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    alignItems: 'center',
-  },
-  modalCancelText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#64748B',
-  },
-  modalConfirmBtn: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 14,
-    backgroundColor: '#F87171',
-    alignItems: 'center',
-  },
-  modalConfirmText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#FFFFFF',
   },
 });
 

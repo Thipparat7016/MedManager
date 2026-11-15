@@ -8,10 +8,10 @@ import MedicationFormPage from './pages/MedicationFormPage'
 import InteractionListPage from './pages/InteractionListPage'
 import InteractionFormPage from './pages/InteractionFormPage'
 import SettingsPage from './pages/SettingsPage'
-import { dataService } from './services/dataService'
+import { authService } from './services/authService'
 
 function ProtectedRoute({ children }) {
-  const isAuth = dataService.isAuthenticated()
+  const isAuth = authService.isAuthenticated()
   if (!isAuth) {
     return <Navigate to="/login" replace />
   }
@@ -19,7 +19,7 @@ function ProtectedRoute({ children }) {
 }
 
 function PublicRoute({ children }) {
-  const isAuth = dataService.isAuthenticated()
+  const isAuth = authService.isAuthenticated()
   if (isAuth) {
     return <Navigate to="/dashboard" replace />
   }
@@ -31,18 +31,18 @@ export default function App() {
     <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <Routes>
         {/* Public Login Route */}
-        <Route 
-          path="/login" 
+        <Route
+          path="/login"
           element={
             <PublicRoute>
               <LoginPage />
             </PublicRoute>
-          } 
+          }
         />
 
         {/* Protected Admin Routes */}
-        <Route 
-          path="/" 
+        <Route
+          path="/"
           element={
             <ProtectedRoute>
               <AdminLayout />
@@ -51,20 +51,20 @@ export default function App() {
         >
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard" element={<DashboardPage />} />
-          
+
           {/* Medications */}
           <Route path="medications" element={<MedicationListPage />} />
           <Route path="medications/new" element={<MedicationFormPage />} />
           <Route path="medications/edit/:id" element={<MedicationFormPage />} />
-          
+
           {/* Interactions */}
           <Route path="interactions" element={<InteractionListPage />} />
           <Route path="interactions/new" element={<InteractionFormPage />} />
           <Route path="interactions/edit/:id" element={<InteractionFormPage />} />
-          
+
           {/* Settings & Users */}
           <Route path="settings" element={<SettingsPage />} />
-          
+
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Route>
 

@@ -1,0 +1,87 @@
+/* --------------------------------------------------------------------------
+   Login Page Styles
+   -------------------------------------------------------------------------- */
+.login-container {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--color-neutral-50);
+  padding: 20px;
+}
+
+.login-card {
+  max-width: 400px;
+  width: 100%;
+  background: var(--color-neutral-0);
+  border: 1px solid var(--color-neutral-100);
+  border-radius: var(--radius-xl);
+  padding: 40px 34px;
+  box-shadow: var(--shadow-lg);
+}
+
+.login-logo-box {
+  width: 56px;
+  height: 56px;
+  background: var(--color-primary-100);
+  border: 1.5px solid var(--color-primary-200);
+  border-radius: var(--radius-lg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 16px;
+}
+
+.login-pill-icon {
+  width: 26px;
+  height: 14px;
+  border: 2px solid var(--color-primary-500);
+  border-radius: 7px;
+  position: relative;
+}
+
+.login-pill-icon::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--color-primary-500);
+}
+
+.login-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--color-neutral-900);
+  text-align: center;
+  margin-bottom: 4px;
+}
+
+.login-subtitle {
+  font-size: 13px;
+  color: var(--color-neutral-400);
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.login-divider {
+  display: flex;
+  align-items: center;
+  text-align: center;
+  color: var(--color-neutral-300);
+  font-size: 11px;
+  margin: 18px 0;
+}
+
+.login-divider::before,
+.login-divider::after {
+  content: '';
+  flex: 1;
+  border-bottom: 1px solid var(--color-neutral-100);
+}
+
+.login-divider span {
+  padding: 0 10px;
+  color: var(--color-neutral-400);
+}

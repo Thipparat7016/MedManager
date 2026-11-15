@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   View,
   Text,
@@ -6,78 +6,31 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  Alert,
   Image,
   Modal,
   Pressable,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
 import { Ionicons, Feather } from '@expo/vector-icons';
-import * as ImagePicker from 'expo-image-picker';
 import { AppHeader } from '@/components/ui/AppHeader';
-import { useApp } from '@/context/AppContext';
+import { useEditProfile } from '@/hooks/useEditProfile';
 
 export default function EditProfileScreen() {
-  const router = useRouter();
-  const { user, updateProfile } = useApp();
-
-  const [name, setName] = useState(user?.name || '');
-  const [email, setEmail] = useState(user?.email || '');
-  const [phone, setPhone] = useState(user?.phone || '');
-  const [avatarUrl, setAvatarUrl] = useState<string>(user?.avatarUrl || '');
-  const [isSaving, setIsSaving] = useState(false);
-  const [showPhotoModal, setShowPhotoModal] = useState(false);
-
-  const handlePickImage = async () => {
-    setShowPhotoModal(false);
-    try {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('ต้องการสิทธิ์เข้าถึง', 'กรุณาอนุญาตการเข้าถึงคลังรูปภาพในอุปกรณ์ของคุณเพื่อเปลี่ยนรูปโปรไฟล์');
-        return;
-      }
-
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.8,
-      });
-
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        setAvatarUrl(result.assets[0].uri);
-      }
-    } catch (e) {
-      console.warn('Image picker error:', e);
-      Alert.alert('เกิดข้อผิดพลาด', 'ไม่สามารถเลือกรูปภาพได้');
-    }
-  };
-
-  const handleDeleteImage = () => {
-    setShowPhotoModal(false);
-    setAvatarUrl('');
-  };
-
-  const handleSave = async () => {
-    if (!name.trim()) {
-      Alert.alert('กรุณากรอกข้อมูล', 'กรุณาระบุชื่อ-นามสกุล');
-      return;
-    }
-
-    setIsSaving(true);
-    await updateProfile({
-      name,
-      email,
-      phone,
-      avatarUrl,
-    });
-    setIsSaving(false);
-
-    Alert.alert('สำเร็จ', 'บันทึกข้อมูลส่วนบุคคลเรียบร้อยแล้ว', [
-      { text: 'ตกลง', onPress: () => router.replace('/(tabs)/profile') },
-    ]);
-  };
+  const {
+    name,
+    setName,
+    email,
+    setEmail,
+    phone,
+    setPhone,
+    avatarUrl,
+    isSaving,
+    showPhotoModal,
+    setShowPhotoModal,
+    handlePickImage,
+    handleDeleteImage,
+    handleSave,
+  } = useEditProfile();
 
   return (
     <SafeAreaView style={styles.safeArea}>

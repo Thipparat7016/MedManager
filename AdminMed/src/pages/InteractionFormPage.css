@@ -1,0 +1,49 @@
+/* --------------------------------------------------------------------------
+   Segmented Buttons Group (Interaction Form)
+   -------------------------------------------------------------------------- */
+.segmented-group {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.segment-btn {
+  padding: 11px 14px;
+  min-height: 44px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-input);
+  background: var(--color-neutral-0);
+  color: var(--color-neutral-600);
+  font-size: 13.5px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: var(--transition-fast);
+  text-align: center;
+}
+
+.segment-btn:hover {
+  background: #DFF2FF;
+  color: #0284C7;
+  border-color: #B9E2FE;
+}
+
+.segment-btn.active {
+  border-color: #0284C7;
+  background: #DFF2FF;
+  color: #0284C7;
+  font-weight: 600;
+  box-shadow: 0 0 0 1px #0284C7;
+}
+
+@media (max-width: 1024px) {
+  .form-row-interaction-controls {
+    grid-template-columns: 1fr 1fr !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .form-row-interaction-controls {
+    grid-template-columns: 1fr !important;
+  }
+}

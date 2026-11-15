@@ -1,41 +1,21 @@
-import React, { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import React from 'react'
 import { Eye, EyeOff } from 'lucide-react'
-import { dataService } from '../services/dataService'
+import AlertBanner from '../components/common/AlertBanner'
+import { useLogin } from '../hooks/useLogin'
+import './LoginPage.css'
 
 export default function LoginPage() {
-  const navigate = useNavigate()
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [showPassword, setShowPassword] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [errorMsg, setErrorMsg] = useState('')
-
-  useEffect(() => {
-    if (dataService.isAuthenticated()) {
-      navigate('/dashboard', { replace: true })
-    }
-  }, [navigate])
-
-  const handleLogin = async (e) => {
-    if (e) e.preventDefault()
-    if (!email.trim() || !password.trim()) {
-      setErrorMsg('กรุณากรอกอีเมลและรหัสผ่าน')
-      return
-    }
-
-    setLoading(true)
-    setErrorMsg('')
-    try {
-      await dataService.login(email.trim(), password)
-      navigate('/dashboard', { replace: true })
-    } catch (err) {
-      console.error('Login error:', err)
-      setErrorMsg(err?.message || 'เข้าสู่ระบบไม่สำเร็จ โปรดตรวจสอบข้อมูลอีกครั้ง')
-    } finally {
-      setLoading(false)
-    }
-  }
+  const {
+    email,
+    setEmail,
+    password,
+    setPassword,
+    showPassword,
+    toggleShowPassword,
+    loading,
+    errorMsg,
+    handleLogin
+  } = useLogin()
 
   return (
     <div className="login-container">
@@ -49,19 +29,15 @@ export default function LoginPage() {
         <h1 className="login-title">MedManager Admin</h1>
         <p className="login-subtitle">ระบบจัดการยาสำหรับผู้ดูแลระบบ</p>
 
-        {errorMsg && (
-          <div style={{ padding: '12px 14px', backgroundColor: 'var(--color-danger-50)', color: 'var(--color-danger-700)', border: '1px solid var(--color-danger-100)', borderRadius: 'var(--radius-sm)', marginBottom: '16px', fontSize: '13px' }}>
-            {errorMsg}
-          </div>
-        )}
+        <AlertBanner variant="login-error" message={errorMsg} />
 
         {/* Login Form */}
         <form onSubmit={handleLogin}>
           <div className="form-group" style={{ marginBottom: '14px' }}>
             <label className="form-label">อีเมล</label>
-            <input 
-              type="email" 
-              className="form-input" 
+            <input
+              type="email"
+              className="form-input"
               placeholder="กรอกอีเมล"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -72,18 +48,18 @@ export default function LoginPage() {
           <div className="form-group" style={{ marginBottom: '6px' }}>
             <label className="form-label">รหัสผ่าน</label>
             <div style={{ position: 'relative' }}>
-              <input 
-                type={showPassword ? 'text' : 'password'} 
-                className="form-input" 
+              <input
+                type={showPassword ? 'text' : 'password'}
+                className="form-input"
                 placeholder="กรอกรหัสผ่าน"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 style={{ paddingRight: '36px' }}
                 required
               />
-              <button 
+              <button
                 type="button"
-                onClick={() => setShowPassword(!showPassword)}
+                onClick={toggleShowPassword}
                 style={{
                   position: 'absolute',
                   right: '10px',
@@ -101,8 +77,8 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <button 
-            type="submit" 
+          <button
+            type="submit"
             className="btn btn-primary"
             disabled={loading}
             style={{ width: '100%', marginTop: '20px' }}

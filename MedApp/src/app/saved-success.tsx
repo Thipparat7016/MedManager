@@ -7,30 +7,22 @@ import {
   ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useSavedSuccess } from '@/hooks/useSavedSuccess';
 
 export default function SavedSuccessScreen() {
-  const router = useRouter();
-  const params = useLocalSearchParams();
-
-  const drugName = (params.name as string) || 'ยาใหม่';
-  const drugDose = (params.dosage as string) || '';
-  const drugUnit = (params.unit as string) || '';
-  const timesStr = (params.times as string) || 'ตามที่กำหนด';
-  const remainingStr = ((params.remaining as string) || '').trim();
-  const lowStockStr = ((params.lowStock as string) || '').trim();
-  const startDateStr = (params.startDate as string) || 'วันนี้';
-  const durationStr = (params.duration as string) || 'ทุกวัน';
-
-  const stockSummaryText =
-    remainingStr && lowStockStr
-      ? `คงเหลือ: ${remainingStr} เม็ด • แจ้งเตือนเมื่อเหลือ ${lowStockStr} เม็ด`
-      : remainingStr
-      ? `คงเหลือ: ${remainingStr} เม็ด`
-      : lowStockStr
-      ? `แจ้งเตือนเมื่อเหลือ ${lowStockStr} เม็ด`
-      : '';
+  const {
+    drugName,
+    drugDose,
+    drugUnit,
+    timesStr,
+    startDateStr,
+    durationStr,
+    stockSummaryText,
+    goHome,
+    goSchedule,
+    goAddMedication,
+  } = useSavedSuccess();
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -66,7 +58,7 @@ export default function SavedSuccessScreen() {
         {/* Action Buttons */}
         <TouchableOpacity
           style={styles.primaryButton}
-          onPress={() => router.replace('/(tabs)' as any)}
+          onPress={goHome}
           activeOpacity={0.8}
         >
           <Text style={styles.primaryButtonText}>กลับหน้าหลัก</Text>
@@ -74,7 +66,7 @@ export default function SavedSuccessScreen() {
 
         <TouchableOpacity
           style={styles.outlineButton}
-          onPress={() => router.replace('/schedule' as any)}
+          onPress={goSchedule}
           activeOpacity={0.7}
         >
           <Text style={styles.outlineButtonText}>ดูตารางยา</Text>
@@ -82,7 +74,7 @@ export default function SavedSuccessScreen() {
 
         <TouchableOpacity
           style={styles.outlineButton}
-          onPress={() => router.replace('/add-medication' as any)}
+          onPress={goAddMedication}
           activeOpacity={0.7}
         >
           <Text style={styles.outlineButtonText}>+ เพิ่มยาอีกรายการ</Text>

@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React from 'react';
 import {
   View,
   Text,
@@ -6,60 +6,37 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  Alert,
   Image,
   Modal,
   Pressable,
 } from 'react-native';
-import { useRouter, useFocusEffect } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useApp } from '@/context/AppContext';
 import { StatusBadge } from '@/components/ui/StatusBadge';
-import { getMedicationStockStatus } from '@/services/medService';
+import { getMedicationStockStatus } from '@/utils/stockUtils';
 import {
   formatCleanDrugName,
   resolveMedicationImageUri,
-} from '@/services/interactionMatcher';
+} from '@/utils/interactionMatcher';
+import { useMedicationsTab } from '@/hooks/useMedicationsTab';
 
 export default function MedicationsScreen() {
-  const router = useRouter();
-  const insets = useSafeAreaInsets();
-  const { medications, masterMedications, deleteMedication, refreshData } = useApp();
-  const [search, setSearch] = useState('');
-  const [activeCategory, setActiveCategory] = useState<'ทั้งหมด' | 'ยา' | 'อาหารเสริม'>('ทั้งหมด');
-  const [previewMedImage, setPreviewMedImage] = useState<{
-    uri: string;
-    name: string;
-  } | null>(null);
-
-  useFocusEffect(
-    useCallback(() => {
-      refreshData();
-    }, [refreshData])
-  );
-
-  const filterList = (list: typeof medications) => {
-    return list.filter(m => {
-      const matchSearch =
-        m.name.toLowerCase().includes(search.toLowerCase()) ||
-        (m.dosage && m.dosage.includes(search));
-      const matchCat =
-        activeCategory === 'ทั้งหมด' || m.category === activeCategory;
-      return matchSearch && matchCat;
-    });
-  };
-
-  const filteredMeds = filterList(medications);
-
-  const handleDelete = (id: string, name: string) => {
-    Alert.alert('ยืนยันการลบ', `คุณต้องการลบ "${name}" หรือไม่?`, [
-      { text: 'ยกเลิก', style: 'cancel' },
-      { text: 'ลบ', style: 'destructive', onPress: () => deleteMedication(id) },
-    ]);
-  };
-
-  const topInsetPadding = Math.max(insets.top, 24) + 14;
+  const {
+    medications,
+    masterMedications,
+    search,
+    setSearch,
+    activeCategory,
+    setActiveCategory,
+    previewMedImage,
+    setPreviewMedImage,
+    filteredMeds,
+    categoryCounts,
+    handleDelete,
+    goToAddMedication,
+    goToEditMedication,
+    goToSchedule,
+    topInsetPadding,
+  } = useMedicationsTab();
 
   return (
     <View style={styles.safeArea}>
@@ -72,7 +49,7 @@ export default function MedicationsScreen() {
           <Text style={styles.headerTitle}>ยาของฉัน</Text>
           <TouchableOpacity
             style={styles.addMedButton}
-            onPress={() => router.push('/add-medication')}
+            onPress={goToAddMedication}
             activeOpacity={0.8}
           >
             <Text style={styles.addMedButtonText}>+ เพิ่มยา</Text>
@@ -107,7 +84,7 @@ export default function MedicationsScreen() {
                 activeCategory === 'ทั้งหมด' && styles.filterChipTextActive,
               ]}
             >
-              ทั้งหมด ({medications.length})
+              ทั้งหมด ({categoryCounts.all})
             </Text>
           </TouchableOpacity>
 
@@ -125,7 +102,7 @@ export default function MedicationsScreen() {
                 activeCategory === 'ยา' && styles.filterChipTextActive,
               ]}
             >
-              ยา ({medications.filter(m => m.category === 'ยา').length})
+              ยา ({categoryCounts.med})
             </Text>
           </TouchableOpacity>
 
@@ -143,7 +120,7 @@ export default function MedicationsScreen() {
                 activeCategory === 'อาหารเสริม' && styles.filterChipTextActive,
               ]}
             >
-              อาหารเสริม ({medications.filter(m => m.category === 'อาหารเสริม').length})
+              อาหารเสริม ({categoryCounts.supplement})
             </Text>
           </TouchableOpacity>
         </View>
@@ -157,7 +134,7 @@ export default function MedicationsScreen() {
             </Text>
             <TouchableOpacity
               style={styles.emptyAddBtn}
-              onPress={() => router.push('/add-medication')}
+              onPress={goToAddMedication}
               activeOpacity={0.8}
             >
               <Text style={styles.emptyAddBtnText}>+ เพิ่มยา</Text>
@@ -219,12 +196,7 @@ export default function MedicationsScreen() {
                   <View style={styles.cardActionsRow}>
                     <TouchableOpacity
                       style={styles.actionBtnEdit}
-                      onPress={() =>
-                        router.push({
-                          pathname: '/edit-medication',
-                          params: { id: item.id },
-                        })
-                      }
+                      onPress={() => goToEditMedication(item.id)}
                       activeOpacity={0.7}
                     >
                       <Text style={styles.actionBtnEditText}>แก้ไข</Text>
@@ -232,7 +204,7 @@ export default function MedicationsScreen() {
 
                     <TouchableOpacity
                       style={styles.actionBtnSchedule}
-                      onPress={() => router.push('/schedule')}
+                      onPress={goToSchedule}
                       activeOpacity={0.7}
                     >
                       <Text style={styles.actionBtnScheduleText}>ตารางทานยา</Text>

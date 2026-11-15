@@ -1,21 +1,15 @@
 import React from 'react'
-import { NavLink, useLocation, useNavigate } from 'react-router-dom'
+import { NavLink } from 'react-router-dom'
 import { Home, LayoutGrid, Sparkles, Settings, LogOut } from 'lucide-react'
-import { dataService } from '../../services/dataService'
+import { useSidebar } from '../../hooks/useSidebar'
 
 export default function Sidebar({ adminProfile }) {
-  const location = useLocation()
-  const navigate = useNavigate()
-
-  const isMedicationActive = location.pathname.startsWith('/medications')
-  const isInteractionActive = location.pathname.startsWith('/interactions')
-
-  const handleLogout = async () => {
-    if (window.confirm('คุณต้องการออกจากระบบหรือไม่?')) {
-      await dataService.logout()
-      navigate('/login', { replace: true })
-    }
-  }
+  const {
+    isDashboardActive,
+    isMedicationActive,
+    isInteractionActive,
+    handleLogout
+  } = useSidebar()
 
   return (
     <aside className="sidebar">
@@ -26,32 +20,32 @@ export default function Sidebar({ adminProfile }) {
 
       {/* Main Navigation */}
       <nav className="sidebar-nav">
-        <NavLink 
-          to="/dashboard" 
-          className={({ isActive }) => `nav-item ${isActive || location.pathname === '/' ? 'active' : ''}`}
+        <NavLink
+          to="/dashboard"
+          className={({ isActive }) => `nav-item ${isActive || isDashboardActive ? 'active' : ''}`}
         >
           <Home className="nav-icon" />
           <span>แดชบอร์ด</span>
         </NavLink>
 
-        <NavLink 
-          to="/medications" 
+        <NavLink
+          to="/medications"
           className={`nav-item ${isMedicationActive ? 'active' : ''}`}
         >
           <LayoutGrid className="nav-icon" />
           <span>ข้อมูลยาพื้นฐาน</span>
         </NavLink>
 
-        <NavLink 
-          to="/interactions" 
+        <NavLink
+          to="/interactions"
           className={`nav-item ${isInteractionActive ? 'active' : ''}`}
         >
           <Sparkles className="nav-icon" />
           <span>ปฏิสัมพันธ์ยา-อาหาร</span>
         </NavLink>
 
-        <NavLink 
-          to="/settings" 
+        <NavLink
+          to="/settings"
           className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
         >
           <Settings className="nav-icon" />
@@ -65,10 +59,10 @@ export default function Sidebar({ adminProfile }) {
           <NavLink to="/settings" className="sidebar-user" style={{ flex: 1, textDecoration: 'none', minWidth: 0, marginRight: '8px' }}>
             <div className="user-avatar-badge" style={{ overflow: 'hidden', padding: 0 }}>
               {adminProfile?.avatar_url ? (
-                <img 
-                  src={adminProfile.avatar_url} 
-                  alt="Admin Avatar" 
-                  style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'var(--radius-circle)' }} 
+                <img
+                  src={adminProfile.avatar_url}
+                  alt="Admin Avatar"
+                  style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'var(--radius-circle)' }}
                 />
               ) : (
                 adminProfile?.first_name?.[0] || 'A'

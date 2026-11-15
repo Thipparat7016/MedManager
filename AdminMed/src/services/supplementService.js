@@ -1,3 +1,8 @@
+import {
+  matchSupplementPreset,
+  buildSupplementSuggestions
+} from '../utils/drugTextUtils.js'
+
 // ==============================================================================
 // Dietary Supplement Service
 // Provides live API search and Thai auto-fill for dietary supplements
@@ -595,85 +600,17 @@ export const POPULAR_SUPPLEMENT_MAP = {
 };
 
 /**
- * Clean up text for fuzzy matching
- */
-function cleanText(txt = '') {
-  return String(txt)
-    .toLowerCase()
-    .replace(/[\(\)\-\_\/\+\,\.\']/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-/**
  * Find matched supplement preset from local dictionary
  */
 export function findSupplementPreset(query) {
-  if (!query) return null;
-  const q = String(query).trim().toLowerCase();
-  if (POPULAR_SUPPLEMENT_MAP[q]) return POPULAR_SUPPLEMENT_MAP[q];
-
-  const cleanQ = cleanText(q);
-
-  for (const [key, val] of Object.entries(POPULAR_SUPPLEMENT_MAP)) {
-    const cleanKey = cleanText(key);
-    const cleanEn = cleanText(val.en);
-    const cleanTh = cleanText(val.th);
-    const cleanSearch = cleanText(val.searchQuery);
-
-    if (
-      q === key ||
-      cleanQ === cleanKey ||
-      cleanQ === cleanEn ||
-      cleanQ === cleanTh ||
-      cleanQ === cleanSearch ||
-      cleanQ.includes(cleanKey) ||
-      cleanKey.includes(cleanQ) ||
-      cleanQ.includes(cleanEn) ||
-      cleanEn.includes(cleanQ) ||
-      cleanTh.includes(cleanQ) ||
-      cleanQ.includes(cleanTh) ||
-      cleanSearch.includes(cleanQ)
-    ) {
-      return val;
-    }
-  }
-  return null;
+  return matchSupplementPreset(query, POPULAR_SUPPLEMENT_MAP)
 }
 
 /**
  * Get supplement autocomplete suggestions
  */
 export function getSupplementSuggestions(query = '') {
-  const q = String(query).trim().toLowerCase();
-  const cleanQ = cleanText(q);
-
-  const allEntries = Object.entries(POPULAR_SUPPLEMENT_MAP).map(([key, val]) => ({
-    key,
-    en: val.en,
-    th: val.th,
-    dosage: val.dosage,
-    unit: val.unit,
-    type: val.type,
-    category: 'อาหารเสริม',
-  }));
-
-  if (!q) {
-    return allEntries;
-  }
-
-  return allEntries.filter(item => {
-    const itemEn = cleanText(item.en);
-    const itemTh = cleanText(item.th);
-    const itemKey = cleanText(item.key);
-
-    return (
-      itemEn.includes(cleanQ) ||
-      itemTh.includes(cleanQ) ||
-      itemKey.includes(cleanQ) ||
-      cleanQ.includes(itemKey)
-    );
-  });
+  return buildSupplementSuggestions(query, POPULAR_SUPPLEMENT_MAP)
 }
 
 /**

@@ -5,105 +5,30 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  Alert,
-  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons, Feather } from '@expo/vector-icons';
 import { AppHeader } from '@/components/ui/AppHeader';
 import { PillIcon } from '@/components/ui/PillIcon';
-import { useApp } from '@/context/AppContext';
-import { isMedicationMatch, formatCleanDrugName, formatCleanFoodName, formatConciseText, formatShortFoodReason, formatHoursNote } from '@/services/interactionMatcher';
+import { formatCleanFoodName, formatShortFoodReason, formatHoursNote } from '@/utils/interactionMatcher';
+import { useConfirmIntake } from '@/hooks/useConfirmIntake';
 
 export default function ConfirmIntakeScreen() {
-  const router = useRouter();
-  const params = useLocalSearchParams<{ scheduleId?: string; medName?: string }>();
-  const { todaySchedule, markTaken, postponeSchedule, skipSchedule, interactions, medications } = useApp();
+  const {
+    isEmpty,
+    medName,
+    medDose,
+    medMeal,
+    medTime,
+    foodWarning,
+    handleConfirm,
+    handlePostpone,
+    handleSkip,
+    goHome,
+    goLogSideEffect,
+  } = useConfirmIntake();
 
-  // Find the target schedule item
-  let targetItem = params.scheduleId
-    ? todaySchedule.find(s => s.id === params.scheduleId)
-    : todaySchedule.find(s => !s.isTaken);
-
-  // If still not found by ID or pending, find by medName or fallback to first
-  if (!targetItem && params.medName) {
-    targetItem = todaySchedule.find(s => s.medicationName === params.medName);
-  }
-
-  // Find associated food interaction using smart matching
-  const targetMed = targetItem
-    ? medications.find(m => m.name === targetItem?.medicationName)
-    : medications.find(m => m.name === params.medName) || medications[0];
-  const targetMedName = targetItem?.medicationName || params.medName || (medications[0]?.name ?? '');
-  const extraContext = [targetMed?.instructions, targetMed?.precautions].filter(Boolean).join(' ');
-
-  const foodWarning = interactions.find(
-    i => targetMedName && i.interactionType === 'หลีกเลี่ยง' && isMedicationMatch(targetMedName, i.medicationName, extraContext)
-  );
-
-  const handleConfirm = async () => {
-    if (targetItem && !targetItem.isTaken) {
-      await markTaken(targetItem.id, true);
-    }
-    if (Platform.OS === 'web') {
-      router.replace('/(tabs)' as any);
-      return;
-    }
-    Alert.alert('บันทึกสำเร็จ', 'บันทึกการรับประทานยาเรียบร้อยแล้ว', [
-      { text: 'ตกลง', onPress: () => router.replace('/(tabs)' as any) },
-    ]);
-  };
-
-  const handlePostpone = async () => {
-    if (targetItem && !targetItem.isTaken) {
-      const newTime = await postponeSchedule(targetItem.id, 30);
-      if (Platform.OS === 'web') {
-        router.replace('/(tabs)' as any);
-        return;
-      }
-      Alert.alert(
-        'เลื่อนเวลาสำเร็จ',
-        `ระบบเลื่อนการรับประทานยาออกไป 30 นาที และจะแจ้งเตือนอีกครั้งเวลา ${newTime || ''}`.trim(),
-        [{ text: 'ตกลง', onPress: () => router.replace('/(tabs)' as any) }]
-      );
-      return;
-    }
-    if (Platform.OS === 'web') {
-      router.replace('/(tabs)' as any);
-      return;
-    }
-    Alert.alert('เลื่อนเวลา', 'เลื่อนการรับประทานยาออกไป 30 นาทีแล้ว', [
-      { text: 'ตกลง', onPress: () => router.replace('/(tabs)' as any) },
-    ]);
-  };
-
-  const handleSkip = async () => {
-    if (Platform.OS === 'web') {
-      if (typeof window !== 'undefined' && window.confirm('ต้องการข้ามการรับประทานยาครั้งนี้หรือไม่?')) {
-        if (targetItem) {
-          await skipSchedule(targetItem.id);
-        }
-        router.replace('/(tabs)' as any);
-      }
-      return;
-    }
-    Alert.alert('ยืนยันการข้าม', 'ต้องการข้ามการรับประทานยาครั้งนี้หรือไม่?', [
-      { text: 'ยกเลิก', style: 'cancel' },
-      {
-        text: 'ข้ามครั้งนี้',
-        style: 'destructive',
-        onPress: async () => {
-          if (targetItem) {
-            await skipSchedule(targetItem.id);
-          }
-          router.replace('/(tabs)' as any);
-        },
-      },
-    ]);
-  };
-
-  if (!targetItem && medications.length === 0) {
+  if (isEmpty) {
     return (
       <SafeAreaView style={styles.safeArea}>
         <AppHeader title="ยืนยันการรับประทานยา" />
@@ -117,7 +42,7 @@ export default function ConfirmIntakeScreen() {
           </Text>
           <TouchableOpacity
             style={styles.backButton}
-            onPress={() => router.replace('/(tabs)' as any)}
+            onPress={goHome}
           >
             <Text style={styles.backButtonText}>กลับหน้าหลัก</Text>
           </TouchableOpacity>
@@ -125,11 +50,6 @@ export default function ConfirmIntakeScreen() {
       </SafeAreaView>
     );
   }
-
-  const medName = formatCleanDrugName(targetItem?.medicationName || targetMedName || 'รายการยา');
-  const medDose = targetItem?.dosage || '1 เม็ด';
-  const medMeal = targetItem?.mealTiming || 'หลังอาหาร';
-  const medTime = targetItem?.time ? `${targetItem.time} น.` : 'ตามกำหนด';
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -223,7 +143,7 @@ export default function ConfirmIntakeScreen() {
         {/* Link to Log Side Effects */}
         <TouchableOpacity
           style={styles.logAbnormalLink}
-          onPress={() => router.push('/log-side-effect')}
+          onPress={goLogSideEffect}
           activeOpacity={0.7}
         >
           <Text style={styles.logAbnormalText}>บันทึกอาการผิดปกติ</Text>

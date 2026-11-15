@@ -1,0 +1,56 @@
+/* --------------------------------------------------------------------------
+   Quick Filter Pills (Interactions List - using #DFF2FF surface)
+   -------------------------------------------------------------------------- */
+.quick-filter-row {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 20px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.filter-pill-card {
+  padding: 12px 20px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-neutral-100);
+  background: var(--color-neutral-0);
+  color: var(--color-neutral-600);
+  cursor: pointer;
+  transition: var(--transition-fast);
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 110px;
+  box-shadow: var(--shadow-sm);
+  font-family: inherit;
+}
+
+.filter-pill-card:hover {
+  background: #DFF2FF;
+  border-color: #B9E2FE;
+  color: #0284C7;
+}
+
+.filter-pill-card.active {
+  background: #DFF2FF;
+  border-color: #0284C7;
+  color: #0284C7;
+  box-shadow: 0 2px 10px rgba(2, 132, 199, 0.15);
+  font-weight: 600;
+}
+
+.filter-pill-card.active .filter-pill-count {
+  color: #0284C7;
+}
+
+.filter-pill-count {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1;
+  font-family: 'Inter', 'Prompt', sans-serif;
+}
+
+.filter-pill-label {
+  font-size: 12px;
+  opacity: 0.9;
+}

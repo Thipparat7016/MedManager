@@ -1,124 +1,39 @@
-import React, { useState, useEffect } from 'react'
+import React from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Plus, Search, Eye, Edit, Trash2, X } from 'lucide-react'
-import { dataService } from '../services/dataService'
+import { Plus } from 'lucide-react'
+import InteractionFilterCard from '../components/interactions/InteractionFilterCard'
+import InteractionTableCard from '../components/interactions/InteractionTableCard'
+import InteractionDetailModal from '../components/interactions/InteractionDetailModal'
+import { useInteractionList } from '../hooks/useInteractionList'
+import './InteractionListPage.css'
 
 export default function InteractionListPage() {
   const navigate = useNavigate()
-  const [interactions, setInteractions] = useState([])
-  const [filteredList, setFilteredList] = useState([])
-  const [loading, setLoading] = useState(true)
-
-  // Filters
-  const [search, setSearch] = useState('')
-  const [severityFilter, setSeverityFilter] = useState('ทั้งหมด')
-  const [typeFilter, setTypeFilter] = useState('ทั้งหมด')
-  const [activePill, setActivePill] = useState('all') // 'all' | 'high' | 'medium' | 'caution' | 'recommend'
-
-  // Selected for batch delete
-  const [selectedIds, setSelectedIds] = useState([])
-
-  // Modal view
-  const [viewItem, setViewItem] = useState(null)
-
-  // Pagination
-  const [currentPage, setCurrentPage] = useState(1)
-  const pageSize = 5
-
-  useEffect(() => {
-    loadData()
-  }, [])
-
-  const loadData = async () => {
-    setLoading(true)
-    const list = await dataService.getInteractions()
-    const sortedList = [...list].sort((a, b) => {
-      const timeA = new Date(a.created_at || 0).getTime()
-      const timeB = new Date(b.created_at || 0).getTime()
-      if (timeA !== timeB) return timeA - timeB
-      return String(a.id || '').localeCompare(String(b.id || ''))
-    })
-    setInteractions(sortedList)
-    setFilteredList(sortedList)
-    setLoading(false)
-  }
-
-  const applyFilters = (pill = activePill, s = search, sev = severityFilter, typ = typeFilter) => {
-    let res = [...interactions]
-
-    if (s.trim()) {
-      const q = s.toLowerCase()
-      res = res.filter(i =>
-        (i.medication_name && i.medication_name.toLowerCase().includes(q)) ||
-        (i.food_name && i.food_name.toLowerCase().includes(q)) ||
-        (i.code && i.code.toLowerCase().includes(q))
-      )
-    }
-
-    if (sev !== 'ทั้งหมด') {
-      res = res.filter(i => i.severity === sev)
-    }
-
-    if (typ !== 'ทั้งหมด') {
-      res = res.filter(i => i.interaction_type === typ)
-    }
-
-    if (pill === 'high') {
-      res = res.filter(i => i.severity === 'สูง')
-    } else if (pill === 'medium') {
-      res = res.filter(i => i.severity === 'กลาง')
-    } else if (pill === 'recommend') {
-      res = res.filter(i => i.interaction_type === 'แนะนำ' || i.interaction_type === 'แนะนำให้รับประทานร่วม')
-    }
-
-    setFilteredList(res)
-    setCurrentPage(1)
-  }
-
-  const handleSearchSubmit = (e) => {
-    if (e) e.preventDefault()
-    applyFilters(activePill, search, severityFilter, typeFilter)
-  }
-
-  const handlePillClick = (pill) => {
-    setActivePill(pill)
-    applyFilters(pill, search, severityFilter, typeFilter)
-  }
-
-  const toggleSelectAll = (e) => {
-    if (e.target.checked) {
-      setSelectedIds(filteredList.map(i => i.id))
-    } else {
-      setSelectedIds([])
-    }
-  }
-
-  const toggleSelectOne = (id) => {
-    setSelectedIds(prev =>
-      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
-    )
-  }
-
-  const handleDeleteOne = async (id, name) => {
-    if (window.confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบข้อมูลปฏิสัมพันธ์ "${name}"?`)) {
-      await dataService.deleteInteraction(id)
-      await loadData()
-      setSelectedIds(prev => prev.filter(item => item !== id))
-    }
-  }
-
-  const handleDeleteSelected = async () => {
-    if (selectedIds.length === 0) return
-    if (window.confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบปฏิสัมพันธ์ที่เลือกทั้งหมด ${selectedIds.length} รายการ?`)) {
-      await dataService.deleteMultipleInteractions(selectedIds)
-      setSelectedIds([])
-      await loadData()
-    }
-  }
-
-  const totalItems = filteredList.length
-  const totalPages = Math.ceil(totalItems / pageSize) || 1
-  const paginatedData = filteredList.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+  const {
+    interactions,
+    medications,
+    paginatedData,
+    search,
+    setSearch,
+    severityFilter,
+    setSeverityFilter,
+    typeFilter,
+    setTypeFilter,
+    selectedIds,
+    viewItem,
+    setViewItem,
+    currentPage,
+    setCurrentPage,
+    pageSize,
+    totalItems,
+    totalPages,
+    handleSearchSubmit,
+    handleSelectMedication,
+    toggleSelectAll,
+    toggleSelectOne,
+    handleDeleteOne,
+    handleDeleteSelected
+  } = useInteractionList()
 
   return (
     <div>
@@ -134,343 +49,45 @@ export default function InteractionListPage() {
       </div>
 
       {/* Filter Card */}
-      <div className="card">
-        <form onSubmit={handleSearchSubmit}>
-          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1.2fr 1.2fr auto', gap: '14px', alignItems: 'flex-end' }}>
-            <div>
-              <label className="form-label">ค้นหา</label>
-              <div style={{ position: 'relative' }}>
-                <input
-                  type="text"
-                  className="form-input"
-                  placeholder="ชื่อยา, ชื่ออาหาร..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  style={{ paddingLeft: '34px' }}
-                />
-                <Search size={16} style={{ position: 'absolute', left: '10px', top: '12px', color: '#94a3b8' }} />
-              </div>
-            </div>
-
-            <div>
-              <label className="form-label">ความรุนแรง</label>
-              <select
-                className="form-select"
-                value={severityFilter}
-                onChange={(e) => setSeverityFilter(e.target.value)}
-              >
-                <option value="ทั้งหมด">ทั้งหมด</option>
-                <option value="สูง">สูง</option>
-                <option value="กลาง">กลาง</option>
-                <option value="ต่ำ">ต่ำ</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="form-label">ประเภท</label>
-              <select
-                className="form-select"
-                value={typeFilter}
-                onChange={(e) => setTypeFilter(e.target.value)}
-              >
-                <option value="ทั้งหมด">ทั้งหมด</option>
-                <option value="หลีกเลี่ยง">หลีกเลี่ยง</option>
-                <option value="แนะนำ">แนะนำ</option>
-              </select>
-            </div>
-
-            <div>
-              <button type="submit" className="btn btn-primary" style={{ height: '41px', padding: '0 24px' }}>
-                ค้นหา
-              </button>
-            </div>
-          </div>
-        </form>
-      </div>
+      <InteractionFilterCard
+        search={search}
+        onSearchChange={setSearch}
+        severityFilter={severityFilter}
+        onSeverityFilterChange={setSeverityFilter}
+        typeFilter={typeFilter}
+        onTypeFilterChange={setTypeFilter}
+        onSubmit={handleSearchSubmit}
+        medications={medications}
+        interactions={interactions}
+        onSelectMedication={handleSelectMedication}
+      />
 
       {/* Table Card */}
-      <div className="card">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-          <div style={{ fontSize: '15px', fontWeight: 600, color: '#1e293b' }}>
-            ปฏิสัมพันธ์ทั้งหมด ({totalItems} รายการ)
-          </div>
-          {selectedIds.length > 0 && (
-            <button
-              onClick={handleDeleteSelected}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: '#ef4444',
-                fontSize: '13px',
-                fontWeight: 600,
-                cursor: 'pointer',
-                padding: '4px 8px'
-              }}
-            >
-              ลบที่เลือก ({selectedIds.length})
-            </button>
-          )}
-        </div>
-
-        <div className="table-container">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th style={{ width: '48px', textAlign: 'center' }}>
-                  <input
-                    type="checkbox"
-                    onChange={toggleSelectAll}
-                    checked={paginatedData.length > 0 && paginatedData.every(i => selectedIds.includes(i.id))}
-                  />
-                </th>
-                <th style={{ width: '70px', textAlign: 'center' }}>ID</th>
-                <th style={{ width: '20%' }}>ชื่อยา / อาหารเสริม (TH/EN)</th>
-                <th style={{ width: '18%' }}>อาหาร / กลุ่มอาหาร</th>
-                <th style={{ width: '16%', textAlign: 'center' }}>ประเภทปฏิสัมพันธ์</th>
-                <th style={{ width: '10%', textAlign: 'center' }}>ความรุนแรง</th>
-                <th style={{ width: '14%', textAlign: 'center' }}>ช่วงเวลางด</th>
-                <th style={{ width: '12%' }}>แหล่งอ้างอิง</th>
-                <th style={{ width: '190px', textAlign: 'center' }}>จัดการ</th>
-              </tr>
-            </thead>
-            <tbody>
-              {paginatedData.length === 0 ? (
-                <tr>
-                  <td colSpan="9" style={{ textAlign: 'center', padding: '36px', color: '#94a3b8' }}>
-                    ไม่พบข้อมูลปฏิสัมพันธ์ในระบบ (กดปุ่ม "เพิ่มปฏิสัมพันธ์" เพื่อเพิ่มข้อมูล)
-                  </td>
-                </tr>
-              ) : (
-                paginatedData.map((item, index) => (
-                  <tr key={item.id}>
-                    <td style={{ textAlign: 'center' }}>
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.includes(item.id)}
-                        onChange={() => toggleSelectOne(item.id)}
-                      />
-                    </td>
-                    <td style={{ textAlign: 'center' }}>
-                      {String((currentPage - 1) * pageSize + index + 1).padStart(3, '0')}
-                    </td>
-                    <td>
-                      {item.medication_name}
-                    </td>
-                    <td>{item.food_name}</td>
-                    <td style={{ whiteSpace: 'nowrap', textAlign: 'center' }}>{item.interaction_type}</td>
-                    <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
-                      {item.severity ? (
-                        <span className={`badge-severity ${item.severity === 'สูง' ? 'high' : item.severity === 'ต่ำ' ? 'low' : 'medium'}`}>
-                          {item.severity}
-                        </span>
-                      ) : (
-                        <span style={{ color: 'var(--color-neutral-400)' }}>-</span>
-                      )}
-                    </td>
-                    <td style={{ color: 'var(--color-neutral-600)', fontSize: '13px', whiteSpace: 'nowrap', textAlign: 'center' }}>
-                      {item.hours_note || (item.hours_before || item.hours_after ? `${item.hours_before || 0} ชม. ก่อน-${item.hours_after || 0} ชม. หลัง` : '-')}
-                    </td>
-                    <td style={{ color: 'var(--color-neutral-500)', fontSize: '12.5px' }}>
-                      {item.source_name || 'FDA 2024'}
-                    </td>
-                    <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
-                      <div style={{ display: 'inline-flex', gap: '8px', alignItems: 'center', justifyContent: 'center' }}>
-                        <button
-                          type="button"
-                          title="แก้ไข"
-                          onClick={() => navigate(`/interactions/edit/${item.id}`)}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            cursor: 'pointer',
-                            padding: '6px',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            color: '#B87108',
-                            borderRadius: '6px',
-                            transition: 'opacity 0.15s, background-color 0.15s'
-                          }}
-                          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(184, 113, 8, 0.1)'}
-                          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                        >
-                          <Edit size={18} />
-                        </button>
-                        <button
-                          type="button"
-                          title="ดูรายละเอียด"
-                          onClick={() => setViewItem(item)}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            cursor: 'pointer',
-                            padding: '6px',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            color: '#4DB06F',
-                            borderRadius: '6px',
-                            transition: 'opacity 0.15s, background-color 0.15s'
-                          }}
-                          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(77, 176, 111, 0.1)'}
-                          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                        >
-                          <Eye size={18} />
-                        </button>
-                        <button
-                          type="button"
-                          title="ลบ"
-                          onClick={() => handleDeleteOne(item.id, item.medication_name)}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            cursor: 'pointer',
-                            padding: '6px',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            color: '#ef4444',
-                            borderRadius: '6px',
-                            transition: 'opacity 0.15s, background-color 0.15s'
-                          }}
-                          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'}
-                          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                        >
-                          <Trash2 size={18} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Footer & Pagination */}
-        <div className="table-footer">
-          <div>
-            แสดง {totalItems > 0 ? (currentPage - 1) * pageSize + 1 : 0}-{Math.min(currentPage * pageSize, totalItems)} จาก {totalItems} รายการ
-          </div>
-          <div className="pagination">
-            <button
-              className="page-btn"
-              disabled={currentPage === 1}
-              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-            >
-              &lt;
-            </button>
-            <button
-              className={`page-btn ${currentPage === 1 ? 'active' : ''}`}
-              onClick={() => setCurrentPage(1)}
-            >
-              1
-            </button>
-            {totalPages >= 2 && (
-              <button
-                className={`page-btn ${currentPage === 2 ? 'active' : ''}`}
-                onClick={() => setCurrentPage(2)}
-              >
-                2
-              </button>
-            )}
-            {totalPages >= 3 && (
-              <button
-                className={`page-btn ${currentPage === 3 ? 'active' : ''}`}
-                onClick={() => setCurrentPage(3)}
-              >
-                3
-              </button>
-            )}
-            {totalPages > 3 && (
-              <span style={{ padding: '0 4px', color: 'var(--color-neutral-400)' }}>...</span>
-            )}
-            <button
-              className="page-btn"
-              disabled={currentPage === totalPages}
-              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-            >
-              &gt;
-            </button>
-          </div>
-        </div>
-      </div>
+      <InteractionTableCard
+        totalItems={totalItems}
+        selectedIds={selectedIds}
+        paginatedData={paginatedData}
+        currentPage={currentPage}
+        pageSize={pageSize}
+        totalPages={totalPages}
+        onToggleSelectAll={toggleSelectAll}
+        onToggleSelectOne={toggleSelectOne}
+        onDeleteSelected={handleDeleteSelected}
+        onEdit={(itemId) => navigate(`/interactions/edit/${itemId}`)}
+        onView={(item) => setViewItem(item)}
+        onDeleteOne={handleDeleteOne}
+        onPageChange={setCurrentPage}
+      />
 
       {/* Interaction Detail Modal */}
-      {viewItem && (
-        <div className="modal-overlay" onClick={() => setViewItem(null)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <div className="modal-title">รายละเอียดปฏิสัมพันธ์: {viewItem.medication_name}</div>
-              <button
-                onClick={() => setViewItem(null)}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-neutral-400)' }}
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', fontSize: '14px', marginTop: '14px' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                <div><strong>อาหาร/กลุ่มอาหาร:</strong> {viewItem.food_name}</div>
-                <div><strong>ประเภทปฏิสัมพันธ์:</strong> {viewItem.interaction_type}</div>
-                <div>
-                  <strong>ความรุนแรง:</strong>{' '}
-                  {viewItem.severity && viewItem.severity !== '-' && !(viewItem.interaction_type || '').includes('แนะนำ') ? (
-                    <span className={`badge-severity ${viewItem.severity === 'สูง' ? 'high' : viewItem.severity === 'ต่ำ' ? 'low' : 'medium'}`} style={{ marginLeft: '4px' }}>
-                      {viewItem.severity}
-                    </span>
-                  ) : (
-                    <span style={{ color: 'var(--color-neutral-400)', marginLeft: '4px' }}>-</span>
-                  )}
-                </div>
-                <div>
-                  <strong>ช่วงเวลางด:</strong>{' '}
-                  {(viewItem.interaction_type || '').includes('แนะนำ')
-                    ? '-'
-                    : viewItem.hours_note || (Number(viewItem.hours_before) || Number(viewItem.hours_after) ? `${viewItem.hours_before || 0} ชม. ก่อน - ${viewItem.hours_after || 0} ชม. หลัง` : '-')}
-                </div>
-              </div>
-              <div style={{ borderTop: '1px solid var(--color-neutral-100)', paddingTop: '10px' }}>
-                <div style={{ fontWeight: 600, color: 'var(--color-neutral-800)', marginBottom: '4px' }}>รายละเอียดผลกระทบ:</div>
-                <div style={{ color: 'var(--color-neutral-600)', fontSize: '13.5px', lineHeight: 1.6 }}>{viewItem.impact_details || '-'}</div>
-              </div>
-              <div style={{ borderTop: '1px solid var(--color-neutral-100)', paddingTop: '10px' }}>
-                <div style={{ fontWeight: 600, color: 'var(--color-neutral-800)', marginBottom: '4px' }}>แหล่งอ้างอิง:</div>
-                <div style={{ color: 'var(--color-neutral-600)', fontSize: '13.5px' }}>
-                  {viewItem.source_name} ({viewItem.source_type}) - {viewItem.publish_year}
-                  {viewItem.url_doi && (
-                    <div style={{ marginTop: '4px' }}>
-                      <a href={viewItem.url_doi} target="_blank" rel="noreferrer" style={{ color: 'var(--color-primary-600)' }}>
-                        {viewItem.url_doi}
-                      </a>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <div style={{ marginTop: '24px', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-              <button
-                className="btn btn-ghost"
-                onClick={() => setViewItem(null)}
-              >
-                ปิด
-              </button>
-              <button
-                className="btn btn-primary"
-                onClick={() => {
-                  const id = viewItem.id
-                  setViewItem(null)
-                  navigate(`/interactions/edit/${id}`)
-                }}
-              >
-                แก้ไข
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <InteractionDetailModal
+        viewItem={viewItem}
+        onClose={() => setViewItem(null)}
+        onEdit={(itemId) => {
+          setViewItem(null)
+          navigate(`/interactions/edit/${itemId}`)
+        }}
+      />
     </div>
   )
 }

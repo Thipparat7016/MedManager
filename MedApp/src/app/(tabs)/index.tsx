@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import React from 'react';
 import {
   View,
   Text,
@@ -10,240 +10,49 @@ import {
   Modal,
   Pressable,
 } from 'react-native';
-import { useRouter, useFocusEffect } from 'expo-router';
-import { Ionicons, MaterialCommunityIcons, Feather } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useApp } from '@/context/AppContext';
-import {
-  isMedicationMatch,
-  formatCleanDrugName,
-  formatCleanFoodName,
-  formatConciseText,
-  formatShortFoodReason,
-  formatHoursNote,
-  formatFoodAvoidanceHeader,
-  resolveMedicationImageUri,
-} from '@/services/interactionMatcher';
-import { getLocalDateString, ScheduleItem } from '@/services/medService';
+import { Ionicons, Feather } from '@expo/vector-icons';
+import { useHomeDashboard } from '@/hooks/useHomeDashboard';
+import { HomeProgressCard } from '@/components/home/HomeProgressCard';
+import { HomeNextReminderCard } from '@/components/home/HomeNextReminderCard';
+import { HomeShortcutsGrid } from '@/components/home/HomeShortcutsGrid';
 
 export default function HomeScreen() {
-  const router = useRouter();
-  const insets = useSafeAreaInsets();
   const {
     user,
     todaySchedule,
+    thaiDateText,
+    MEAL_TIME_RANGES,
+    isExpandedAllMeals,
+    setIsExpandedAllMeals,
+    refreshing,
+    onRefresh,
+    previewMedImage,
+    setPreviewMedImage,
+    takenCount,
+    totalCount,
+    progressPercent,
+    remainingCount,
+    getMedImage,
+    getMedAvoidances,
+    nextMealName,
+    nextMealItems,
+    mealsGrouped,
+    currentMeal,
+    pageItems,
+    safeCurrentPage,
+    totalPages,
+    handlePrevPage,
+    handleNextPage,
+    handleConfirmCurrentPage,
     toggleChecklist,
-    confirmCheckedIntake,
-    notifications,
-    interactions,
-    medications,
-    masterMedications,
-    refreshData,
-    getScheduleForDate,
-  } = useApp();
-
-  const [isExpandedAllMeals, setIsExpandedAllMeals] = useState<boolean>(false);
-  const [currentPage, setCurrentPage] = useState<number>(0);
-  const [refreshing, setRefreshing] = useState<boolean>(false);
-  const [previewMedImage, setPreviewMedImage] = useState<{
-    uri: string;
-    name: string;
-  } | null>(null);
-
-  // Auto-refresh when navigating back to HomeScreen
-  useFocusEffect(
-    useCallback(() => {
-      refreshData();
-    }, [refreshData])
-  );
-
-  const onRefresh = useCallback(async () => {
-    setRefreshing(true);
-    await refreshData();
-    setRefreshing(false);
-  }, [refreshData]);
-
-  // Dynamic Thai Date
-  const getThaiDate = () => {
-    const days = [
-      'วันอาทิตย์',
-      'วันจันทร์',
-      'วันอังคาร',
-      'วันพุธ',
-      'วันพฤหัสบดี',
-      'วันศุกร์',
-      'วันเสาร์',
-    ];
-    const months = [
-      'มกราคม',
-      'กุมภาพันธ์',
-      'มีนาคม',
-      'เมษายน',
-      'พฤษภาคม',
-      'มิถุนายน',
-      'กรกฎาคม',
-      'สิงหาคม',
-      'กันยายน',
-      'ตุลาคม',
-      'พฤศจิกายน',
-      'ธันวาคม',
-    ];
-    const now = new Date();
-    return `${days[now.getDay()]}ที่ ${now.getDate()} ${months[now.getMonth()]} ${
-      now.getFullYear() + 543
-    }`;
-  };
-
-  // Progress metrics
-  const takenCount = todaySchedule.filter(s => s.isTaken).length;
-  const totalCount = todaySchedule.length;
-  const progressPercent = totalCount > 0 ? Math.round((takenCount / totalCount) * 100) : 0;
-  const remainingCount = Math.max(0, totalCount - takenCount);
-
-  // Meal time ranges and description
-  const MEAL_TIME_RANGES: Record<string, { range: string; defaultTime: string }> = {
-    'มื้อเช้า': { range: '05:00 - 10:59 น.', defaultTime: '08:00 น.' },
-    'มื้อกลางวัน': { range: '11:00 - 14:59 น.', defaultTime: '12:00 น.' },
-    'มื้อเย็น': { range: '15:00 - 19:59 น.', defaultTime: '18:00 น.' },
-    'ก่อนนอน': { range: '20:00 - 04:59 น.', defaultTime: '21:00 น.' },
-  };
-
-  // Helper to map time/timing to standard Thai meal categories
-  const getMealCategory = (timeStr?: string, mealTiming?: string): string => {
-    if (mealTiming === 'ก่อนนอน') return 'ก่อนนอน';
-    const clean = (timeStr || '').replace(' น.', '').trim();
-    const hour = parseInt(clean.split(':')[0], 10);
-    if (!isNaN(hour)) {
-      if (hour >= 5 && hour < 11) return 'มื้อเช้า';
-      if (hour >= 11 && hour < 15) return 'มื้อกลางวัน';
-      if (hour >= 15 && hour < 20) return 'มื้อเย็น';
-      return 'ก่อนนอน';
-    }
-    return 'มื้อเช้า';
-  };
-
-  // Resolve medication image from user medications or master medications catalog (AdminMed backend)
-  const getMedImage = (medName: string, medId?: string): string | null => {
-    return resolveMedicationImageUri(
-      { id: medId, name: medName },
-      masterMedications,
-      medications
-    );
-  };
-
-  // Helper to find food avoidances for a medicine
-  const getMedAvoidances = (medName: string) => {
-    const list = interactions.filter(
-      i =>
-        (i.interactionType === 'หลีกเลี่ยง' || i.interactionType?.includes('หลีกเลี่ยง')) &&
-        isMedicationMatch(medName, i.medicationName)
-    );
-    const seen = new Set<string>();
-    return list.filter(item => {
-      const clean = formatCleanFoodName(item.foodName).toLowerCase();
-      if (seen.has(clean)) return false;
-      seen.add(clean);
-      return true;
-    });
-  };
-
-  // Next pending medication items (prioritizes upcoming meals >= current time, not past times)
-  const now = new Date();
-  const currentMinutes = now.getHours() * 60 + now.getMinutes();
-  const pendingItemsToday = todaySchedule.filter(s => !s.isTaken && !s.isSkipped);
-  const upcomingPending = pendingItemsToday.find(s => {
-    const match = s.time.match(/(\d+):(\d+)/);
-    if (!match) return true;
-    const itemMinutes = parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
-    return itemMinutes >= currentMinutes - 60;
-  });
-  const firstTodayPending = upcomingPending || pendingItemsToday[0] || null;
-  const effectiveNextItem = firstTodayPending;
-
-  // กำหนดมื้อที่จะแสดงผลในตารางแจ้งเตือนถัดไป (อิงเฉพาะรายการของวันนั้นๆ เท่านั้น)
-  const nextMealName = effectiveNextItem
-    ? getMealCategory(effectiveNextItem.time, effectiveNextItem.mealTiming)
-    : todaySchedule.length > 0
-    ? 'ทานครบแล้ว'
-    : 'ยังไม่มีมื้อยา';
-
-  // รายการยาที่ยังไม่ทานในมื้อถัดไป (ถ้ากดทานแล้วให้เอาออกเป็นรายยา แต่คงรายการใน Checklist ไว้เหมือนเดิม)
-  const nextMealItems = effectiveNextItem
-    ? todaySchedule.filter(
-        s =>
-          getMealCategory(s.time, s.mealTiming) === nextMealName &&
-          !s.isTaken &&
-          !s.isSkipped
-      )
-    : [];
-
-  // Grouped schedule by Meal (1 page = 1 meal in Checklist)
-  const MEAL_ORDER = ['มื้อเช้า', 'มื้อกลางวัน', 'มื้อเย็น', 'ก่อนนอน'];
-  const activeScheduleForChecklist = todaySchedule;
-
-  const mealsGrouped = useMemo(() => {
-    return MEAL_ORDER.map(mealName => ({
-      name: mealName,
-      items: activeScheduleForChecklist.filter(
-        s => getMealCategory(s.time, s.mealTiming) === mealName
-      ),
-    })).filter(g => g.items.length > 0);
-  }, [activeScheduleForChecklist]);
-
-  const checklistMeals = useMemo(() => {
-    return mealsGrouped.length > 0
-      ? mealsGrouped
-      : MEAL_ORDER.map(mealName => ({
-          name: mealName,
-          items: [],
-        }));
-  }, [mealsGrouped]);
-
-  const totalPages = Math.max(1, checklistMeals.length);
-  const safeCurrentPage = Math.min(currentPage, totalPages - 1);
-  const currentMeal = checklistMeals[safeCurrentPage] || checklistMeals[0];
-  const pageItems = currentMeal ? currentMeal.items : [];
-
-  // Auto-sync initial page to next upcoming meal (if user hasn't manually paged)
-  const [hasUserPagedMeal, setHasUserPagedMeal] = useState<boolean>(false);
-  useEffect(() => {
-    if (!hasUserPagedMeal && checklistMeals.length > 0 && nextMealName) {
-      const idx = checklistMeals.findIndex(m => m.name === nextMealName);
-      if (idx >= 0) {
-        setCurrentPage(idx);
-      }
-    }
-  }, [nextMealName, checklistMeals, hasUserPagedMeal]);
-
-  const handlePrevPage = () => {
-    setHasUserPagedMeal(true);
-    setCurrentPage(p => Math.max(0, p - 1));
-  };
-
-  const handleNextPage = () => {
-    setHasUserPagedMeal(true);
-    setCurrentPage(p => Math.min(totalPages - 1, p + 1));
-  };
-
-  const handleConfirmCurrentPage = async () => {
-    if (!currentMeal || currentMeal.items.length === 0) return;
-
-    const pendingChecked = currentMeal.items.filter(i => i.isChecked && !i.isTaken);
-    if (pendingChecked.length > 0) {
-      await confirmCheckedIntake(pendingChecked.map(i => i.id));
-    } else {
-      const untaken = currentMeal.items.filter(i => !i.isTaken);
-      if (untaken.length > 0) {
-        await confirmCheckedIntake(untaken.map(i => i.id));
-      }
-    }
-  };
-
-  const unreadNotifCount = notifications.filter(
-    n => !n.isRead && n.type !== 'med_taken'
-  ).length;
-
-  const topInsetPadding = Math.max(insets.top, 24) + 14;
+    unreadNotifCount,
+    topInsetPadding,
+    goToNotifications,
+    goToAddMedication,
+    goToSchedule,
+    goToLogSideEffect,
+    goToFoodInteractions,
+  } = useHomeDashboard();
 
   return (
     <View style={styles.safeArea}>
@@ -260,11 +69,11 @@ export default function HomeScreen() {
             <Text style={styles.greetingText}>
               สวัสดี, {user?.name ? user.name.split(' ')[0] : 'สมชาย'}
             </Text>
-            <Text style={styles.dateText}>{getThaiDate()}</Text>
+            <Text style={styles.dateText}>{thaiDateText}</Text>
           </View>
           <TouchableOpacity
             style={styles.bellButton}
-            onPress={() => router.push('/notifications')}
+            onPress={goToNotifications}
             activeOpacity={0.7}
           >
             <Ionicons name="notifications-outline" size={24} color="#8B95F6" />
@@ -279,440 +88,46 @@ export default function HomeScreen() {
         </View>
 
         {/* Card 1: Today's Progress */}
-        <View style={styles.progressCard}>
-          <View style={styles.progressHeader}>
-            <Text style={styles.progressTitle}>ความคืบหน้าวันนี้</Text>
-            <Text style={styles.progressFraction}>
-              {takenCount} / {totalCount} รายการ
-            </Text>
-          </View>
-          {/* Progress Bar Track */}
-          <View style={styles.progressBarTrack}>
-            <View
-              style={[
-                styles.progressBarFill,
-                { width: `${totalCount > 0 ? Math.min(100, Math.max(5, progressPercent)) : 0}%` },
-              ]}
-            />
-          </View>
-          <Text style={styles.progressSubtext}>
-            {totalCount === 0
-              ? 'ยังไม่มีตารางรับประทานยาสำหรับวันนี้'
-              : remainingCount === 0
-              ? `กิน ${takenCount} ครั้ง • ครบทุกมื้อแล้ว • ทำได้ดี!`
-              : `กิน ${takenCount} ครั้ง • เหลืออีก ${remainingCount} ครั้ง • ทำได้ดี!`}
-          </Text>
-        </View>
+        <HomeProgressCard
+          takenCount={takenCount}
+          totalCount={totalCount}
+          progressPercent={progressPercent}
+          remainingCount={remainingCount}
+        />
 
         {/* Section: Next Reminder Header */}
         <Text style={styles.sectionHeaderTitle}>แจ้งเตือนถัดไป</Text>
 
         {/* Card 2: Next Reminder Card (Lilac Container) */}
-        <View style={styles.nextReminderCard}>
-          <View style={styles.reminderTopRow}>
-            {/* Left Column: Next Meal Information */}
-            <View style={styles.reminderLeftCol}>
-              <Text style={styles.nextMealTag}>มื้อถัดไป</Text>
-              <Text
-                style={styles.nextMealTitle}
-                numberOfLines={1}
-                adjustsFontSizeToFit
-                minimumFontScale={0.8}
-              >
-                {nextMealName}
-              </Text>
-
-              {nextMealItems.length > 0 ? (
-                /* Medicine Rows: Display ALL medications in this meal completely */
-                <View style={styles.nextMealList}>
-                  {nextMealItems.map(item => {
-                    const itemImage = getMedImage(item.medicationName, item.medicationId);
-                    const itemAvoidances = getMedAvoidances(item.medicationName);
-
-                    return (
-                      <View key={item.id} style={styles.nextMedItemWrapper}>
-                        {/* Medicine Row */}
-                        <View
-                          style={[styles.nextMedRow, item.isTaken && styles.nextMedRowTaken]}
-                        >
-                          {itemImage ? (
-                            <TouchableOpacity
-                              style={styles.medIconBox}
-                              onPress={() =>
-                                setPreviewMedImage({
-                                  uri: itemImage,
-                                  name: formatCleanDrugName(item.medicationName),
-                                })
-                              }
-                              activeOpacity={0.75}
-                            >
-                              <Image
-                                source={{ uri: itemImage }}
-                                style={styles.medThumbImage}
-                                resizeMode="cover"
-                              />
-                            </TouchableOpacity>
-                          ) : (
-                            <View style={styles.medIconBox}>
-                              <MaterialCommunityIcons name="pill" size={20} color="#8B95F6" />
-                            </View>
-                          )}
-                          <View style={styles.nextMedInfo}>
-                            <View style={styles.nextMedHeaderLine}>
-                              <Text style={styles.nextMedName} numberOfLines={2}>
-                                {formatCleanDrugName(item.medicationName)}
-                              </Text>
-                              {item.isTaken ? (
-                                <View style={styles.takenInlineBadge}>
-                                  <Ionicons name="checkmark-circle" size={11} color="#16A34A" />
-                                  <Text style={styles.takenInlineText}>ทานแล้ว</Text>
-                                </View>
-                              ) : null}
-                            </View>
-                            <Text style={styles.nextMedMeta} numberOfLines={1}>
-                              {[
-                                `${item.doseCount || 1} ${item.type}`,
-                                item.mealTiming,
-                              ]
-                                .filter(Boolean)
-                                .join(' • ')}
-                            </Text>
-                          </View>
-                        </View>
-
-                        {/* Food Avoidance directly under this medicine (matching design in image) */}
-                        {itemAvoidances.length > 0 && (
-                          <View style={styles.avoidanceSection}>
-                            <View style={styles.avoidBadge}>
-                              <Ionicons name="restaurant-outline" size={11} color="#EF4444" style={{ marginRight: 4 }} />
-                              <Text style={styles.avoidBadgeText}>อาหารที่ควรเลี่ยง</Text>
-                            </View>
-                            {itemAvoidances.map((avoid, aIdx) => {
-                              const headerText = formatFoodAvoidanceHeader(avoid.foodName, avoid.hoursNote);
-                              const reasonText = formatShortFoodReason(avoid.impactDetails);
-
-                              return (
-                                <View key={aIdx} style={styles.avoidItemBlock}>
-                                  <View style={styles.avoidBulletRow}>
-                                    <Text style={styles.avoidBulletDot}>•</Text>
-                                    <Text style={styles.avoidBulletText}>{headerText}</Text>
-                                  </View>
-                                  {reasonText ? (
-                                    <View style={styles.avoidBulletRow}>
-                                      <Text style={styles.avoidBulletDot}>•</Text>
-                                      <Text
-                                        style={styles.avoidBulletText}
-                                        numberOfLines={1}
-                                        adjustsFontSizeToFit
-                                        minimumFontScale={0.85}
-                                      >
-                                        {reasonText}
-                                      </Text>
-                                    </View>
-                                  ) : null}
-                                </View>
-                              );
-                            })}
-                          </View>
-                        )}
-                      </View>
-                    );
-                  })}
-                </View>
-              ) : (
-                <View style={styles.emptyNextMedBox}>
-                  <Text style={styles.emptyNextMedText}>
-                    {todaySchedule.length > 0 ? 'ทานครบทุกมื้อแล้ว' : 'ยังไม่มีรายการยาในมื้อนี้'}
-                  </Text>
-                </View>
-              )}
-            </View>
-
-            {/* Right Column: White Card Box (Checklist & Confirmation) */}
-            <View style={styles.reminderRightBox}>
-              <View style={styles.rightBoxHeaderRow}>
-                <Text
-                  style={styles.rightBoxTitle}
-                  numberOfLines={1}
-                  adjustsFontSizeToFit
-                  minimumFontScale={0.8}
-                >
-                  Checklist ({currentMeal?.name || 'มื้อยา'})
-                </Text>
-                <View style={styles.paginationRow}>
-                  <TouchableOpacity
-                    onPress={handlePrevPage}
-                    disabled={safeCurrentPage === 0}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 4 }}
-                  >
-                    <Text
-                      style={[
-                        styles.pageArrowText,
-                        safeCurrentPage === 0 && styles.pageArrowDisabled,
-                      ]}
-                    >
-                      &lt;
-                    </Text>
-                  </TouchableOpacity>
-                  <Text style={styles.pageNumberText}>
-                    {' '}{safeCurrentPage + 1} / {totalPages}{' '}
-                  </Text>
-                  <TouchableOpacity
-                    onPress={handleNextPage}
-                    disabled={safeCurrentPage >= totalPages - 1}
-                    hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}
-                  >
-                    <Text
-                      style={[
-                        styles.pageArrowText,
-                        safeCurrentPage >= totalPages - 1 && styles.pageArrowDisabled,
-                      ]}
-                    >
-                      &gt;
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              {/* Medication Checklist for Current Page */}
-              <View style={styles.checklistContainer}>
-                {pageItems.length > 0 ? (
-                  pageItems.map(item => {
-                    const isChecked = Boolean(item.isChecked || item.isTaken);
-                    return (
-                      <TouchableOpacity
-                        key={item.id}
-                        style={styles.checkItemRow}
-                        disabled={item.isTaken}
-                        onPress={() => {
-                          if (!item.isTaken) {
-                            toggleChecklist(item.id, !isChecked);
-                          }
-                        }}
-                        activeOpacity={item.isTaken ? 1 : 0.6}
-                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                      >
-                        <View
-                          style={[
-                            styles.checkCircle,
-                            isChecked && styles.checkCircleActive,
-                          ]}
-                        >
-                          {isChecked && (
-                            <Ionicons name="checkmark" size={10} color="#FFFFFF" />
-                          )}
-                        </View>
-                        <Text
-                          style={[
-                            styles.checkItemName,
-                            item.isTaken && styles.checkItemTextTaken,
-                          ]}
-                          numberOfLines={1}
-                        >
-                          {formatCleanDrugName(item.medicationName)}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })
-                ) : (
-                  <Text style={styles.emptyListText}>ไม่มีรายการยาในมื้อนี้</Text>
-                )}
-              </View>
-
-              {/* Confirm Intake Action Button */}
-              <TouchableOpacity
-                style={styles.confirmButton}
-                onPress={handleConfirmCurrentPage}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.confirmButtonText}>ยืนยันการทานยา</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* Expanded View: All meals grouped as shown in Image 2 */}
-          {isExpandedAllMeals && (
-            <View style={styles.expandedContainer}>
-              {mealsGrouped.map(meal => (
-                <View key={meal.name} style={styles.mealGroupSection}>
-                  <View style={styles.mealGroupTitleRow}>
-                    <Text style={styles.mealGroupTitle}>{meal.name}</Text>
-                    {MEAL_TIME_RANGES[meal.name] ? (
-                      <Text style={styles.mealGroupRangeText}>
-                        ({MEAL_TIME_RANGES[meal.name].range})
-                      </Text>
-                    ) : null}
-                  </View>
-                  {meal.items.map(item => {
-                    const itemAvoidances = getMedAvoidances(item.medicationName);
-                    const itemImage = getMedImage(item.medicationName, item.medicationId);
-
-                    return (
-                      <View key={item.id} style={styles.expandedItemCard}>
-                        {/* Top row: Image, Name/Details, Status Badge */}
-                        <View style={styles.expandedCardTopRow}>
-                          {itemImage ? (
-                            <TouchableOpacity
-                              style={styles.medIconBox}
-                              onPress={() =>
-                                setPreviewMedImage({
-                                  uri: itemImage,
-                                  name: formatCleanDrugName(item.medicationName),
-                                })
-                              }
-                              activeOpacity={0.75}
-                            >
-                              <Image
-                                source={{ uri: itemImage }}
-                                style={styles.medThumbImage}
-                                resizeMode="cover"
-                              />
-                            </TouchableOpacity>
-                          ) : (
-                            <View style={styles.medIconBox}>
-                              <MaterialCommunityIcons name="pill" size={20} color="#8B95F6" />
-                            </View>
-                          )}
-
-                          <View style={[styles.expandedCardInfo, !itemImage && { marginLeft: 0 }]}>
-                            <Text style={styles.expandedMedName} numberOfLines={1}>
-                              {formatCleanDrugName(item.medicationName)}
-                            </Text>
-                            <Text style={styles.expandedMedMeta} numberOfLines={1}>
-                              {[
-                                `${item.doseCount || 1} ${item.type}`,
-                                item.mealTiming,
-                              ]
-                                .filter(Boolean)
-                                .join(' • ')}
-                            </Text>
-                          </View>
-
-                          <View
-                            style={[
-                              styles.statusBadge,
-                              item.isTaken
-                                ? styles.statusBadgeTaken
-                                : item.isChecked
-                                ? styles.statusBadgePending
-                                : styles.statusBadgeUntaken,
-                            ]}
-                          >
-                            <Text
-                              style={[
-                                styles.statusBadgeText,
-                                item.isTaken
-                                  ? styles.statusBadgeTextTaken
-                                  : item.isChecked
-                                  ? styles.statusBadgeTextPending
-                                  : styles.statusBadgeTextUntaken,
-                              ]}
-                            >
-                              {item.isTaken
-                                ? 'ยืนยันแล้ว'
-                                : item.isChecked
-                                ? 'รอยืนยัน'
-                                : 'ยังไม่ได้ทานยา'}
-                            </Text>
-                          </View>
-                        </View>
-
-                        {/* Food Avoidance details for this item */}
-                        {itemAvoidances.length > 0 && (
-                          <View style={styles.expandedAvoidSection}>
-                            <View style={styles.avoidBadge}>
-                              <Ionicons name="restaurant-outline" size={11} color="#EF4444" style={{ marginRight: 4 }} />
-                              <Text style={styles.avoidBadgeText}>อาหารที่ควรเลี่ยง</Text>
-                            </View>
-                            {itemAvoidances.map((avoid, aIdx) => {
-                              const headerText = formatFoodAvoidanceHeader(avoid.foodName, avoid.hoursNote);
-                              const reasonText = formatShortFoodReason(avoid.impactDetails);
-
-                              return (
-                                <View key={aIdx} style={styles.avoidItemBlock}>
-                                  <View style={styles.avoidBulletRow}>
-                                    <Text style={styles.avoidBulletDot}>•</Text>
-                                    <Text style={styles.avoidBulletText}>{headerText}</Text>
-                                  </View>
-                                  {reasonText ? (
-                                    <View style={styles.avoidBulletRow}>
-                                      <Text style={styles.avoidBulletDot}>•</Text>
-                                      <Text style={styles.avoidBulletText}>{reasonText}</Text>
-                                    </View>
-                                  ) : null}
-                                </View>
-                              );
-                            })}
-                          </View>
-                        )}
-                      </View>
-                    );
-                  })}
-                </View>
-              ))}
-            </View>
-          )}
-
-          {/* Toggle Button: View all meals / Hide all meals */}
-          <TouchableOpacity
-            style={styles.pillToggleBtn}
-            onPress={() => setIsExpandedAllMeals(!isExpandedAllMeals)}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.pillToggleText}>
-              {isExpandedAllMeals ? 'ปิดรายการทั้งหมด' : 'รายการทานยาทั้งหมด'}
-            </Text>
-            <Feather
-              name={isExpandedAllMeals ? 'chevron-up' : 'chevron-down'}
-              size={16}
-              color="#8B95F6"
-            />
-          </TouchableOpacity>
-        </View>
+        <HomeNextReminderCard
+          todayScheduleCount={todaySchedule.length}
+          nextMealName={nextMealName}
+          nextMealItems={nextMealItems}
+          mealsGrouped={mealsGrouped}
+          mealTimeRanges={MEAL_TIME_RANGES}
+          isExpandedAllMeals={isExpandedAllMeals}
+          onToggleExpandAllMeals={() => setIsExpandedAllMeals(!isExpandedAllMeals)}
+          currentMealName={currentMeal?.name}
+          pageItems={pageItems}
+          safeCurrentPage={safeCurrentPage}
+          totalPages={totalPages}
+          onPrevPage={handlePrevPage}
+          onNextPage={handleNextPage}
+          onToggleChecklistItem={toggleChecklist}
+          onConfirmCurrentPage={handleConfirmCurrentPage}
+          getMedImage={getMedImage}
+          getMedAvoidances={getMedAvoidances}
+          onPreviewMedImage={setPreviewMedImage}
+        />
 
         {/* Section: Quick Shortcuts ("ทางลัด") */}
         <Text style={styles.sectionHeaderTitle}>ทางลัด</Text>
-        <View style={styles.shortcutsGrid}>
-          {/* Shortcut 1: เพิ่มยาใหม่ */}
-          <TouchableOpacity
-            style={[styles.shortcutCard, { backgroundColor: '#F5F3FF' }]}
-            onPress={() => router.push('/add-medication')}
-            activeOpacity={0.7}
-          >
-            <Feather name="plus" size={26} color="#6366F1" />
-            <Text style={styles.shortcutText}>เพิ่มยาใหม่</Text>
-          </TouchableOpacity>
-
-          {/* Shortcut 2: ตารางยา */}
-          <TouchableOpacity
-            style={[styles.shortcutCard, { backgroundColor: '#F0FDF4' }]}
-            onPress={() => router.push('/schedule')}
-            activeOpacity={0.7}
-          >
-            <MaterialCommunityIcons name="view-grid-outline" size={26} color="#16A34A" />
-            <Text style={styles.shortcutText}>ตารางทานยา</Text>
-          </TouchableOpacity>
-
-          {/* Shortcut 3: ผลข้างเคียง */}
-          <TouchableOpacity
-            style={[styles.shortcutCard, { backgroundColor: '#FEF2F2' }]}
-            onPress={() => router.push('/log-side-effect')}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.exclamationIcon}>!</Text>
-            <Text style={styles.shortcutText}>ผลข้างเคียง</Text>
-          </TouchableOpacity>
-
-          {/* Shortcut 4: อาหารที่ควรเลี่ยง */}
-          <TouchableOpacity
-            style={[styles.shortcutCard, { backgroundColor: '#EFF6FF' }]}
-            onPress={() => router.push('/food-interactions')}
-            activeOpacity={0.7}
-          >
-            <Feather name="x" size={26} color="#2563EB" />
-            <Text style={styles.shortcutText}>อาหารที่ควรเลี่ยง</Text>
-          </TouchableOpacity>
-        </View>
+        <HomeShortcutsGrid
+          onAddMedication={goToAddMedication}
+          onSchedule={goToSchedule}
+          onLogSideEffect={goToLogSideEffect}
+          onFoodInteractions={goToFoodInteractions}
+        />
       </ScrollView>
 
       {/* Enlarged Medication Photo Popup Modal */}
@@ -812,473 +227,11 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
   },
-  progressCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    padding: 16,
-    marginBottom: 20,
-    shadowColor: '#6366F1',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
-    shadowRadius: 6,
-    elevation: 1,
-  },
-  progressHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  progressTitle: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  progressFraction: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#64748B',
-  },
-  progressBarTrack: {
-    height: 8,
-    backgroundColor: '#EEF2FF',
-    borderRadius: 4,
-    overflow: 'hidden',
-    marginBottom: 10,
-  },
-  progressBarFill: {
-    height: '100%',
-    backgroundColor: '#8B95F6',
-    borderRadius: 4,
-  },
-  progressSubtext: {
-    fontSize: 12,
-    color: '#64748B',
-    fontWeight: '500',
-  },
   sectionHeaderTitle: {
     fontSize: 16,
     fontWeight: '800',
     color: '#0F172A',
     marginBottom: 12,
-  },
-  nextReminderCard: {
-    backgroundColor: '#F4F6FF',
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: '#E0E7FF',
-    padding: 16,
-    marginBottom: 24,
-  },
-  reminderTopRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-  },
-  reminderLeftCol: {
-    flex: 1.15,
-    paddingRight: 6,
-  },
-  nextMealHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 2,
-  },
-  nextMealTag: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#6366F1',
-    marginBottom: 2,
-  },
-  nextMealTimeBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#EEF0FF',
-    paddingHorizontal: 8,
-    paddingVertical: 2.5,
-    borderRadius: 8,
-  },
-  nextMealTimeText: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#4338CA',
-  },
-  nextMealTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#1E1B4B',
-    marginBottom: 10,
-  },
-  nextMealTimeRangeText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#475569',
-    marginBottom: 12,
-  },
-  nextMealList: {
-    marginBottom: 4,
-  },
-  nextMedRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  nextMedRowTaken: {
-    opacity: 0.55,
-  },
-  medIconBox: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-    backgroundColor: '#EEF0FF',
-    overflow: 'hidden',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  medThumbImage: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-  },
-  nextMedInfo: {
-    marginLeft: 8,
-    flex: 1,
-  },
-  nextMedHeaderLine: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  nextMedName: {
-    fontSize: 13.5,
-    fontWeight: '700',
-    color: '#1E293B',
-    flex: 1,
-  },
-  takenInlineBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#DCFCE7',
-    paddingHorizontal: 5,
-    paddingVertical: 1.5,
-    borderRadius: 5,
-    marginLeft: 4,
-  },
-  takenInlineText: {
-    fontSize: 9.5,
-    fontWeight: '700',
-    color: '#15803D',
-    marginLeft: 2,
-  },
-  nextMedMeta: {
-    fontSize: 12,
-    color: '#64748B',
-    marginTop: 1,
-    lineHeight: 15,
-  },
-  nextMedItemWrapper: {
-    marginBottom: 10,
-  },
-  avoidanceSection: {
-    marginTop: 3,
-    marginBottom: 2,
-  },
-  avoidBadge: {
-    backgroundColor: '#FFF1F2',
-    paddingHorizontal: 7,
-    paddingVertical: 2.5,
-    borderRadius: 8,
-    alignSelf: 'flex-start',
-    marginBottom: 3,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  avoidBadgeText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#E11D48',
-  },
-  avoidItemBlock: {
-    marginBottom: 0,
-  },
-  avoidBulletRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 2.5,
-  },
-  avoidBulletDot: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#334155',
-    lineHeight: 16,
-    marginRight: 5,
-  },
-  avoidBulletText: {
-    flex: 1,
-    fontSize: 11,
-    fontWeight: '500',
-    color: '#334155',
-    lineHeight: 16,
-  },
-  emptyNextMedBox: {
-    paddingVertical: 12,
-  },
-  emptyNextMedText: {
-    fontSize: 12,
-    color: '#94A3B8',
-  },
-  reminderRightBox: {
-    flex: 0.95,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#E8EDF5',
-    paddingHorizontal: 8,
-    paddingVertical: 9,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  rightBoxHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingBottom: 6,
-    marginBottom: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E8EDF5',
-  },
-  rightBoxTitle: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#1E293B',
-    flex: 1,
-    marginRight: 2,
-  },
-  paginationRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  pageArrowText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#64748B',
-    paddingHorizontal: 2,
-  },
-  pageArrowDisabled: {
-    color: '#CBD5E1',
-  },
-  pageNumberText: {
-    fontSize: 10,
-    color: '#64748B',
-    fontWeight: '600',
-  },
-  checklistContainer: {
-    minHeight: 68,
-    justifyContent: 'flex-start',
-  },
-  checkItemRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 4.5,
-  },
-  checkCircle: {
-    width: 15,
-    height: 15,
-    borderRadius: 7.5,
-    borderWidth: 1.5,
-    borderColor: '#CBD5E1',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
-    marginRight: 6,
-  },
-  checkCirclePending: {
-    backgroundColor: '#10B981',
-    borderColor: '#10B981',
-  },
-  checkCircleActive: {
-    backgroundColor: '#10B981',
-    borderColor: '#10B981',
-  },
-  checkItemTextCol: {
-    marginLeft: 8,
-    flex: 1,
-  },
-  checkItemName: {
-    fontSize: 11,
-    fontWeight: '500',
-    color: '#1E293B',
-    flex: 1,
-  },
-  checkItemMeta: {
-    fontSize: 11,
-    color: '#64748B',
-    marginTop: 1,
-  },
-  checkItemTextTaken: {
-    color: '#94A3B8',
-    textDecorationLine: 'line-through',
-  },
-  emptyListText: {
-    fontSize: 11,
-    color: '#94A3B8',
-    textAlign: 'center',
-    marginVertical: 10,
-  },
-  confirmButton: {
-    backgroundColor: '#8B9BF6',
-    borderRadius: 8,
-    paddingVertical: 7,
-    alignItems: 'center',
-    marginTop: 7,
-  },
-  confirmButtonText: {
-    fontSize: 10.5,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  pillToggleBtn: {
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 16,
-    paddingVertical: 6,
-    borderRadius: 20,
-    alignSelf: 'center',
-    marginTop: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  pillToggleText: {
-    fontSize: 11.5,
-    fontWeight: '700',
-    color: '#64748B',
-    marginRight: 4,
-  },
-  expandedContainer: {
-    marginTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#E2E8F0',
-    paddingTop: 10,
-  },
-  mealGroupSection: {
-    marginBottom: 10,
-  },
-  mealGroupTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    marginBottom: 8,
-    gap: 8,
-  },
-  mealGroupTitle: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#1E1B4B',
-  },
-  mealGroupRangeText: {
-    fontSize: 12,
-    color: '#64748B',
-    fontWeight: '500',
-  },
-  expandedItemCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#E8EDF5',
-    padding: 14,
-    marginBottom: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.03,
-    shadowRadius: 3,
-    elevation: 1,
-  },
-  expandedCardTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  expandedCardInfo: {
-    marginLeft: 10,
-    flex: 1,
-  },
-  expandedMedName: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#1E293B',
-  },
-  expandedMedMeta: {
-    fontSize: 11,
-    color: '#64748B',
-    marginTop: 2,
-  },
-  statusBadge: {
-    borderRadius: 12,
-    paddingHorizontal: 9,
-    paddingVertical: 3,
-    borderWidth: 1,
-    alignSelf: 'flex-start',
-  },
-  statusBadgeTaken: {
-    borderColor: '#A7F3D0',
-    backgroundColor: '#F0FDF4',
-  },
-  statusBadgePending: {
-    borderColor: '#FEF08A',
-    backgroundColor: '#FEFCE8',
-  },
-  statusBadgeUntaken: {
-    borderColor: '#E2E8F0',
-    backgroundColor: '#F1F5F9',
-  },
-  statusBadgeText: {
-    fontSize: 10.5,
-    fontWeight: '700',
-  },
-  statusBadgeTextTaken: {
-    color: '#16A34A',
-  },
-  statusBadgeTextPending: {
-    color: '#B45309',
-  },
-  statusBadgeTextUntaken: {
-    color: '#64748B',
-  },
-  expandedAvoidSection: {
-    marginTop: 8,
-    paddingTop: 6,
-    borderTopWidth: 0.5,
-    borderTopColor: '#F1F5F9',
-  },
-  shortcutsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  shortcutCard: {
-    width: '48%',
-    height: 86,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 10,
-  },
-  shortcutText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#1E293B',
-    marginTop: 6,
-  },
-  exclamationIcon: {
-    fontSize: 24,
-    fontWeight: '900',
-    color: '#DC2626',
-    lineHeight: 28,
   },
   modalOverlay: {
     flex: 1,

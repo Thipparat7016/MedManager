@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React from 'react';
 import {
   View,
   Text,
@@ -7,315 +7,28 @@ import {
   ScrollView,
   RefreshControl,
 } from 'react-native';
-import { useRouter, useFocusEffect } from 'expo-router';
 import { MaterialCommunityIcons, Feather, Ionicons } from '@expo/vector-icons';
 import { AppHeader } from '@/components/ui/AppHeader';
-import { StatusBadge } from '@/components/ui/StatusBadge';
-import { useApp } from '@/context/AppContext';
-import {
-  matchInteractionsForUser,
-  MatchedInteractionResult,
-  formatCleanDrugName,
-  formatCleanFoodName,
-} from '@/services/interactionMatcher';
-import { isMedicationScheduledForDate } from '@/services/medService';
-
-const MEAL_ORDER = ['มื้อเช้า', 'มื้อกลางวัน', 'มื้อเย็น', 'ก่อนนอน'];
-
-const MEAL_TIME_RANGES: Record<string, { range: string; defaultTime: string }> = {
-  'มื้อเช้า': { range: '05:00 - 10:59 น.', defaultTime: '08:00 น.' },
-  'มื้อกลางวัน': { range: '11:00 - 14:59 น.', defaultTime: '12:00 น.' },
-  'มื้อเย็น': { range: '15:00 - 19:59 น.', defaultTime: '18:00 น.' },
-  'ก่อนนอน': { range: '20:00 - 04:59 น.', defaultTime: '21:00 น.' },
-};
-
-function getMealCategory(timeStr?: string, mealTiming?: string): string {
-  if (mealTiming === 'ก่อนนอน') return 'ก่อนนอน';
-  const clean = (timeStr || '').replace(' น.', '').trim();
-  const hour = parseInt(clean.split(':')[0], 10);
-  if (!isNaN(hour)) {
-    if (hour >= 5 && hour < 11) return 'มื้อเช้า';
-    if (hour >= 11 && hour < 15) return 'มื้อกลางวัน';
-    if (hour >= 15 && hour < 20) return 'มื้อเย็น';
-    return 'ก่อนนอน';
-  }
-  return 'มื้อเช้า';
-}
+import { AvoidInteractionCard } from '@/components/interactions/AvoidInteractionCard';
+import { RecommendInteractionCard } from '@/components/interactions/RecommendInteractionCard';
+import { formatCleanDrugName } from '@/utils/interactionMatcher';
+import { useFoodInteractions } from '@/hooks/useFoodInteractions';
 
 export default function FoodInteractionsScreen() {
-  const router = useRouter();
-  const { interactions, medications, todaySchedule, refreshData } = useApp();
-  const [selectedDrug, setSelectedDrug] = useState<string>('ทั้งหมด');
-  const [refreshing, setRefreshing] = useState(false);
-
-  // Auto-refresh when navigating to screen to ensure backend updates from AdminMed appear immediately
-  useFocusEffect(
-    useCallback(() => {
-      refreshData();
-    }, [refreshData])
-  );
-
-  const onRefresh = useCallback(async () => {
-    setRefreshing(true);
-    await refreshData();
-    setRefreshing(false);
-  }, [refreshData]);
-
-  // User's active medications
-  const activeUserMeds = medications.filter(m => m.status === 'active');
-
-  // Filter only medications that are scheduled for TODAY
-  const todayDate = useMemo(() => new Date(), []);
-  const scheduledTodayNames = useMemo(() => {
-    return new Set(
-      todaySchedule.map(s => formatCleanDrugName(s.medicationName)).filter(Boolean)
-    );
-  }, [todaySchedule]);
-
-  const todayActiveMeds = useMemo(() => {
-    return activeUserMeds.filter(
-      m =>
-        scheduledTodayNames.has(formatCleanDrugName(m.name)) ||
-        isMedicationScheduledForDate(m, todayDate)
-    );
-  }, [activeUserMeds, scheduledTodayNames, todayDate]);
-
-  // Match interactions for today's medications
-  const matchedList: MatchedInteractionResult[] = useMemo(() => {
-    return matchInteractionsForUser(todayActiveMeds, interactions);
-  }, [todayActiveMeds, interactions]);
-
-  // Derive unique drug names for today
-  const todayDrugNames = useMemo(() => {
-    return Array.from(
-      new Set(todayActiveMeds.map(m => formatCleanDrugName(m.name)))
-    ).filter(Boolean);
-  }, [todayActiveMeds]);
-
-  // Buttons filter: "ทั้งหมด" + only the medicines of that day
-  const drugFilters = useMemo(() => {
-    return ['ทั้งหมด', ...todayDrugNames];
-  }, [todayDrugNames]);
-
-  // Fallback to "ทั้งหมด" if previously selected drug is not in today's drugs
-  const effectiveSelectedDrug = drugFilters.includes(selectedDrug)
-    ? selectedDrug
-    : 'ทั้งหมด';
-
-  // Filter for single drug view
-  const singleDrugMatches = useMemo(() => {
-    if (effectiveSelectedDrug === 'ทั้งหมด') return [];
-    return matchedList.filter(
-      item =>
-        formatCleanDrugName(item.matchedMedication.name) === effectiveSelectedDrug
-    );
-  }, [effectiveSelectedDrug, matchedList]);
-
-  const singleAvoidList = useMemo(() => {
-    return singleDrugMatches.filter(
-      i =>
-        i.interaction.interactionType === 'หลีกเลี่ยง' ||
-        i.interaction.interactionType?.includes('หลีกเลี่ยง')
-    );
-  }, [singleDrugMatches]);
-
-  const singleRecommendList = useMemo(() => {
-    return singleDrugMatches.filter(
-      i =>
-        i.interaction.interactionType === 'แนะนำ' ||
-        i.interaction.interactionType === 'แนะนำให้รับประทานร่วม' ||
-        i.interaction.interactionType?.includes('แนะนำ')
-    );
-  }, [singleDrugMatches]);
-
-  // Grouped by Meal for "ทั้งหมด"
-  const mealsData = useMemo(() => {
-    return MEAL_ORDER.map(mealName => {
-      // Find medication names in this meal
-      const itemsInMeal = todaySchedule.filter(
-        s => getMealCategory(s.time, s.mealTiming) === mealName
-      );
-      const medNamesInMeal = new Set(
-        itemsInMeal.map(s => formatCleanDrugName(s.medicationName))
-      );
-
-      // Fallback: also check medication times if todaySchedule is empty
-      if (medNamesInMeal.size === 0) {
-        todayActiveMeds.forEach(m => {
-          if (
-            (m.times || []).some(t => getMealCategory(t, m.mealTiming) === mealName)
-          ) {
-            medNamesInMeal.add(formatCleanDrugName(m.name));
-          }
-        });
-      }
-
-      const mealMatches = matchedList.filter(item =>
-        medNamesInMeal.has(formatCleanDrugName(item.matchedMedication.name))
-      );
-
-      const avoid = mealMatches.filter(
-        i =>
-          i.interaction.interactionType === 'หลีกเลี่ยง' ||
-          i.interaction.interactionType?.includes('หลีกเลี่ยง')
-      );
-      const recommend = mealMatches.filter(
-        i =>
-          i.interaction.interactionType === 'แนะนำ' ||
-          i.interaction.interactionType === 'แนะนำให้รับประทานร่วม' ||
-          i.interaction.interactionType?.includes('แนะนำ')
-      );
-
-      return {
-        mealName,
-        range: MEAL_TIME_RANGES[mealName]?.range || '',
-        avoid,
-        recommend,
-        totalCount: avoid.length + recommend.length,
-      };
-    }).filter(m => m.totalCount > 0);
-  }, [todaySchedule, todayActiveMeds, matchedList]);
-
-  // Card renderers (Updated to match exact UI design)
-  const renderAvoidCard = (item: MatchedInteractionResult, keyId?: string) => {
-    const inter = item.interaction;
-    const isHigh = inter.severity === 'สูง';
-    const isMed = inter.severity === 'กลาง';
-    const cleanUserMed = formatCleanDrugName(item.matchedMedication.name);
-    const cleanInterMed = formatCleanDrugName(inter.medicationName);
-    const isDifferentDrug =
-      cleanInterMed && cleanInterMed.toLowerCase() !== cleanUserMed.toLowerCase();
-
-    return (
-      <View
-        key={keyId || item.id}
-        style={[
-          styles.interactionCard,
-          isHigh && styles.cardHighBorder,
-          isMed && styles.cardMedBorder,
-          !isHigh && !isMed && styles.cardLowBorder,
-        ]}
-      >
-        {/* 1. Header: ชื่ออาหาร + Badge ระดับความรุนแรง */}
-        <View style={styles.cardHeader}>
-          <Text style={styles.foodName} numberOfLines={1}>
-            {formatCleanFoodName(inter.foodName)}
-          </Text>
-          <StatusBadge
-            label={inter.severity || 'กลาง'}
-            variant={isHigh ? 'high' : isMed ? 'medium' : 'low'}
-            size="sm"
-          />
-        </View>
-
-        {/* 2. ชื่อยา (ไอคอนเม็ดยา + ชื่อยา) */}
-        <View style={styles.infoRow}>
-          <MaterialCommunityIcons
-            name="pill"
-            size={15}
-            color="#E11D48"
-            style={styles.iconStyle}
-          />
-          <Text style={styles.infoText} numberOfLines={1}>
-            {cleanUserMed}
-            {isDifferentDrug ? ` (ตัวยาที่ระวัง: ${cleanInterMed})` : ''}
-          </Text>
-        </View>
-
-        {/* 3. เวลาที่งด (ไอคอนนาฬิกา + คำแนะนำเวลา) */}
-        {inter.hoursNote ? (
-          <View style={styles.infoRow}>
-            <Ionicons
-              name="time-outline"
-              size={15}
-              color="#DC2626"
-              style={styles.iconStyle}
-            />
-            <Text style={styles.infoText} numberOfLines={1}>
-              {inter.hoursNote.startsWith('งด')
-                ? inter.hoursNote
-                : `งด: ${inter.hoursNote}`}
-            </Text>
-          </View>
-        ) : null}
-
-        {/* 4. ผลกระทบและข้อแนะนำ */}
-        {inter.impactDetails ? (
-          <View style={styles.infoRow}>
-            <Ionicons
-              name="warning"
-              size={15}
-              color="#B91C1C"
-              style={styles.iconStyle}
-            />
-            <Text style={styles.impactInlineText}>{inter.impactDetails}</Text>
-          </View>
-        ) : null}
-
-        {/* 5. Footer: เส้นคั่น + แหล่งอ้างอิง */}
-        <View style={styles.cardFooter}>
-          <Text style={styles.sourceText}>
-            แหล่งอ้างอิง:{' '}
-            {(inter as any).source ||
-              (inter as any).reference ||
-              'FDA Drug Interaction Database 2024'}
-          </Text>
-        </View>
-      </View>
-    );
-  };
-
-  const renderRecommendCard = (item: MatchedInteractionResult, keyId?: string) => {
-    const inter = item.interaction;
-    const cleanUserMed = formatCleanDrugName(item.matchedMedication.name);
-
-    return (
-      <View key={keyId || item.id} style={styles.recommendCard}>
-        {/* 1. ชื่ออาหาร */}
-        <View style={styles.cardHeader}>
-          <Text style={styles.recommendFoodName} numberOfLines={1}>
-            {formatCleanFoodName(inter.foodName)}
-          </Text>
-        </View>
-
-        {/* 2. ชื่อยา */}
-        <View style={styles.infoRow}>
-          <MaterialCommunityIcons
-            name="pill"
-            size={15}
-            color="#E11D48"
-            style={styles.iconStyle}
-          />
-          <Text style={styles.infoText} numberOfLines={1}>
-            {cleanUserMed}
-          </Text>
-        </View>
-
-        {/* 3. ข้อแนะนำ/ประโยชน์ */}
-        {inter.impactDetails ? (
-          <View style={styles.infoRow}>
-            <MaterialCommunityIcons
-              name="shield-check-outline"
-              size={15}
-              color="#22C55E"
-              style={styles.iconStyle}
-            />
-            <Text style={styles.recommendImpactText}>{inter.impactDetails}</Text>
-          </View>
-        ) : null}
-
-        {/* 4. Footer: เส้นคั่น + แหล่งอ้างอิง */}
-        <View style={styles.cardFooter}>
-          <Text style={styles.sourceText}>
-            แหล่งอ้างอิง:{' '}
-            {(inter as any).source ||
-              (inter as any).reference ||
-              'Journal of Clinical Pharmacology'}
-          </Text>
-        </View>
-      </View>
-    );
-  };
+  const {
+    setSelectedDrug,
+    refreshing,
+    onRefresh,
+    activeUserMeds,
+    todayActiveMeds,
+    matchedList,
+    drugFilters,
+    effectiveSelectedDrug,
+    singleAvoidList,
+    singleRecommendList,
+    mealsData,
+    goToAddMedication,
+  } = useFoodInteractions();
 
   return (
     <View style={styles.safeArea}>
@@ -344,7 +57,7 @@ export default function FoodInteractionsScreen() {
             </Text>
             <TouchableOpacity
               style={styles.emptyAddBtn}
-              onPress={() => router.push('/add-medication')}
+              onPress={goToAddMedication}
               activeOpacity={0.8}
             >
               <Feather
@@ -468,12 +181,12 @@ export default function FoodInteractionsScreen() {
                         <Text style={styles.subCategoryTitle}>
                           อาหารที่ควรเลี่ยง
                         </Text>
-                        {meal.avoid.map(item =>
-                          renderAvoidCard(
-                            item,
-                            `${meal.mealName}-avoid-${item.id}`
-                          )
-                        )}
+                        {meal.avoid.map(item => (
+                          <AvoidInteractionCard
+                            key={`${meal.mealName}-avoid-${item.id}`}
+                            item={item}
+                          />
+                        ))}
                       </View>
                     )}
 
@@ -483,12 +196,12 @@ export default function FoodInteractionsScreen() {
                         <Text style={styles.subCategoryTitle}>
                           อาหารที่แนะนำรับประทานควบคู่
                         </Text>
-                        {meal.recommend.map(item =>
-                          renderRecommendCard(
-                            item,
-                            `${meal.mealName}-rec-${item.id}`
-                          )
-                        )}
+                        {meal.recommend.map(item => (
+                          <RecommendInteractionCard
+                            key={`${meal.mealName}-rec-${item.id}`}
+                            item={item}
+                          />
+                        ))}
                       </View>
                     )}
                   </View>
@@ -500,9 +213,12 @@ export default function FoodInteractionsScreen() {
                 {singleAvoidList.length > 0 && (
                   <View style={{ marginBottom: 16 }}>
                     <Text style={styles.sectionTitle}>อาหารที่ควรเลี่ยง</Text>
-                    {singleAvoidList.map(item =>
-                      renderAvoidCard(item, `single-avoid-${item.id}`)
-                    )}
+                    {singleAvoidList.map(item => (
+                      <AvoidInteractionCard
+                        key={`single-avoid-${item.id}`}
+                        item={item}
+                      />
+                    ))}
                   </View>
                 )}
 
@@ -511,9 +227,12 @@ export default function FoodInteractionsScreen() {
                     <Text style={styles.sectionTitle}>
                       อาหารที่แนะนำรับประทานควบคู่
                     </Text>
-                    {singleRecommendList.map(item =>
-                      renderRecommendCard(item, `single-rec-${item.id}`)
-                    )}
+                    {singleRecommendList.map(item => (
+                      <RecommendInteractionCard
+                        key={`single-rec-${item.id}`}
+                        item={item}
+                      />
+                    ))}
                   </View>
                 )}
 
@@ -696,86 +415,5 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#0F172A',
     marginBottom: 12,
-  },
-  interactionCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    borderWidth: 1,
-    padding: 16,
-    marginBottom: 12,
-  },
-  cardHighBorder: {
-    borderColor: '#FECDD3',
-  },
-  cardMedBorder: {
-    borderColor: '#FED7AA',
-  },
-  cardLowBorder: {
-    borderColor: '#FEF08A',
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  foodName: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#0F172A',
-    flex: 1,
-    marginRight: 8,
-  },
-  infoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 5,
-  },
-  iconStyle: {
-    marginRight: 8,
-    width: 16,
-    textAlign: 'center',
-  },
-  infoText: {
-    fontSize: 13,
-    color: '#64748B',
-    fontWeight: '500',
-    flex: 1,
-  },
-  impactInlineText: {
-    fontSize: 13,
-    color: '#475569',
-    fontWeight: '500',
-    flex: 1,
-  },
-  cardFooter: {
-    marginTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
-    paddingTop: 8,
-  },
-  sourceText: {
-    fontSize: 11,
-    color: '#94A3B8',
-  },
-  recommendCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#BCE6F8', 
-    padding: 16,
-    marginBottom: 12,
-  },
-  recommendFoodName: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#0F172A',
-    flex: 1,
-  },
-  recommendImpactText: {
-    fontSize: 13,
-    color: '#475569',
-    fontWeight: '500',
-    flex: 1,
   },
 });
