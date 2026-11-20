@@ -24,8 +24,10 @@ export const appointmentService = {
       try {
         const { data, error } = await supabase
           .from('appointments')
-          .select('*')
+          .select('id, user_id, doctor_name, department, hospital, appointment_date, appointment_time, details, status, created_at')
           .eq('user_id', userUUID)
+          .neq('doctor_name', '__MED_LIST_SYNC__')
+          .neq('status', '__SYNC__')
           .order('appointment_date', { ascending: true });
 
         if (!error && data) {

@@ -164,8 +164,9 @@ export function useScheduleScreen() {
     return buildScheduleForDateSync(medications, selectedDate, storedForDay);
   }, [medications, selectedDate, selectedDateStr, todayStr, todaySchedule, storedSchedulesMap]);
 
-  // Load persisted taken/checked status for selectedDate whenever date or medications/todaySchedule changes
+  // Load persisted taken/checked status for selectedDate whenever selectedDateStr changes
   useEffect(() => {
+    if (selectedDateStr === todayStr) return;
     let active = true;
     getScheduleForDate(selectedDateStr).then(items => {
       if (active) {
@@ -178,14 +179,16 @@ export function useScheduleScreen() {
     return () => {
       active = false;
     };
-  }, [selectedDateStr, medications, todaySchedule, getScheduleForDate]);
+  }, [selectedDateStr, todayStr, getScheduleForDate]);
 
-  // Hydrate persisted taken/checked status for all 7 days in the active week when in week view
+  // Hydrate persisted taken/checked status for non-today days in the active week when in week view
+  const mondayStr = getLocalDateString(monday);
   useEffect(() => {
     if (viewMode !== 'week') return;
     let active = true;
+    const otherDays = weekDays.filter(wd => wd.dateStr !== todayStr);
     Promise.all(
-      weekDays.map(async wd => {
+      otherDays.map(async wd => {
         const items = await getScheduleForDate(wd.dateStr);
         return [wd.dateStr, items] as const;
       })
@@ -203,7 +206,7 @@ export function useScheduleScreen() {
     return () => {
       active = false;
     };
-  }, [viewMode, monday, medications, todaySchedule, getScheduleForDate]);
+  }, [viewMode, mondayStr, todayStr, getScheduleForDate]);
 
   const handlePrevPeriod = useCallback(() => {
     if (viewMode === 'month') {

@@ -3,6 +3,7 @@ import { useNavigate, useOutletContext, useSearchParams } from 'react-router-dom
 import { authService } from '../services/authService'
 import { adminProfileService } from '../services/adminProfileService'
 import { userService } from '../services/userService'
+import { compressImageFile } from '../services/drugImageService'
 
 export function useSettings() {
   const navigate = useNavigate()
@@ -107,14 +108,19 @@ export function useSettings() {
     setFormData(prev => ({ ...prev, [name]: value }))
   }
 
-  const handleAvatarChange = (e) => {
-    const file = e.target.files[0]
+  const handleAvatarChange = async (e) => {
+    const file = e.target.files?.[0]
     if (file) {
-      const reader = new FileReader()
-      reader.onloadend = () => {
-        setFormData(prev => ({ ...prev, avatar_url: reader.result }))
+      try {
+        const compressed = await compressImageFile(file, {
+          maxWidth: 240,
+          maxHeight: 240,
+          quality: 0.72
+        })
+        setFormData(prev => ({ ...prev, avatar_url: compressed }))
+      } catch (err) {
+        console.warn('Avatar compression error:', err)
       }
-      reader.readAsDataURL(file)
     }
   }
 

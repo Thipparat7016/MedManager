@@ -5,6 +5,32 @@ import { getLocalDateString } from '../utils/dateUtils';
 
 let toggleCheckedQueue: Promise<any> = Promise.resolve();
 let activeMedicationMutations = 0;
+const lastSyncedDigestByUserKey = new Map<string, string>();
+
+export function stripInlineImageFromMed(med: Medication): Medication {
+  if (!med) return med;
+  if (typeof med.imageUrl === 'string' && med.imageUrl.startsWith('data:')) {
+    const { imageUrl: _removed, ...rest } = med;
+    return rest;
+  }
+  return med;
+}
+
+function computeSyncDigest(payload: {
+  medications: Medication[];
+  deletedNames: string[];
+  deletedAtMap?: Record<string, number>;
+  snoozeMap?: Record<string, number>;
+  scheduleOverrides?: Record<string, ScheduleItem[]>;
+}): string {
+  return JSON.stringify({
+    medications: (payload.medications || []).map(stripInlineImageFromMed),
+    deletedNames: payload.deletedNames || [],
+    deletedAtMap: payload.deletedAtMap || {},
+    snoozeMap: payload.snoozeMap || {},
+    scheduleOverrides: payload.scheduleOverrides || {},
+  });
+}
 
 export function enqueueToggleChecked<T>(task: () => Promise<T>): Promise<T> {
   const next = toggleCheckedQueue.then(task);
@@ -31,6 +57,7 @@ export const syncService = {
   ): Promise<{
     rowId?: string;
     logRowId?: string;
+    hadInlineImages?: boolean;
     payload: {
       version: number;
       updatedAt: number;
@@ -52,6 +79,7 @@ export const syncService = {
               .eq('user_id', userUUID)
               .eq('doctor_name', '__MED_LIST_SYNC__')
               .order('created_at', { ascending: false })
+              .limit(5)
               .then(
                 res => res,
                 () => ({ data: null, error: true })
@@ -64,6 +92,7 @@ export const syncService = {
               .in('user_name', userNameKeys)
               .eq('activity', 'เข้าสู่ระบบ:MED_SYNC')
               .order('created_at', { ascending: false })
+              .limit(5)
               .then(
                 res => res,
                 () => ({ data: null, error: true })
@@ -127,27 +156,42 @@ export const syncService = {
 
       if (!bestPayload) return null;
 
+      const rawMeds: Medication[] = Array.isArray(bestPayload.medications)
+        ? bestPayload.medications
+        : [];
+      const hadInlineImages = rawMeds.some(
+        m => typeof m?.imageUrl === 'string' && m.imageUrl.startsWith('data:')
+      );
+      const cleanedMeds = rawMeds.map(stripInlineImageFromMed);
+
+      const normalizedPayload = {
+        version: bestPayload.version || 1,
+        updatedAt: Number(bestPayload.updatedAt || 0),
+        medications: cleanedMeds,
+        deletedNames: Array.isArray(bestPayload.deletedNames) ? bestPayload.deletedNames : [],
+        deletedAtMap:
+          bestPayload.deletedAtMap && typeof bestPayload.deletedAtMap === 'object'
+            ? bestPayload.deletedAtMap
+            : undefined,
+        snoozeMap:
+          bestPayload.snoozeMap && typeof bestPayload.snoozeMap === 'object'
+            ? bestPayload.snoozeMap
+            : undefined,
+        scheduleOverrides:
+          bestPayload.scheduleOverrides && typeof bestPayload.scheduleOverrides === 'object'
+            ? bestPayload.scheduleOverrides
+            : undefined,
+      };
+
+      if (userKey && !hadInlineImages) {
+        lastSyncedDigestByUserKey.set(userKey, computeSyncDigest(normalizedPayload));
+      }
+
       return {
         rowId: bestAptRow?.id,
         logRowId: bestLogRow?.id,
-        payload: {
-          version: bestPayload.version || 1,
-          updatedAt: Number(bestPayload.updatedAt || 0),
-          medications: Array.isArray(bestPayload.medications) ? bestPayload.medications : [],
-          deletedNames: Array.isArray(bestPayload.deletedNames) ? bestPayload.deletedNames : [],
-          deletedAtMap:
-            bestPayload.deletedAtMap && typeof bestPayload.deletedAtMap === 'object'
-              ? bestPayload.deletedAtMap
-              : undefined,
-          snoozeMap:
-            bestPayload.snoozeMap && typeof bestPayload.snoozeMap === 'object'
-              ? bestPayload.snoozeMap
-              : undefined,
-          scheduleOverrides:
-            bestPayload.scheduleOverrides && typeof bestPayload.scheduleOverrides === 'object'
-              ? bestPayload.scheduleOverrides
-              : undefined,
-        },
+        hadInlineImages,
+        payload: normalizedPayload,
       };
     } catch (e) {
       console.warn('Error fetching remote user sync:', e);
@@ -208,26 +252,72 @@ export const syncService = {
       }
 
       const nowTs = Date.now();
+      const cleanedMedications = (medications || []).map(stripInlineImageFromMed);
       const payload = {
         version: 2,
         updatedAt: nowTs,
-        medications: medications || [],
+        medications: cleanedMedications,
         deletedNames: deletedNames || [],
         deletedAtMap: deletedAtMap || {},
         snoozeMap: snoozeMap || {},
         scheduleOverrides: scheduleOverrides || {},
       };
 
+      const nextDigest = computeSyncDigest(payload);
+      if (lastSyncedDigestByUserKey.get(userKey) === nextDigest) {
+        return;
+      }
+      lastSyncedDigestByUserKey.set(userKey, nextDigest);
+
       await safeStorage.setItem(`med_last_sync_ts_${userKey}`, String(nowTs));
       await safeStorage.setItem(`med_cloud_sync_migrated_v1_${userKey}`, 'true');
 
-      const existing = await syncService.fetchRemoteUserSync(userUUID, userKey);
+      // Query only row IDs (excluding `details`) to avoid downloading large JSON blobs before updating
+      const userNameKeys = Array.from(new Set([userKey, userUUID].filter(Boolean) as string[]));
+      const [aptIdRes, logIdRes] = await Promise.all([
+        userUUID
+          ? supabase
+              .from('appointments')
+              .select('id')
+              .eq('user_id', userUUID)
+              .eq('doctor_name', '__MED_LIST_SYNC__')
+              .order('created_at', { ascending: false })
+              .limit(1)
+              .then(
+                res => res,
+                () => ({ data: null, error: true })
+              )
+          : Promise.resolve({ data: null, error: true }),
+        userNameKeys.length > 0
+          ? supabase
+              .from('activity_logs')
+              .select('id')
+              .in('user_name', userNameKeys)
+              .eq('activity', 'เข้าสู่ระบบ:MED_SYNC')
+              .order('created_at', { ascending: false })
+              .limit(1)
+              .then(
+                res => res,
+                () => ({ data: null, error: true })
+              )
+          : Promise.resolve({ data: null, error: true }),
+      ]);
+
+      const existingRowId =
+        !aptIdRes.error && Array.isArray(aptIdRes.data) && aptIdRes.data[0]?.id
+          ? aptIdRes.data[0].id
+          : undefined;
+      const existingLogRowId =
+        !logIdRes.error && Array.isArray(logIdRes.data) && logIdRes.data[0]?.id
+          ? logIdRes.data[0].id
+          : undefined;
+
       const serialized = JSON.stringify(payload);
       const timeMarker = String(nowTs).slice(-10);
 
       // Sync to activity_logs keyed by userKey (email) so all devices with the same email sync
       try {
-        if (existing?.logRowId) {
+        if (existingLogRowId) {
           await supabase
             .from('activity_logs')
             .update({
@@ -235,7 +325,7 @@ export const syncService = {
               user_name: userKey,
               details: serialized,
             })
-            .eq('id', existing.logRowId);
+            .eq('id', existingLogRowId);
         } else {
           await supabase.from('activity_logs').insert([
             {
@@ -251,7 +341,7 @@ export const syncService = {
       // Also sync to appointments if userUUID is available
       if (userUUID) {
         try {
-          if (existing?.rowId) {
+          if (existingRowId) {
             await supabase
               .from('appointments')
               .update({
@@ -259,7 +349,7 @@ export const syncService = {
                 appointment_time: timeMarker,
                 status: '__SYNC__',
               })
-              .eq('id', existing.rowId)
+              .eq('id', existingRowId)
               .eq('user_id', userUUID);
           } else {
             await supabase.from('appointments').insert([

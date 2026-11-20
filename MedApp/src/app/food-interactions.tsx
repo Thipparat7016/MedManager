@@ -32,7 +32,7 @@ export default function FoodInteractionsScreen() {
 
   return (
     <View style={styles.safeArea}>
-      <AppHeader title="อาหารที่หลีกเลี่ยง" />
+      <AppHeader title="อาหารที่ควรเลี่ยง" />
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}

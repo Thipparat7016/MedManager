@@ -9,53 +9,64 @@ export function subscribeToAppRealtime(handlers: {
     return () => {};
   }
 
+  let masterTimer: ReturnType<typeof setTimeout> | null = null;
+  let interTimer: ReturnType<typeof setTimeout> | null = null;
+  let userTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const triggerMaster = () => {
+    if (masterTimer) clearTimeout(masterTimer);
+    masterTimer = setTimeout(() => {
+      handlers.onMasterMedicationsChanged();
+    }, 1000);
+  };
+
+  const triggerInteractions = () => {
+    if (interTimer) clearTimeout(interTimer);
+    interTimer = setTimeout(() => {
+      handlers.onInteractionsChanged();
+    }, 1000);
+  };
+
+  const triggerUserData = () => {
+    if (userTimer) clearTimeout(userTimer);
+    userTimer = setTimeout(() => {
+      handlers.onUserDataChanged();
+    }, 1500);
+  };
+
   const channel = supabase
     .channel(`realtime:app-sync-${Date.now()}`)
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'medications' },
-      () => {
-        handlers.onMasterMedicationsChanged();
-      }
+      triggerMaster
     )
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'drug_food_interactions' },
-      () => {
-        handlers.onInteractionsChanged();
-      }
+      triggerInteractions
     )
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'user_schedules' },
-      () => {
-        handlers.onUserDataChanged();
-      }
+      triggerUserData
     )
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'appointments' },
-      () => {
-        handlers.onUserDataChanged();
-      }
-    )
-    .on(
-      'postgres_changes',
-      { event: '*', schema: 'public', table: 'activity_logs' },
-      () => {
-        handlers.onUserDataChanged();
-      }
+      triggerUserData
     )
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'side_effects' },
-      () => {
-        handlers.onUserDataChanged();
-      }
+      triggerUserData
     )
     .subscribe();
 
   return () => {
+    if (masterTimer) clearTimeout(masterTimer);
+    if (interTimer) clearTimeout(interTimer);
+    if (userTimer) clearTimeout(userTimer);
     supabase?.removeChannel(channel);
   };
 }

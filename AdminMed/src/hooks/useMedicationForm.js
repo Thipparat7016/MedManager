@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { medicationService } from '../services/medicationService'
 import { getDrugSuggestions, fetchMedicalEntity } from '../services/openFdaService'
+import { compressImageFile } from '../services/drugImageService'
 
 export function useMedicationForm() {
   const { id } = useParams()
@@ -226,15 +227,20 @@ export function useMedicationForm() {
     setOpenCustomDropdown(prev => (prev === fieldKey ? null : fieldKey))
   }
 
-  const handleImageChange = (e) => {
-    const file = e.target.files[0]
+  const handleImageChange = async (e) => {
+    const file = e.target.files?.[0]
     if (file) {
-      const reader = new FileReader()
-      reader.onloadend = () => {
-        setImagePreview(reader.result)
-        setFormData(prev => ({ ...prev, image_url: reader.result }))
+      try {
+        const compressed = await compressImageFile(file, {
+          maxWidth: 360,
+          maxHeight: 360,
+          quality: 0.72
+        })
+        setImagePreview(compressed)
+        setFormData(prev => ({ ...prev, image_url: compressed }))
+      } catch (err) {
+        console.warn('Image compression fallback:', err)
       }
-      reader.readAsDataURL(file)
     }
   }
 

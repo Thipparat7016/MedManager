@@ -82,10 +82,18 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const dismissedNotifIdsRef = useRef<Set<string>>(new Set());
   const isRefreshingRef = useRef<boolean>(false);
   const pendingRefreshRef = useRef<boolean>(false);
+  const lastLoadAllAtRef = useRef<number>(0);
 
-  const loadAllData = useCallback(async (showGlobalLoading = false) => {
+  const loadAllData = useCallback(async (showGlobalLoading = false, force = false) => {
+    const now = Date.now();
+    // Skip redundant passive refetches (e.g. tab switch useFocusEffect) if data was loaded within 15s
+    if (!showGlobalLoading && !force && now - lastLoadAllAtRef.current < 15000) {
+      return;
+    }
     if (!showGlobalLoading && isRefreshingRef.current) {
-      pendingRefreshRef.current = true;
+      if (force) {
+        pendingRefreshRef.current = true;
+      }
       return;
     }
     try {
@@ -94,6 +102,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       } else {
         isRefreshingRef.current = true;
       }
+      lastLoadAllAtRef.current = Date.now();
       // 1. Immediately restore user profile & auth status
       const u = await userService.getUserProfile().catch(() => null);
       setUser(u);
@@ -135,7 +144,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         if (pendingRefreshRef.current) {
           pendingRefreshRef.current = false;
           setTimeout(() => {
-            loadAllData(false);
+            loadAllData(false, true);
           }, 50);
         }
       }
@@ -143,21 +152,16 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   useEffect(() => {
-    loadAllData(true);
-
-    // ซิงก์ข้อมูลระหว่างโทรศัพท์กับ Notebook แบบ Real-time (อัปเดตพื้นหลังทุก 4 วินาที และเมื่อกลับมาเปิดหน้าจอ)
-    const interval = setInterval(() => {
-      loadAllData(false);
-    }, 4000);
+    loadAllData(true, true);
 
     const appStateSubscription = AppState.addEventListener('change', nextState => {
       if (nextState === 'active') {
-        loadAllData(false);
+        loadAllData(false, false);
       }
     });
 
     const handleWindowFocus = () => {
-      loadAllData(false);
+      loadAllData(false, false);
     };
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
       window.addEventListener('focus', handleWindowFocus);
@@ -167,7 +171,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     const unsubscribeRealtime = subscribeToAppRealtime({
       onMasterMedicationsChanged: async () => {
         try {
-          const freshMasterMeds = await medicationService.getMasterMedications();
+          const freshMasterMeds = await medicationService.getMasterMedications(true);
           setMasterMedications(freshMasterMeds);
         } catch (err) {
           console.warn('Realtime sync error for medications:', err);
@@ -175,19 +179,18 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       },
       onInteractionsChanged: async () => {
         try {
-          const freshInteractions = await interactionService.getInteractions();
+          const freshInteractions = await interactionService.getInteractions(undefined, true);
           setInteractions(freshInteractions);
         } catch (err) {
           console.warn('Realtime sync error for interactions:', err);
         }
       },
       onUserDataChanged: () => {
-        loadAllData(false);
+        loadAllData(false, true);
       },
     });
 
     return () => {
-      clearInterval(interval);
       appStateSubscription.remove();
       if (Platform.OS === 'web' && typeof window !== 'undefined') {
         window.removeEventListener('focus', handleWindowFocus);
@@ -207,7 +210,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       setIsAuthenticated(true);
       setPhoneModalInput('');
       setSkippedPhoneEmail(null);
-      await loadAllData();
+      await loadAllData(false, true);
       return { success: true };
     } catch (e: any) {
       console.warn('Login error:', e);
@@ -229,7 +232,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       setIsAuthenticated(true);
       setPhoneModalInput('');
       setSkippedPhoneEmail(null);
-      await loadAllData();
+      await loadAllData(false, true);
       const needsPhone = !hasValidPhone(profile.phone);
       return { success: true, needsPhone };
     } catch (e: any) {
@@ -253,7 +256,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       setIsAuthenticated(true);
       setPhoneModalInput('');
       setSkippedPhoneEmail(null);
-      await loadAllData();
+      await loadAllData(false, true);
       return { success: true };
     } catch (e: any) {
       console.warn('Register error:', e);
@@ -272,7 +275,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const refreshData = useCallback(async () => {
-    await loadAllData(false);
+    await loadAllData(false, false);
   }, [loadAllData]);
 
   const getScheduleForDate = useCallback(async (dateStr?: string) => {
@@ -303,7 +306,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       )
     );
     await scheduleService.confirmCheckedSchedules(scheduleIds, dateStr);
-    await loadAllData(false);
+    await loadAllData(false, true);
   };
 
   const markTaken = async (scheduleId: string, isTaken: boolean = true, dateStr?: string) => {
@@ -320,7 +323,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       )
     );
     await scheduleService.markScheduleTaken(scheduleId, isTaken, dateStr);
-    await loadAllData(false);
+    await loadAllData(false, true);
   };
 
   const postponeSchedule = async (
@@ -332,14 +335,14 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       prev.filter(n => n.scheduleId !== scheduleId && !n.id.includes(scheduleId))
     );
     const updated = await scheduleService.postponeSchedule(scheduleId, minutes);
-    await loadAllData(false);
+    await loadAllData(false, true);
     const target = updated.find(i => i.id === scheduleId);
     return target?.time;
   };
 
   const skipSchedule = async (scheduleId: string) => {
     await scheduleService.skipSchedule(scheduleId);
-    await loadAllData(false);
+    await loadAllData(false, true);
   };
 
   const saveMedication = async (med: Medication) => {
@@ -353,7 +356,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       }
       return [saved, ...prev];
     });
-    await loadAllData(false);
+    await loadAllData(false, true);
     return saved;
   };
 
@@ -361,29 +364,29 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     setMedications(prev => prev.filter(m => m.id !== id));
     setTodaySchedule(prev => prev.filter(s => s.medicationId !== id));
     await medicationService.deleteMedication(id);
-    await loadAllData(false);
+    await loadAllData(false, true);
   };
 
   const addAppointment = async (apt: Omit<DoctorAppointment, 'id'>) => {
     const saved = await appointmentService.addAppointment(apt);
-    await loadAllData(false);
+    await loadAllData(false, true);
     return saved;
   };
 
   const updateAppointment = async (apt: DoctorAppointment) => {
     const updated = await appointmentService.updateAppointment(apt);
-    await loadAllData(false);
+    await loadAllData(false, true);
     return updated;
   };
 
   const deleteAppointment = async (id: string) => {
     await appointmentService.deleteAppointment(id);
-    await loadAllData(false);
+    await loadAllData(false, true);
   };
 
   const addSideEffect = async (log: Omit<SideEffectLog, 'id' | 'createdAt'>) => {
     const saved = await sideEffectService.addSideEffect(log);
-    await loadAllData(false);
+    await loadAllData(false, true);
     return saved;
   };
 

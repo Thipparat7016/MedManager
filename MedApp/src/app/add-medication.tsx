@@ -282,7 +282,7 @@ export default function AddMedicationScreen() {
           disabled={isSaving}
         >
           <Text style={styles.savePrimaryButtonText}>
-            {isSaving ? 'กำลังบันทึก...' : 'บันทึกและสร้างตาราง ->'}
+            {isSaving ? 'กำลังบันทึก...' : 'บันทึกและสร้างตาราง'}
           </Text>
         </TouchableOpacity>
 

@@ -1,6 +1,9 @@
 import { supabase } from './supabaseClient'
 import { normalizeStr } from '../utils/adherenceUtils'
 import { findCascadeInteractionIds } from '../utils/medicationUtils'
+import { compressDataUrlIfOversized } from './drugImageService'
+
+const autoCompressedMedIds = new Set()
 
 export const medicationService = {
   async getMedications(filters = {}) {
@@ -21,7 +24,34 @@ export const medicationService = {
         console.error('Error fetching medications:', error)
         return []
       }
-      return data || []
+      const rows = data || []
+
+      // Automatically shrink any oversized legacy Base64 images (>80KB) in the background once
+      rows.forEach(row => {
+        if (
+          row?.id &&
+          typeof row.image_url === 'string' &&
+          row.image_url.startsWith('data:image/') &&
+          row.image_url.length > 80000 &&
+          !autoCompressedMedIds.has(row.id)
+        ) {
+          autoCompressedMedIds.add(row.id)
+          compressDataUrlIfOversized(row.image_url)
+            .then(compressed => {
+              if (compressed && compressed.length < row.image_url.length) {
+                row.image_url = compressed
+                supabase
+                  .from('medications')
+                  .update({ image_url: compressed })
+                  .eq('id', row.id)
+                  .then(() => {}, () => {})
+              }
+            })
+            .catch(() => {})
+        }
+      })
+
+      return rows
     } catch (err) {
       console.error('getMedications error:', err)
       return []
@@ -71,6 +101,8 @@ export const medicationService = {
       }
     }
 
+    const optimizedImageUrl = await compressDataUrlIfOversized(data.image_url)
+
     if (data.id && !data.id.startsWith('med-')) {
       const updatePayload = {
         name_th: data.name_th,
@@ -82,7 +114,7 @@ export const medicationService = {
         indications: data.indications,
         instructions: data.instructions,
         precautions: data.precautions,
-        image_url: data.image_url,
+        image_url: optimizedImageUrl,
         updated_at: new Date().toISOString()
       }
       const { data: res, error } = await supabase
@@ -114,7 +146,7 @@ export const medicationService = {
       indications: data.indications,
       instructions: data.instructions,
       precautions: data.precautions,
-      image_url: data.image_url
+      image_url: optimizedImageUrl
     }
 
     const { data: res, error } = await supabase

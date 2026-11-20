@@ -125,45 +125,105 @@ CREATE TABLE IF NOT EXISTS user_schedules (
 );
 
 -- ==============================================================================
+-- Table-Level Privileges (GRANT สิทธิ์ให้ anon และ authenticated ป้องกัน permission denied)
+-- ==============================================================================
+GRANT USAGE ON SCHEMA public TO postgres, anon, authenticated, service_role;
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO postgres, anon, authenticated, service_role;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO postgres, anon, authenticated, service_role;
+GRANT ALL PRIVILEGES ON ALL ROUTINES IN SCHEMA public TO postgres, anon, authenticated, service_role;
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO postgres, anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO postgres, anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON ROUTINES TO postgres, anon, authenticated, service_role;
+
+-- ==============================================================================
 -- Row Level Security (RLS) Policies (ให้สิทธิ์อ่าน-เขียนทั้ง AdminMed และ MedApp)
 -- ==============================================================================
 
 -- 1. medications
 ALTER TABLE medications ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Allow all access to medications" ON medications;
-CREATE POLICY "Allow all access to medications" ON medications FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all access to medications" ON medications FOR ALL TO public, anon, authenticated USING (true) WITH CHECK (true);
 
 -- 2. drug_food_interactions
 ALTER TABLE drug_food_interactions ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Allow all access to drug_food_interactions" ON drug_food_interactions;
-CREATE POLICY "Allow all access to drug_food_interactions" ON drug_food_interactions FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all access to drug_food_interactions" ON drug_food_interactions FOR ALL TO public, anon, authenticated USING (true) WITH CHECK (true);
 
 -- 3. app_users
 ALTER TABLE app_users ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Allow all access to app_users" ON app_users;
-CREATE POLICY "Allow all access to app_users" ON app_users FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all access to app_users" ON app_users FOR ALL TO public, anon, authenticated USING (true) WITH CHECK (true);
 
 -- 4. admin_profiles
 ALTER TABLE admin_profiles ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Allow all access to admin_profiles" ON admin_profiles;
-CREATE POLICY "Allow all access to admin_profiles" ON admin_profiles FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all access to admin_profiles" ON admin_profiles FOR ALL TO public, anon, authenticated USING (true) WITH CHECK (true);
 
 -- 5. activity_logs
 ALTER TABLE activity_logs ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Allow all access to activity_logs" ON activity_logs;
-CREATE POLICY "Allow all access to activity_logs" ON activity_logs FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all access to activity_logs" ON activity_logs FOR ALL TO public, anon, authenticated USING (true) WITH CHECK (true);
 
 -- 6. appointments
 ALTER TABLE appointments ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Allow all access to appointments" ON appointments;
-CREATE POLICY "Allow all access to appointments" ON appointments FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all access to appointments" ON appointments FOR ALL TO public, anon, authenticated USING (true) WITH CHECK (true);
 
 -- 7. side_effects
 ALTER TABLE side_effects ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Allow all access to side_effects" ON side_effects;
-CREATE POLICY "Allow all access to side_effects" ON side_effects FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all access to side_effects" ON side_effects FOR ALL TO public, anon, authenticated USING (true) WITH CHECK (true);
 
 -- 8. user_schedules
 ALTER TABLE user_schedules ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Allow all access to user_schedules" ON user_schedules;
-CREATE POLICY "Allow all access to user_schedules" ON user_schedules FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all access to user_schedules" ON user_schedules FOR ALL TO public, anon, authenticated USING (true) WITH CHECK (true);
+
+-- ==============================================================================
+-- Indexes (ช่วยเพิ่มความเร็วในการค้นหาและลดภาระ Database)
+-- ==============================================================================
+CREATE INDEX IF NOT EXISTS idx_app_users_email ON app_users (LOWER(email));
+CREATE INDEX IF NOT EXISTS idx_appointments_user_id ON appointments (user_id);
+CREATE INDEX IF NOT EXISTS idx_side_effects_user_id ON side_effects (user_id);
+CREATE INDEX IF NOT EXISTS idx_user_schedules_user_date ON user_schedules (user_id, date);
+CREATE INDEX IF NOT EXISTS idx_activity_logs_activity ON activity_logs (activity, created_at DESC);
+
+-- ==============================================================================
+-- Default Admin Profile (เพื่อให้ล็อกอิน AdminMed ด้วย admin@gmail.com ได้ทันที)
+-- ==============================================================================
+INSERT INTO admin_profiles (first_name, last_name, email, phone, role, avatar_url)
+SELECT 'Admin', 'medicine', 'admin@gmail.com', '095-326-5723', 'Admin', ''
+WHERE NOT EXISTS (
+  SELECT 1 FROM admin_profiles WHERE LOWER(email) = 'admin@gmail.com'
+);
+
+-- ==============================================================================
+-- Enable Supabase Realtime สำหรับตารางที่ต้องซิงก์ข้อมูลระหว่าง AdminMed และ MedApp
+-- ==============================================================================
+DO $$
+DECLARE
+  tbl TEXT;
+BEGIN
+  FOREACH tbl IN ARRAY ARRAY[
+    'medications',
+    'drug_food_interactions',
+    'app_users',
+    'activity_logs',
+    'appointments',
+    'side_effects',
+    'user_schedules'
+  ]
+  LOOP
+    IF NOT EXISTS (
+      SELECT 1
+      FROM pg_publication_tables
+      WHERE pubname = 'supabase_realtime'
+        AND schemaname = 'public'
+        AND tablename = tbl
+    ) THEN
+      EXECUTE format('ALTER PUBLICATION supabase_realtime ADD TABLE public.%I', tbl);
+    END IF;
+  END LOOP;
+END $$;
+

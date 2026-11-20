@@ -3,6 +3,10 @@ import { supabase } from './supabase';
 import { UserProfile } from '../utils/types';
 import { isValidUUID, toUserStorageKey } from '../utils/formatUtils';
 
+let lastProfileSyncAt = 0;
+let lastProfileSyncEmail = '';
+const PROFILE_SYNC_COOLDOWN_MS = 60 * 1000; // 60 seconds
+
 export const userService = {
   async purgeMockCacheIfNeeded() {
     try {
@@ -125,13 +129,21 @@ export const userService = {
       // Ensure authenticated flag is synced
       await safeStorage.setItem('med_is_authenticated', 'true');
 
-      // 2. Refresh profile details silently from Supabase if online (matched strictly by email)
-      if (supabase && cleanEmail) {
+      // 2. Refresh profile details silently from Supabase if online (throttled to once per 60s)
+      const now = Date.now();
+      if (
+        supabase &&
+        cleanEmail &&
+        (cleanEmail !== lastProfileSyncEmail || now - lastProfileSyncAt > PROFILE_SYNC_COOLDOWN_MS)
+      ) {
         try {
+          lastProfileSyncAt = now;
+          lastProfileSyncEmail = cleanEmail;
           const { data, error } = await supabase
             .from('app_users')
-            .select('*')
-            .ilike('email', cleanEmail);
+            .select('id, code, name, email, phone, password, status')
+            .ilike('email', cleanEmail)
+            .limit(1);
 
           const u = !error
             ? (data || []).find(

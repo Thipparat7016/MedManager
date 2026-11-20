@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { dashboardService } from '../services/dashboardService'
 import { formatLastUpdatedTime } from '../utils/dateUtils'
 import {
@@ -12,18 +12,24 @@ export function useDashboard() {
   const [activities, setActivities] = useState([])
   const [lastUpdated, setLastUpdated] = useState('อัปเดตเมื่อสักครู่')
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const lastFetchedAtRef = useRef(0)
+  const isFetchingRef = useRef(false)
 
   const loadData = useCallback(async ({ silent = false } = {}) => {
+    if (isFetchingRef.current) return
+    isFetchingRef.current = true
     if (!silent) setIsRefreshing(true)
-    const [dashStats, activityLogs] = await Promise.all([
-      dashboardService.getDashboardStats(),
-      dashboardService.getPharmacyActivities()
-    ])
-    setStats(dashStats)
-    setActivities(activityLogs)
-    setLastUpdated(formatLastUpdatedTime(new Date()))
-    if (!silent) {
-      setTimeout(() => setIsRefreshing(false), 300)
+    try {
+      const { stats: dashStats, activities: activityLogs } = await dashboardService.getDashboardOverview()
+      setStats(dashStats)
+      setActivities(activityLogs)
+      lastFetchedAtRef.current = Date.now()
+      setLastUpdated(formatLastUpdatedTime(new Date()))
+    } finally {
+      isFetchingRef.current = false
+      if (!silent) {
+        setTimeout(() => setIsRefreshing(false), 300)
+      }
     }
   }, [])
 
@@ -35,24 +41,18 @@ export function useDashboard() {
     })
 
     const handleVisibilityOrFocus = () => {
-      if (document.visibilityState === 'visible') {
+      // Only refetch on window focus if data is older than 60 seconds
+      if (document.visibilityState === 'visible' && Date.now() - lastFetchedAtRef.current > 60000) {
         loadData({ silent: true })
       }
     }
     window.addEventListener('focus', handleVisibilityOrFocus)
     document.addEventListener('visibilitychange', handleVisibilityOrFocus)
 
-    const pollInterval = setInterval(() => {
-      if (document.visibilityState === 'visible') {
-        loadData({ silent: true })
-      }
-    }, 10000)
-
     return () => {
       unsubscribeRealtime()
       window.removeEventListener('focus', handleVisibilityOrFocus)
       document.removeEventListener('visibilitychange', handleVisibilityOrFocus)
-      clearInterval(pollInterval)
     }
   }, [loadData])
 

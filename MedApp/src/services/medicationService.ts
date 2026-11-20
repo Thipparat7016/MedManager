@@ -4,6 +4,7 @@ import { userService } from './userService';
 import { activityService } from './activityService';
 import {
   syncService,
+  stripInlineImageFromMed,
   incrementMedicationMutations,
   decrementMedicationMutations,
   hasActiveMedicationMutations,
@@ -17,40 +18,69 @@ import {
   buildScheduleForDateSync,
 } from '../utils/scheduleUtils';
 
-export const medicationService = {
-  async getMasterMedications(): Promise<Medication[]> {
-    try {
-      if (supabase) {
-        const { data, error } = await supabase
-          .from('medications')
-          .select('*')
-          .order('name_th', { ascending: true });
+let masterMedicationsCache: Medication[] | null = null;
+let masterMedicationsFetchedAt = 0;
+let masterMedicationsInFlight: Promise<Medication[]> | null = null;
+const MASTER_MEDS_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes (invalidated immediately by Realtime)
 
-        if (!error && data) {
-          return data.map((m: any) => ({
-            id: m.id,
-            code: m.code,
-            name: m.name_th || m.name_en || '',
-            type: (m.type as any) || 'เม็ด',
-            category: (m.category as any) || 'ยา',
-            dosage: m.dosage || '100',
-            unit: m.unit || 'mg',
-            frequency: 1,
-            remaining: 30,
-            status: 'active',
-            instructions: m.instructions || '',
-            precautions: m.precautions || '',
-            imageUrl: m.image_url,
-          }));
-        }
-      }
-    } catch (e) {
-      console.warn('Supabase fetch error for master medications:', e);
+const lastRemoteSyncAtByUser = new Map<string, number>();
+const REMOTE_SYNC_COOLDOWN_MS = 5000;
+
+export const medicationService = {
+  async getMasterMedications(forceRefresh: boolean = false): Promise<Medication[]> {
+    const now = Date.now();
+    if (
+      !forceRefresh &&
+      masterMedicationsCache &&
+      now - masterMedicationsFetchedAt < MASTER_MEDS_CACHE_TTL_MS
+    ) {
+      return masterMedicationsCache;
     }
-    return [];
+    if (!forceRefresh && masterMedicationsInFlight) {
+      return masterMedicationsInFlight;
+    }
+
+    masterMedicationsInFlight = (async () => {
+      try {
+        if (supabase) {
+          const { data, error } = await supabase
+            .from('medications')
+            .select('*')
+            .order('name_th', { ascending: true });
+
+          if (!error && data) {
+            const mapped: Medication[] = data.map((m: any) => ({
+              id: m.id,
+              code: m.code,
+              name: m.name_th || m.name_en || '',
+              type: (m.type as any) || 'เม็ด',
+              category: (m.category as any) || 'ยา',
+              dosage: m.dosage || '100',
+              unit: m.unit || 'mg',
+              frequency: 1,
+              remaining: 30,
+              status: 'active',
+              instructions: m.instructions || '',
+              precautions: m.precautions || '',
+              imageUrl: m.image_url,
+            }));
+            masterMedicationsCache = mapped;
+            masterMedicationsFetchedAt = Date.now();
+            return mapped;
+          }
+        }
+      } catch (e) {
+        console.warn('Supabase fetch error for master medications:', e);
+      } finally {
+        masterMedicationsInFlight = null;
+      }
+      return masterMedicationsCache || [];
+    })();
+
+    return masterMedicationsInFlight;
   },
 
-  async getMedications(): Promise<Medication[]> {
+  async getMedications(options?: { skipRemoteSync?: boolean }): Promise<Medication[]> {
     await userService.purgeMockCacheIfNeeded();
     try {
       const { userKey, userUUID } = await userService.getCurrentUserScope();
@@ -120,16 +150,17 @@ export const medicationService = {
       };
 
       const cleanSingleMed = (item: Medication): Medication => {
-        if (item.expiryDate === '31/12/2570') {
+        const stripped = stripInlineImageFromMed(item);
+        if (stripped.expiryDate === '31/12/2570') {
           return {
-            ...item,
+            ...stripped,
             expiryDate: '',
             durationMode: 'ทุกวัน',
             customDays: undefined,
             instructions: 'ทุกวัน',
           };
         }
-        return item;
+        return stripped;
       };
 
       // Deduplicate localMeds and filter out deleted items where deletedAt >= medTimestamp
@@ -158,13 +189,19 @@ export const medicationService = {
       }
 
       // If a saveMedication / deleteMedication is currently in progress on this device,
-      // return localMeds immediately so in-flight mutations are never overwritten
-      if (hasActiveMedicationMutations()) {
+      // or caller requested local-only read, or we already synced within cooldown window, return localMeds
+      const lastSyncTs = lastRemoteSyncAtByUser.get(userKey) || 0;
+      if (
+        hasActiveMedicationMutations() ||
+        options?.skipRemoteSync ||
+        (hadStoredList && Date.now() - lastSyncTs < REMOTE_SYNC_COOLDOWN_MS)
+      ) {
         return localMeds;
       }
 
       if (supabase && userKey) {
         try {
+          lastRemoteSyncAtByUser.set(userKey, Date.now());
           const remoteSync = await syncService.fetchRemoteUserSync(userUUID, userKey);
 
           if (remoteSync) {
@@ -244,8 +281,8 @@ export const medicationService = {
               await syncService.clearCachedSchedulesAroundMonth(userKey, getLocalDateString());
             }
 
-            // If local device had newer medications or deletions not yet in remotePayload, push merged state to cloud
-            if (nextLocalStr !== remoteStr) {
+            // If local device had newer medications/deletions or remote row had legacy Base64 images, push cleaned state once
+            if (nextLocalStr !== remoteStr || remoteSync.hadInlineImages) {
               await syncService.pushRemoteUserSync(userUUID, userKey, {
                 medications: localMeds,
                 deletedNames,
@@ -415,11 +452,13 @@ export const medicationService = {
             }
           }
 
-          await syncService.pushRemoteUserSync(userUUID, userKey, {
-            medications: localMeds,
-            deletedNames,
-            deletedAtMap,
-          });
+          if (localMeds.length > 0 || deletedNames.length > 0) {
+            await syncService.pushRemoteUserSync(userUUID, userKey, {
+              medications: localMeds,
+              deletedNames,
+              deletedAtMap,
+            });
+          }
         } catch (syncErr) {
           console.warn('Error syncing user medications from Supabase:', syncErr);
         }
@@ -449,6 +488,7 @@ export const medicationService = {
 
   async saveMedication(med: Medication): Promise<Medication> {
     incrementMedicationMutations();
+    med = stripInlineImageFromMed(med);
     const nowTs = Date.now();
     if (!med.createdAt) {
       med.createdAt = new Date(nowTs).toISOString();

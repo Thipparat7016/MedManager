@@ -44,7 +44,7 @@ export default function InteractionFormPage() {
     <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
       {/* Header */}
       <div className="page-header">
-        <h1 className="page-title">{isEditing ? 'แก้ไข ปฏิสัมพันธ์ยา-อาหาร' : 'เพิ่ม ปฏิสัมพันธ์ยา-อาหาร'}</h1>
+        <h1 className="page-title">{isEditing ? 'แก้ไข ปฏิสัมพันธ์ยา-อาหาร' : 'เพิ่ม / แก้ไขปฏิสัมพันธ์ยา-อาหาร'}</h1>
         <div className="page-actions">
           <button
             type="button"

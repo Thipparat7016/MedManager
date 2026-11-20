@@ -22,8 +22,8 @@ export const scheduleService = {
     const key = `med_schedule_${userKey}_${targetDateStr}`;
     const snoozeKey = `med_snooze_until_map_${userKey}`;
 
-    // 0. Sync medications & remote schedule overrides first so cross-device updates are reflected immediately
-    const allMeds = await medicationService.getMedications().catch(() => []);
+    // 0. Read medications from local storage (remote sync is already handled by loadAllData / Realtime)
+    const allMeds = await medicationService.getMedications({ skipRemoteSync: true }).catch(() => []);
 
     // 1. Read local storage for this user & date (now updated with remote overrides if any)
     let localItems: ScheduleItem[] = [];
